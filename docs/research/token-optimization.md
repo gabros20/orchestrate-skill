@@ -161,6 +161,11 @@ Delivered by a dedicated web-research agent; **[M]** = measured, **[V]** = vendo
 They compose. Clearing needs re-fetchable tools + notes; compaction costs one summarization call;
 memory is the only one that survives sessions.
 
+Also first-party: **Task Budgets** (beta; Fable 5 / Sonnet 5 / Opus 4.7+) — a token ceiling for a
+whole agentic loop that the model is *aware of*, so it self-paces and wraps up gracefully instead
+of hard-truncating like `max_tokens`. Minimum 20K. A direct lever for bounding a worker's total
+spend without any brevity prompting — relevant to orchestrate's `budget=` dimension (O6).
+
 **Prompt-caching mechanics that matter to an orchestrator** (first-party pricing/behavior):
 cache reads ≈ 0.1× input price, writes 1.25× (5-min TTL) / 2× (1-hr); strict prefix match
 (`tools → system → messages`) — one changed byte upstream invalidates everything after;

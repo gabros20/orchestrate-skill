@@ -4,7 +4,7 @@
 
 Extracted context for the `orchestrate` skill: every source consulted, what each taught, the
 convergent principles, and a traceability map from design decisions back to evidence. Built
-2026-07-10. Companion docs: `PLAN.md` (the build plan), `resources/GUIDE.html` (visual guide).
+2026-07-10. Companion docs: [../designs/v1.0.0-initial-architecture.md](../designs/v1.0.0-initial-architecture.md) (the build plan/design) and the visual guide, now [site/index.html](../../site/index.html) (orchestrate-skill.vercel.app).
 
 **Method note.** The research itself was run as an orchestration: X threads/articles/images pulled
 via the x-relay CLI (serialized, rate-limit-respecting), four parallel research subagents (Claude

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# review-package BASE HEAD — write a review diff package to the workspace; prints its path.
+# ALWAYS pass the recorded BASE for the task (never HEAD~1 — it truncates multi-commit tasks).
+set -euo pipefail
+[ $# -eq 2 ] || { echo "usage: review-package BASE HEAD" >&2; exit 1; }
+base="$1"; head="$2"
+git rev-parse --verify --quiet "$base^{commit}" >/dev/null || { echo "bad BASE: $base" >&2; exit 1; }
+git rev-parse --verify --quiet "$head^{commit}" >/dev/null || { echo "bad HEAD: $head" >&2; exit 1; }
+ws="$("$(dirname "$0")/workspace")"
+b7="$(git rev-parse --short=7 "$base")"; h7="$(git rev-parse --short=7 "$head")"
+out="$ws/review-$b7..$h7.diff"
+{
+  echo "# commits $b7..$h7"
+  git log --oneline "$base..$head"
+  echo; echo "# stat"; git diff --stat "$base" "$head"
+  echo; git diff -U10 "$base" "$head"
+} > "$out"
+n="$(git rev-list --count "$base..$head")"
+echo "wrote $out: $n commit(s), $(wc -c < "$out" | tr -d ' ') bytes"

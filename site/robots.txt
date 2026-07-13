@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://orchestrate-skill.vercel.app/sitemap.xml

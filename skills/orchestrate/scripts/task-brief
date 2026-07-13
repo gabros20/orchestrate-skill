@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# task-brief PLAN_FILE N — extract '# Task N' section from a plan into the workspace.
+# Prints the brief path. Fence-aware: headings inside ``` blocks are ignored.
+set -euo pipefail
+[ $# -eq 2 ] || { echo "usage: task-brief PLAN_FILE N" >&2; exit 1; }
+plan="$1"; n="$2"
+[ -f "$plan" ] || { echo "plan not found: $plan" >&2; exit 1; }
+ws="$("$(dirname "$0")/workspace")"
+out="$ws/task-$n-brief.md"
+awk -v n="$n" '
+  /^```/ { fence = !fence }
+  !fence && $0 ~ ("^#+[ \t]+Task[ \t]+" n "([^0-9]|$)") { on=1; print; next }
+  !fence && on && /^#+[ \t]+Task[ \t]+[0-9]/ { exit }
+  on { print }
+' "$plan" > "$out"
+[ -s "$out" ] || { echo "Task $n not found in $plan" >&2; rm -f "$out"; exit 1; }
+printf '%s\n' "$out"

@@ -1,0 +1,37 @@
+# /orchestrate saved aliases — named dimension presets.
+# Invoke with: /orchestrate <task> alias=<name>
+# Explicit strategy=/dimension args still override anything an alias sets.
+# Add your own: any dimension from SKILL.md is valid under an alias.
+
+aliases:
+  # Careful build: adversarial plan, staged execution, panel review
+  fortress:
+    strategy: adversarial
+    review: panel:3
+    models: { planner: strongest, worker: sonnet }
+
+  # Cheap bulk execution with Claude reviewing Codex's work
+  codex-grind:
+    strategy: staged
+    engine: codex
+    review: dual
+    models: { reviewer: sonnet }
+
+  # Fast independent fan-out, minimal ceremony
+  blitz:
+    strategy: parallel
+    workers: 4
+    review: spec
+    isolation: worktree
+
+  # Overnight grind with hard rails
+  overnight:
+    strategy: loop
+    trigger: goal
+    budget: { cycles: 20, open_prs: 1 }
+    review: dual
+
+  # Big-model thinking, small-model doing
+  penny-wise:
+    strategy: advisor
+    models: { advisor: strongest, worker: sonnet }

@@ -1,0 +1,34 @@
+# orchestrate
+
+> One entry point, nine subagent-orchestration strategies, for any AI coding agent that reads a SKILL.md. Installs as an agent skill.
+
+orchestrate turns "run this plan with subagents" into a controlled process instead of an improvised
+one. Point it at a plan file or a task description and it picks (or you force) a strategy — staged
+sequential cycles, parallel worktree fan-out, hierarchical sub-orchestrator fleets, agent teams,
+deterministic workflows, goal/Ralph loops, advisor/executor cost splits, adversarial planning, or
+external CLIs (Codex/Grok) as workers — then coordinates, dispatches, and gates the subagent work
+through it. `/orchestrate` auto-triages when no strategy is forced: it measures task shape (plan
+present, task count, file-overlap independence, context size, verifiable stop condition) and states
+why it picked what it picked. Built for Claude Code first; the skill itself is plain agent-skills
+format, so any agent that reads a `SKILL.md` can use it.
+
+## Install
+
+- npm/skills.sh: `npx skills add gabros20/orchestrate@orchestrate -g`
+- Clone + installer (Claude Code, Codex, or both): `git clone https://github.com/gabros20/orchestrate && cd orchestrate && ./install.sh claude`
+- Manual copy: `cp -R skills/orchestrate ~/.claude/skills/orchestrate`
+
+## Docs
+
+- [README.md](https://raw.githubusercontent.com/gabros20/orchestrate/main/README.md): overview, install, composition presets, saved aliases, repo map.
+- [skills/orchestrate/SKILL.md](https://raw.githubusercontent.com/gabros20/orchestrate/main/skills/orchestrate/SKILL.md): the router — command grammar, strategy catalog, universal rules.
+- [docs/installation.md](https://raw.githubusercontent.com/gabros20/orchestrate/main/docs/installation.md): step-by-step install for Claude Code, Codex, and manual setups.
+- [docs/usage.md](https://raw.githubusercontent.com/gabros20/orchestrate/main/docs/usage.md): invoking `/orchestrate`, dimensions, resuming runs.
+- [docs/strategies.md](https://raw.githubusercontent.com/gabros20/orchestrate/main/docs/strategies.md): all nine strategies in depth — when to use each, their mechanics.
+- [docs/recipes.md](https://raw.githubusercontent.com/gabros20/orchestrate/main/docs/recipes.md): composed dimension recipes and saved aliases.
+- [docs/RESEARCH.md](https://raw.githubusercontent.com/gabros20/orchestrate/main/docs/RESEARCH.md): the evidence and sources behind the design choices.
+
+## Optional
+
+- [docs/DESIGN.md](https://raw.githubusercontent.com/gabros20/orchestrate/main/docs/DESIGN.md): design record — why the skill is shaped the way it is.
+- [Visual guide](https://orchestrate-skill.vercel.app): every strategy, dimension, and alias on one page.

@@ -1,0 +1,256 @@
+# Build plan: `orchestrate` — the orchestration super-skill
+
+**Goal.** Build a NEW standalone skill, **`orchestrate`** (`~/.claude/skills/orchestrate/`,
+invoked as `/orchestrate`): a **strategy-selectable orchestration super-skill** — one entry point,
+a catalog of orchestration strategies, picked **by the user via argument** or **by the agent via a
+data-driven triage** when no argument is given.
+
+**The existing `subagent-driven-development` skill is NOT modified** — it stays as-is for
+reference and keeps working. `orchestrate` *copies* its staged-cycle content (and its three prompt
+templates) into `strategies/staged.md` as the default strategy, then upgrades the copy. Never edit
+the original's files. Sources: 9 X posts + 2 X Articles (Jul 2026),
+official Claude Code docs (loops article, agents/workflows/agent-teams/CLI-reference/headless),
+Anthropic managed-agents multi-agent docs, Anthropic multi-agent research blog, davidondrej's 4
+orchestration skills, obra/superpowers SDD (raw source incl. scripts), 12 skills.sh registry
+skills, codex/grok CLI docs, Anthropic's ralph-wiggum plugin (raw), superdesigndev/loopany-platform
+(raw), AI-Builder-Club loop-engineer + verifier-setup skills (raw).
+
+---
+
+## 1. Design principle: strategies are presets over dimensions
+
+Same architecture as brease-factory's `mode → dimensions`: a **strategy is a named preset** over
+orthogonal **dimensions**; every rule in the skill reads dimensions, not the strategy name. This is
+what makes the catalog composable instead of nine hard-coded workflows.
+
+**Dimensions (the knobs):**
+
+| Dimension | Values | Default |
+|---|---|---|
+| `topology` | `solo` · `staged` · `parallel` · `hierarchical` · `team` · `workflow` · `loop` | from strategy |
+| `planning` | `none` · `plan-first` · `interview` · `adversarial` (two models argue N rounds to consensus) | `plan-first` |
+| `review` | `off` · `spec` · `quality` · `dual` (spec→quality, ordered) · `panel:N` (multi-lens) · `consensus:N` (vote) | `dual` |
+| `engine` | `claude` · `codex` · `grok` · `gemini` · `mixed` (route per task class) | `claude` |
+| `models` | tier map: `advisor:` `orchestrator:` `reasoner:` `worker:` `reviewer:` | see §5 |
+| `isolation` | `none` · `worktree` (per parallel writer) · `branch` | `worktree` when >1 writer |
+| `trigger` | `once` · `goal` (verifiable stop condition) · `interval` (/loop) · `schedule` (cron/routine) | `once` |
+| `budget` | max cycles, max agents, token target, review-bandwidth cap (max open PRs) | per strategy |
+
+## 2. Strategy catalog (the selectable presets)
+
+| Strategy | One-liner | Core sources |
+|---|---|---|
+| **`staged`** *(default, = today's skill upgraded)* | Fresh implementer per plan task, dual review gate, ledger, continuous execution | obra/superpowers; current skill |
+| **`parallel`** | Independent tasks fan out to N workers in **git worktrees**, file-ownership partitioning, integrator merges | Claude docs worktrees; affaan-m kanban; hjewkes decision tree |
+| **`hierarchical`** | Orchestrator → **sub-orchestrators** (focused thinkers per domain) → worker fleets; main context stays lean | shannholmberg swarm; Saboo meta-loop; RLM ("main conversation is the recursion stack") |
+| **`team`** | Agent Teams: shared task list, SendMessage mesh, competing hypotheses / debate, plan-approval gating | agent-teams docs; wshobson plugin |
+| **`workflow`** | Dynamic workflow script: deterministic fan-out/pipeline + adversarial verify, 10–1000 agents, resumable | workflows docs; ClaudeDevs dynamic workflows |
+| **`loop`** | Goal/Ralph loop: loop-contract file, verifier + state + stop condition, ratchet gating, evolve pass | 0xCodila Karpathy article; Jason Zhou article; goal-loop skill; ClaudeDevs loops article |
+| **`advisor`** | Cheap executor runs every turn, expensive model consulted rarely (~once/task) for steering; or inverse: expensive planner writes plan.md → cheap executor | ClaudeDevs (92% of Fable quality at 63% cost); shannholmberg review-loop; shadcn /improve |
+| **`adversarial`** | Planning hardened by debate: model A drafts, model B attacks, N rounds to consensus; then normal execution; premium model reviews at the end | Psalteric 4-step chain; diegocabezas01 blind-parallel synthesis |
+| **`xcli`** | External CLIs as subagents/peers: `codex exec`, `grok -p`, gemini — second opinions, cheap execution, cross-validation; monitored via their session dirs | codex-subagent skill; cjzafir; docs.x.ai; Codex CLI docs |
+
+Strategies compose via dimension overrides: e.g. `strategy=staged engine=codex` (Codex implements,
+Claude reviews), `strategy=loop topology=parallel` (each loop cycle fans out), `strategy=parallel
+review=panel:3`.
+
+## 3. Selection: argument first, triage second
+
+**Priority: explicit user argument > saved alias > auto-triage > ask.**
+
+Auto-triage (steal shinpr's scale-gating + hjewkes' decision tree + RLM's token budget): a cheap
+assessment pass measures — plan exists? task count; independence (shared files/state?); estimated
+context tokens (<50K → `solo`, don't orchestrate at all); verifiable stop condition exists?; blast
+radius (prod/customer-facing → human gates on). Output: recommended strategy + dimensions +
+one-line why, confirmed via AskUserQuestion **only when signals conflict**; otherwise proceed and
+state the choice. Every run records resolved dimensions in the run state file (auditable, like
+brease-factory's `run.json.dimensions`).
+
+## 4. File structure & layering (progressive disclosure)
+
+```
+~/.claude/skills/orchestrate/
+  SKILL.md                      # ROUTER ONLY (~150 lines): argument grammar, strategy table,
+                                # triage rules, dispatch → one strategy reference, red-flags
+  references/
+    triage.md                   # scale table, independence test, token-budget rule, decision tree
+    strategies/
+      staged.md  parallel.md  hierarchical.md  team.md  workflow.md
+      loop.md  advisor.md  adversarial.md  xcli.md
+    shared/
+      contracts.md              # typed report schemas, ledger, kanban states + merge gates
+      review-gates.md           # spec/quality/panel machinery, dedup rules, severity calibration
+      model-routing.md          # tier table + per-engine mapping
+      isolation.md              # worktree mechanics (.worktreeinclude, baseRef, cleanup)
+      monitoring.md             # hooks, session dirs, claude agents --json, ~/.codex, ~/.grok
+      safety-rails.md           # loop caps, kill switch, budgets, overload protocol
+      handoff.md                # context compaction between stages (fold davidondrej/handoff)
+    prompts/
+      implementer.md  spec-reviewer.md  quality-reviewer.md      # (upgraded existing three)
+      sub-orchestrator.md  verifier.md  advisor.md  integrator.md
+      planner-debate.md  triage-assessor.md  evolve.md
+  config.yaml                   # optional: user aliases → saved dimension presets (dispatch skill)
+```
+
+SKILL.md stays a thin router; each strategy file owns its full lifecycle (when to use / roles /
+step flow / failure handling / worked example) — the same "read only what your job requires"
+layering brease-factory uses.
+
+## 5. Model routing (shared tier table)
+
+Convergent across ClaudeDevs, shannholmberg, diegocabezas01, hjewkes, Anthropic blog:
+
+| Tier | Role | Default | Notes |
+|---|---|---|---|
+| **Advisor** | rare, judgment-only consults; NOT in hot path | strongest available (fable/opus) | called ~once per task; ClaudeDevs: 92% quality @ 63% cost |
+| **Orchestrator** | plans, decomposes, scores results; never implements | strong (opus) | "never executes — plans, assigns, measures" |
+| **Reasoner** | architecture, debugging, algorithm design | opus | escalation target for BLOCKED |
+| **Worker** | scoped mechanical execution | sonnet / cheap engine | most tokens billed here |
+| **Reviewer** | spec/quality/verification | sonnet; panel adds diverse lenses | separate maker from checker — always |
+| **Peer** | different-model second opinion | codex (GPT) / grok | blind-parallel: never show one the other's answer before synthesis |
+
+Anthropic's own finding baked into triage: token budget explains ~80% of quality variance — each
+strategy carries a stated effort tier and an explicit agent/token budget.
+
+## 6. What each strategy file must encode (the stolen best-practices)
+
+**staged.md** (port of today's skill, upgraded with obra's current mechanics — verified from raw
+source): keep dual gate + statuses; ADD —
+- **File handoffs**: `task-brief` extracts `# Task N` from the plan into `.orchestrate/task-N-brief.md`;
+  implementer writes full detail to `task-N-report.md` and returns **<15 lines** (status, commits,
+  one-line tests, concerns, report path). Rationale: everything pasted into a dispatch or printed
+  back stays resident in controller context forever.
+- **Workspace**: `.orchestrate/` in the working tree with a self-ignoring `.gitignore` (`printf '*\n'`)
+  — never under `.git/` (agent writes there are denied), never in `git status`.
+- **Ledger**: `.orchestrate/progress.md`, one line per clean task: `Task N: complete (commits
+  <base7>..<head7>, review clean)`. On resume/compaction: trust ledger + `git log` over recollection
+  (obra's single most expensive observed failure: controllers re-dispatching completed tasks).
+- **Review package**: `review-package BASE HEAD` diff file; always the recorded BASE, never `HEAD~1`
+  (truncates multi-commit tasks).
+- **Model discipline**: model explicit on EVERY dispatch ("omitted model silently inherits the
+  session's most expensive"); "turn count beats token price" — mid-tier is the floor for reviewers
+  and prose-driven implementers, cheapest only for transcription-grade work.
+- **Fix-wave economics**: Critical/Important → fix subagent; Minor → ledger, batched to final
+  review; final-review findings → ONE fix subagent with the complete list, never one per finding.
+- **Reviewer hygiene**: reviewer is read-only; never pre-judge findings in the reviewer prompt
+  ("do not flag X" = you're sparing yourself a review loop); copy plan Global Constraints verbatim;
+  implementer rationale never downgrades severity; ⚠️ "cannot verify from diff" items resolved by
+  the controller (it holds cross-task context).
+- **Pre-flight**: scan the whole plan once for contradictions/plan-mandated defects; batch to the
+  human as ONE question. Then continuous execution — no between-task check-ins.
+- Escalation ladder (context → stronger model → split → human; never blind retry — matches the
+  existing overload memory rule), stub-detection bounce-back (shinpr), restart-from-triage on scope
+  change (shinpr).
+
+**parallel.md**: independence decision tree (single vs sequential vs parallel — hjewkes); the 4
+decomposition axes (layer/component/concern/**file-ownership**); worktree per writer
+(`isolation: worktree`, auto-removed if unchanged); task card = narrow contract with **merge gate +
+exit criteria** (affaan-m); integrator role for overlapping writes; per-agent return-format + token
+budget ("verdict first, <1000 tokens"); cleanup sweep after fan-out (brease-factory F81 pattern).
+Worktree contract details (AI-Builder-Club): copy the repo's gitignored `.env*` into each fresh
+worktree (it has none); worker's output contract = PR URL + summary, while ledger/knowledge writes
+stay with the orchestrator; mandatory `git worktree remove` after the PR (a leftover worktree pins
+its branch) and the orchestrator checks `git worktree list` is clean.
+
+**hierarchical.md**: orchestrator keeps only conclusions; sub-orchestrators do focused thinking and
+delegate to their own workers. Encode the **depth reality**: Claude Code subagents can't spawn
+subagents; Workflow `workflow()` nests exactly one level; teams can't nest — so hierarchy is built
+as *teammates-as-sub-orchestrators spawning foreground subagents*, or workflow-in-workflow, and the
+file must say which to pick when. Blind parallel counsel (Opus + Codex same problem, synthesize
+without cross-contamination — diegocabezas01).
+
+**team.md**: enablement (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`), preset team catalog (review /
+debug-hypotheses / feature / fullstack / research / security / migration — wshobson), sizing
+heuristics (3–5, 5–6 tasks each, "smallest team covering all dimensions"), message discipline
+(direct > broadcast, broadcast cost ∝ N), plan-approval workflow, quality hooks (TeammateIdle /
+TaskCompleted exit-2 gating), file-conflict partitioning, known limitations list.
+
+**workflow.md**: when script-holds-the-plan beats Claude-holds-the-plan; pilot-on-a-slice before
+full run; size guideline + 25-agent/1.5M-token warnings; pipeline-over-barrier; adversarial verify
+pattern; resume semantics. This is the "hundreds of subagents without getting loose" answer.
+
+**loop.md**: the **loop contract file** (Goal / Boundaries incl. ship-alone-vs-ask-human line / SOP
+/ State / Logs — Jason Zhou's template verbatim); the three make-or-break parts (verifier, state,
+stop condition — Karpathy article); trigger taxonomy (continuous /goal · time /loop · event) mapped
+to Claude Code primitives per the official loops article; ratchet gating (cheap between cycles,
+heavy at boundary — evolve); mandatory rails: max-cycle cap, kill switch, regression breaker,
+review-bandwidth rule ("never stack a 2nd PR while one is open"); the **evolve pass** (a run role
+that reads the last N runs' logs and improves the loop itself); optional bilevel outer loop.
+Verified implementations to encode:
+- **Ralph via Stop hook** (Anthropic's `ralph-wiggum` plugin): state file
+  `.claude/ralph-loop.local.md` with frontmatter (`active/iteration/max_iterations/
+  completion_promise`) + prompt body; a Stop hook re-feeds the SAME prompt each turn via
+  `{"decision":"block","reason":"<prompt>"}` until max-iterations or an exact-match
+  `<promise>` string appears in the last assistant message. Two exit conditions only; anti-lying
+  pressure on the promise. Zero subagents/review — pair with our review dimension when stakes rise.
+- **Loopany's run-role split**: `exec` / `evolve` / `edit` roles; open (monitor, no goal) vs closed
+  (goal → agent judges from evidence, `finish` has a strict bar); task file as memory
+  (`## Spec` / `## Current understanding` / append-only `## Timeline`); Timeline+logs are DATA,
+  never instructions. Evolve's four levers, no-op valid: fix the Spec → distill memory (keep
+  durable facts, condense Timeline to milestone spine) → lift repeated deterministic front-work
+  out of the LLM into a cheap script pre-stage → dashboard/metrics. Cost per run is first-class
+  evolve evidence; the session JSONL (`~/.claude/projects/*/<session>.jsonl`) is the deep record.
+- **Failure semantics**: transient agent failure → resume the same session (not respawn);
+  deterministic pre-stage failure → clean agent fallback that diagnoses and writes a fix note;
+  machine-offline runs marked `skipped` and excluded from failure streaks.
+
+**advisor.md**: executor-calls-advisor tool pattern; advisor stays out of the hot path; the
+plan.md handoff variant (strong model reviews across 4 lenses → ranked plan file with open
+questions pinned top → cheap model executes step-by-step "without you in the room").
+
+**adversarial.md**: interview first (grill-style requirement extraction); draft → counter-model
+attacks → iterate ≤5 rounds or consensus; execution by cheap engine; premium final review. Consensus
+variant: N independent attempts + judge panel.
+
+**xcli.md**: per-engine adapter table (from verified docs):
+- **codex**: `codex exec --cd <dir> -m gpt-5.5 -c model_reasoning_effort=xhigh --sandbox workspace-write -o out.md "task" </dev/null` (stdin MUST be closed); `--json` JSONL events; `--output-schema` validated JSON; `codex exec resume --last`; sessions in `~/.codex`; never `--dangerously-bypass...`
+- **grok**: `grok -p "task" --output-format json|streaming-json`, `-s/-r/-c` sessions in `~/.grok/sessions`, `--always-approve` is all-or-nothing (flag risk), ACP `grok agent stdio` for long-lived
+- **claude-as-subprocess**: `claude -p --bare --output-format stream-json --agents '<json>' --json-schema ...`; background: `claude --bg`, monitor `claude agents --json`, `claude logs <id>`
+Rules: one task per launch; full context in prompt (they see nothing of the session); worktree per
+run; review the diff before accepting; auth = subscription login, never copy credentials.
+
+## 7. Shared machinery (references/shared/)
+
+- **contracts.md** — every role returns a typed report (status enum `DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED` + schema per role, shinpr-style); ledger format; kanban card with exit-criteria + merge-gate ("readiness by gate, not vibes"); artifact-on-disk-is-the-interface rule.
+- **review-gates.md** — two *kinds* of gates, both first-class: **plan-veto before execution** (edict menxia / team plan-approval) and **output review after**; panel dedup rules (same file:line → merge; conflicting severity → higher wins); severity calibration matrix; "reviewer found issues = fix = re-review, no skipping"; verification **with evidence** (screenshot/video/test output attached — Jason Zhou). Encode the verifier split (AI-Builder-Club `/verify`, verified from source): **subjective "does it do what was intended?" → a FRESH read-only verifier subagent that drives the real running app FIRST** (independence + context isolation; returns strictly `works|broken / expected / observed / evidence`), **objective codified checks (typecheck/lint/tests) → the orchestrator runs after** as a regression sweep; broken → fix → fresh verifier, cap ~3 rounds then escalate; evidence lands in a gitignored `evidence/` dir, screenshots embedded inline in the PR, video linked.
+- **monitoring.md** — progress ledger + SubagentStop hooks (the brease-factory pattern); `/tasks`, `/workflows`, agent panel; `claude agents --json` for background sessions; tailing `~/.claude/projects/*.jsonl`, `~/.codex`, `~/.grok/sessions` for external engines; optional OTel/dashboard pointers.
+- **safety-rails.md** — never start on main without consent; loop caps + kill switch; token/agent budgets per strategy; **overload protocol: on 529/limit never spawn a duplicate agent — nudge/resume the same one** (proven in this repo); external-send/PR caution; permission modes for headless runs.
+- **handoff.md** — when a stage's context is dying: compact into a state-not-instructions handoff file (davidondrej template) and re-dispatch fresh.
+
+## 8. API surface (argument grammar)
+
+```
+/subagent-driven-development [plan-file|task description]
+    [strategy=auto|staged|parallel|hierarchical|team|workflow|loop|advisor|adversarial|xcli]
+    [review=dual|spec|quality|panel:N|consensus:N|off]
+    [engine=claude|codex|grok|gemini|mixed]
+    [models=orchestrator:opus,worker:sonnet,advisor:fable,...]
+    [isolation=worktree|branch|off]
+    [trigger=once|goal:"<stop condition>"|interval:<t>|schedule:"<cron>"]
+    [workers=N] [budget=<tokens|cycles|agents>] [alias=<saved-preset>]
+```
+- bare invocation + plan file → triage picks (usually `staged`)
+- `strategy=` forces; every other arg is a dimension override on the preset
+- `alias=` loads a saved preset from `config.yaml` (dispatch-skill idea); "save this as <name>" writes one
+
+## 9. Implementation phases
+
+1. **Router + triage** — write SKILL.md as the router (grammar, catalog table, triage, red-flags); write `triage.md`; COPY `subagent-driven-development`'s SKILL.md + 3 prompt templates into `strategies/staged.md` + `prompts/` unchanged-in-behavior (the original skill is never touched). *`staged` is the default strategy.*
+2. **Shared layer** — `contracts.md`, `review-gates.md`, `model-routing.md`, `safety-rails.md`, `handoff.md`; upgrade the 3 existing prompt templates to file-based briefs/reports + ledger.
+3. **Parallel + isolation** — `parallel.md`, `isolation.md`, `integrator.md` prompt.
+4. **Loop** — `loop.md` + loop-contract template + `evolve.md` prompt + rails.
+5. **Team + hierarchical** — `team.md`, `hierarchical.md`, `sub-orchestrator.md` prompt.
+6. **Advisor + adversarial** — `advisor.md`, `adversarial.md`, `planner-debate.md`.
+7. **xcli + monitoring** — `xcli.md` (verify each CLI's flags against `--help` at runtime — APIs drift), `monitoring.md`.
+8. **Config + polish** — `config.yaml` aliases, worked examples per strategy, self-test: run each strategy on a toy task.
+
+Each phase ships independently; the skill is usable after phase 1.
+
+## 10. Anti-goals / guardrails for the rewrite
+
+- SKILL.md must stay a router — no strategy detail leaks up (the current 279-line file already
+  mixes levels; the rewrite is stricter, not bigger).
+- Don't build infra (no daemons/dashboards/Docker — edict's mistake). Compose native primitives.
+- Honor "when NOT to orchestrate": <50K-token or tightly-coupled work runs `solo`; a strategy that
+  costs more than it returns is a bug (Karpathy article's 4-condition test for loops).
+- Keep every claim about external CLIs verify-at-runtime ("check `--help` before trusting a flag").

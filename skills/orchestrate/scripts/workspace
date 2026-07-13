@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Resolve (and create) the orchestrate workspace: <repo-root>/.orchestrate
+# Lives in the working tree, NOT .git/ (agent writes under .git/ are denied).
+# Self-ignoring: contains a .gitignore with '*' so it never appears in git status.
+set -euo pipefail
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "not a git repo" >&2; exit 1; }
+ws="$root/.orchestrate"
+mkdir -p "$ws"
+[ -f "$ws/.gitignore" ] || printf '*\n' > "$ws/.gitignore"
+printf '%s\n' "$ws"

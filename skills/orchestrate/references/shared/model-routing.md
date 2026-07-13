@@ -32,4 +32,8 @@
    ~63% cost, advisor consulted ~once per task. When budget-pressed, prefer advisor-shaped
    routing over downgrading the whole run.
 8. Effort knobs exist beyond model choice: Claude `--effort low..max`, codex
-   `-c model_reasoning_effort=minimal..xhigh`. Cheap stage = low effort; judge stage = high.
+   `-c model_reasoning_effort=low..ultra` (medium default; `ultra` fans out Codex-side subagents —
+   treat as a fan-out decision, not an effort bump). Cheap stage = low effort; judge stage = high.
+9. Engine tier map (codex, verified 2026-07-13): `gpt-5.6-luna` ≈ cheap worker ·
+   `gpt-5.6-terra` ≈ standard worker/reviewer · `gpt-5.6-sol` ≈ reasoner/advisor/peer.
+   Model lists drift — re-verify slugs before pinning (`strategies/xcli.md`).

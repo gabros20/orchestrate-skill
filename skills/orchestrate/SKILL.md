@@ -1,5 +1,6 @@
 ---
 name: orchestrate
+version: 1.0.0
 description: Strategy-selectable subagent orchestration. Use when executing an implementation plan or any multi-step task with subagents — sequential staged cycles, parallel worktree fan-out, hierarchical sub-orchestrator fleets, agent teams, dynamic workflows, goal/Ralph loops, advisor/executor cost splits, adversarial planning, or external CLI engines (codex/grok) as workers. Triggers - /orchestrate, "orchestrate this", "run this plan with subagents", "fan out agents", "goal loop", "agent swarm". The user can force a strategy with strategy=<name>; otherwise a triage pass picks one and says why.
 ---
 

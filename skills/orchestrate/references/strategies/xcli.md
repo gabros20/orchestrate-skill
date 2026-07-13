@@ -15,7 +15,7 @@ scripting against it.
 codex --version && codex login status          # preflight; not logged in → user runs `codex login`
 OUT=$(mktemp)
 codex exec --cd /path/to/repo \
-  -m gpt-5.5 -c model_reasoning_effort=high \
+  -m gpt-5.6-terra -c model_reasoning_effort=high \
   --sandbox workspace-write \
   -o "$OUT" \
   "Full task: goal, constraints, files to touch, definition of done." </dev/null
@@ -25,7 +25,13 @@ cat "$OUT"; git -C /path/to/repo status --short   # read result; inspect what it
   `codex exec [flags] - < task.md`.
 - Structured output: `--output-schema schema.json` (validated) · events: `--json` (JSONL:
   `thread.started/turn.completed/item.completed/error`).
-- Reasoning effort: `-c model_reasoning_effort=minimal|low|medium|high|xhigh`.
+- Models (verified 2026-07-13): `gpt-5.6-sol` (flagship — reasoner/advisor/peer tier),
+  `gpt-5.6-terra` (balanced — standard worker/reviewer), `gpt-5.6-luna` (cheap — mechanical
+  worker); `gpt-5.5`/`gpt-5.4[-mini]` remain available. Re-verify before pinning: model lists
+  drift (`codex exec -m <slug>` errors loudly on an unknown slug).
+- Reasoning effort: `-c model_reasoning_effort=low|medium|high|xhigh|max|ultra` (medium default).
+  `ultra` fans out Codex-side subagents — nested orchestration that multiplies spend like any
+  fan-out; use only when you'd have approved a fleet anyway.
 - Approvals: `-a untrusted|on-request|never`; network inside sandbox:
   `-c sandbox_workspace_write.network_access=true`. NEVER `--dangerously-bypass-approvals-and-sandbox`.
 - Follow-up same session: `codex exec resume --last "…" </dev/null` (cwd-scoped).

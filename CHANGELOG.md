@@ -12,6 +12,14 @@ tagged in git as `v<version>`. Every release PR updates **both** plus this file.
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-07-13
+
+### Changed
+- `xcli` strategy + model routing updated for the new Codex model family (verified against the
+  official model docs): `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` with the new reasoning
+  effort ladder `low…ultra` (`ultra` fans out Codex-side subagents — documented as a fan-out
+  decision, not an effort bump). Engine tier map added to `shared/model-routing.md`.
+
 ## [1.0.1] — 2026-07-13
 
 ### Added
@@ -39,6 +47,7 @@ tagged in git as `v<version>`. Every release PR updates **both** plus this file.
 - Docs (`docs/`), visual guide (`site/` → orchestrate-skill.vercel.app), skills.sh-standard
   install (`install.sh`, `npx skills add gabros20/orchestrate`).
 
-[Unreleased]: https://github.com/gabros20/orchestrate/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/gabros20/orchestrate/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/gabros20/orchestrate/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/gabros20/orchestrate/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/gabros20/orchestrate/releases/tag/v1.0.0

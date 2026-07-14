@@ -6,9 +6,10 @@
 improvised one. You point it at a plan or a task; it picks (or you force) a strategy —
 sequential staged cycles, parallel worktree fan-out, hierarchical sub-orchestrator fleets, agent
 teams, deterministic workflows, goal/Ralph loops, advisor/executor cost splits, adversarial
-planning, or external CLIs (Codex/Grok) as workers — then coordinates, dispatches, and gates
-subagent work through it. Built for Claude Code first; the skill is plain agent-skills format, so
-any agent that reads a `SKILL.md` can use it.
+planning, or external CLIs (Codex/Grok/Cursor/Antigravity/opencode/Hermes) as workers — then
+coordinates, dispatches, and gates subagent work through it. Claude Code is the reference host;
+the skill is plain [Agent Skills](https://agentskills.io) format with a built-in host-adapter
+layer, so it runs on any agent that reads `SKILL.md` (see [Supported agents](#supported-agents)).
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -22,16 +23,36 @@ and alias on one page.
 npx skills add gabros20/orchestrate@orchestrate -g
 ```
 
-**Clone + installer** (targets Claude Code, Codex, or both):
+**Clone + installer** (per-host targets):
 ```bash
 git clone https://github.com/gabros20/orchestrate && cd orchestrate
-./install.sh claude   # or: codex | all
+./install.sh claude   # or: codex | cursor | antigravity | opencode | grok | hermes | agents | all
 ```
+`agents` installs to `~/.agents/skills` — the cross-agent standard path that Codex, Cursor,
+opencode, Copilot, and Amp all read; `all` = claude + agents.
 
 **Manual:**
 ```bash
-cp -R skills/orchestrate ~/.claude/skills/orchestrate
+cp -R skills/orchestrate ~/.claude/skills/orchestrate   # or your host's skills dir
 ```
+
+## Supported agents
+
+| Host | Skills | Native subagents | Model pin per dispatch | Quirks that matter |
+|---|---|---|---|---|
+| **Claude Code** | ✅ reference | ✅ deep, background, teams | ✅ | none — every primitive native |
+| **Codex CLI** | ✅ `~/.agents/skills` | ✅ 6 threads, depth 1 | ✅ | no background shells (`nohup`+poll); `codex exec` needs `</dev/null` |
+| **Cursor CLI** | ✅ (2.4+, reads `.claude/skills` too) | ✅ parallel + background, depth 1 | ✅ | headless ask-user is broken — human gates need ACP or interactive |
+| **Antigravity** (`agy`/IDE) | ✅ | ✅ async, depth 10, messaging | ❌ inherits parent | `agy -p` flags under-documented; IDE/CLI use different global skill dirs |
+| **opencode** | ✅ (reads `.claude`/`.agents` too) | ⚠️ synchronous only | ✅ | parallel fan-out via `opencode serve`+SDK or external processes |
+| **Grok Build** | ✅ (reads `.claude/` wholesale) | ✅ 8 parallel, auto-worktree | ❌ | skills load at session start; approvals all-or-nothing |
+| **Hermes** | ✅ explicit `/orchestrate` only | ⚠️ 3 concurrent, flat | ❌ (upstream bug) | no auto-trigger; user-level skills dir only |
+
+The skill detects its host at kickoff and binds six abstract primitives (dispatch / parallel /
+message / ask-user / worktree / loop) natively where possible, degrading honestly where not —
+`team` needs Claude Code or Antigravity, `workflow` needs Claude Code, everything else runs
+everywhere (worst case as headless-CLI fan-out). Full matrix + bindings:
+[`references/shared/hosts.md`](skills/orchestrate/references/shared/hosts.md).
 
 ## Quick start
 
@@ -93,7 +114,7 @@ Explicit `strategy=`/dimension flags always override an alias; `alias=` always o
 | **loop** | Recurring or grind-until-done work with a verifiable stop condition |
 | **advisor** | Cost split — cheap executor runs, expensive model consulted rarely (or plans up front) |
 | **adversarial** | High-stakes plan worth hardening by debate before cheap execution |
-| **xcli** | Route work to external CLIs (Codex/Grok) as workers, peers, or second opinions |
+| **xcli** | Route work to external CLIs (Codex/Grok/Cursor/agy/opencode/Hermes) as workers, peers, or second opinions |
 
 Strategies compose: `strategy=staged engine=codex` (Codex implements, Claude reviews) ·
 `strategy=loop topology=parallel` (each cycle fans out) · `strategy=parallel review=panel:3`.
@@ -107,7 +128,7 @@ Every strategy is a preset over these; you can override any of them on top of a 
 | `topology` | solo · staged · parallel · hierarchical · team · workflow · loop | from strategy |
 | `planning` | none · plan-first · interview · adversarial | plan-first |
 | `review` | off · spec · quality · dual · panel:N · consensus:N | dual |
-| `engine` | claude · codex · grok · mixed | claude |
+| `engine` | claude · codex · grok · cursor · agy · opencode · hermes · mixed | claude |
 | `models` | tier map (advisor/orchestrator/reasoner/worker/reviewer/peer) | see model-routing |
 | `isolation` | none · worktree · branch | worktree when >1 writer |
 | `trigger` | once · goal · interval · schedule | once |
@@ -131,7 +152,7 @@ Every strategy is a preset over these; you can override any of them on top of a 
 skills/orchestrate/   the skill: SKILL.md (router), config.yaml (aliases), references/, scripts/
 docs/                 research/ (research records), designs/ (versioned implementation designs)
 site/                 the visual guide, deploys to orchestrate-skill.vercel.app
-install.sh            installer (claude | codex | all)
+install.sh            installer (claude | codex | cursor | antigravity | opencode | grok | hermes | agents | all)
 ```
 
 More docs: [docs/research/](docs/research/) · [docs/designs/](docs/designs/) ·
@@ -140,9 +161,11 @@ More docs: [docs/research/](docs/research/) · [docs/designs/](docs/designs/) ·
 
 ## Requirements
 
-- [Claude Code](https://claude.com/product/claude-code) (primary target).
+- Any [Agent Skills](https://agentskills.io) host — [Claude Code](https://claude.com/product/claude-code)
+  is the reference; Codex, Cursor, Antigravity, opencode, Grok Build, and Hermes are supported
+  via the host-adapter layer (see [Supported agents](#supported-agents)).
 - `git`, for worktree/branch isolation.
-- Optional: `codex` and/or `grok` CLIs installed and on `PATH` for `engine=xcli` workers.
+- Optional: any of the other CLIs installed and on `PATH` for `engine=xcli` workers.
 
 ## License
 

@@ -10,7 +10,8 @@ the product it works on.
 ## Inputs
 - Contract: [.orchestrate/loop-<name>.md] (Goal/Boundaries/SOP + Current understanding + Logs)
 - Run history: the last ~12 runs' log lines + outcomes + costs
-- Deep record (optional): session transcripts under ~/.claude/projects/ for wasted-run forensics
+- Deep record (optional): session transcripts (Claude Code: ~/.claude/projects/; other hosts:
+  the run's captured --json logs in .orchestrate/raw/) for wasted-run forensics
 
 ## Communication contract
 Routine narration is silence: while working, don't announce tool calls, restate this brief,

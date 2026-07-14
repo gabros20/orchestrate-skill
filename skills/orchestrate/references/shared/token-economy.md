@@ -122,7 +122,8 @@ calls, a multi-file integration ≈ 15):
 1. **The map** — the brief's pointers + `.orchestrate/toolbox.md` (this repo's probed recipes:
    structure, outline, search — read it instead of probing for tools).
 2. **Shape** (≤2 calls) — structure-list the touched area (toolbox `structure:` recipe).
-3. **Rules** (≤3 reads) — conventions files (CLAUDE.md/AGENTS.md), the manifest + lockfile name.
+3. **Rules** (≤3 reads) — conventions files (CLAUDE.md/AGENTS.md/GEMINI.md — whichever the repo
+   and host use), the manifest + lockfile name.
 4. **Patterns** (1–3 reads) — ONE neighboring module doing the same kind of thing as the task;
    the strongest convention signal there is.
 5. **Symbols before bodies** — outline the files you'll touch (toolbox `outline:` recipe), then

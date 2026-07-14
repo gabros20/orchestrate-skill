@@ -83,5 +83,16 @@ while IFS='|' read -r pattern homes; do
   done
 done <<< "$registry"
 
-if [ "$fail" -eq 0 ]; then note "OK — blocks byte-identical, numbers honest, invariants present"; fi
+# --- 4. host layer (v1.4.0 multi-CLI support) ---------------------------------------
+[ -f "$skill/references/shared/hosts.md" ] || err "references/shared/hosts.md missing"
+for f in team workflow; do
+  grep -qi 'Host availability' "$skill/references/strategies/$f.md" \
+    || err "strategies/$f.md missing its 'Host availability' note"
+done
+n="$(wc -l < "$skill/SKILL.md")"
+[ "$n" -le 120 ] || err "SKILL.md exceeds its 120-line budget ($n lines)"
+n="$(wc -l < "$skill/references/shared/hosts.md")"
+[ "$n" -le 200 ] || err "hosts.md exceeds its 200-line budget ($n lines)"
+
+if [ "$fail" -eq 0 ]; then note "OK — blocks byte-identical, numbers honest, invariants present, host layer intact"; fi
 exit "$fail"

@@ -1,17 +1,20 @@
 # Installation
 
 How to get `/orchestrate` running, confirm it's registered, update it, and remove it. `orchestrate`
-is a plain [agent-skills](https://github.com/anthropics/skills)-format skill — a directory with a
+is a plain [Agent Skills](https://agentskills.io)-format skill — a directory with a
 `SKILL.md` — so any agent that reads that format can use it. This guide targets Claude Code
-(primary target) and notes the Codex path where it differs.
+(the reference host) and notes the other hosts' paths where they differ; the per-host capability
+matrix lives in the README's "Supported agents" section and
+`skills/orchestrate/references/shared/hosts.md`.
 
 ## Prerequisites
 
 - `git` — the skill uses `git worktree` for isolation (`strategy=parallel`, `isolation=worktree`)
   and expects a git repo for branch-first work.
-- [Claude Code](https://claude.com/product/claude-code), for the primary path.
-- Optional, only if you plan to use `engine=codex` or `engine=grok`: the `codex` and/or `grok` CLIs
-  installed and on `PATH`, each logged in. See [Optional: external engines](#optional-external-engines-codexgrok) below.
+- An Agent Skills host: [Claude Code](https://claude.com/product/claude-code) (reference), or
+  Codex CLI / Cursor CLI / Antigravity / opencode / Grok Build / Hermes.
+- Optional, only if you plan to use `engine=codex|grok|cursor|agy|opencode|hermes`: that CLI
+  installed and on `PATH`, logged in. See [Optional: external engines](#optional-external-engines-codexgrok) below.
 
 ## Install (pick one)
 
@@ -30,7 +33,7 @@ project only.
 
 ```bash
 git clone https://github.com/gabros20/orchestrate && cd orchestrate
-./install.sh claude   # or: codex | all
+./install.sh claude   # or: codex | cursor | antigravity | opencode | grok | hermes | agents | all
 ```
 
 `install.sh` takes one argument (default `claude` if omitted):
@@ -38,8 +41,13 @@ git clone https://github.com/gabros20/orchestrate && cd orchestrate
 | Argument | Installs to |
 |---|---|
 | `claude` | `~/.claude/skills/orchestrate/` |
-| `codex` | `~/.agents/skills/orchestrate/` |
-| `all` | both of the above |
+| `codex` / `agents` | `~/.agents/skills/orchestrate/` (the cross-agent standard path — Cursor, opencode, Copilot, Amp read it too) |
+| `cursor` | `~/.cursor/skills/orchestrate/` |
+| `antigravity` | `~/.gemini/config/skills/` (IDE) **and** `~/.gemini/antigravity-cli/skills/` (agy) |
+| `opencode` | `~/.config/opencode/skills/orchestrate/` |
+| `grok` | `~/.grok/skills/orchestrate/` (Grok Build also reads `~/.claude/skills` directly) |
+| `hermes` | `~/.hermes/skills/orchestrate/` (Hermes has no confirmed project-level dir; invoke explicitly with `/orchestrate`) |
+| `all` | `claude` + `agents` — covers most hosts without littering every vendor dir |
 
 It's a straight copy — `rm -rf <dest>` then `cp -R skills/orchestrate <dest>` — so re-running it is
 also how you update (see [Updating](#updating) below). No other arguments are accepted; anything
@@ -72,9 +80,12 @@ frontmatter `name` field. After installing:
    You should see `name: orchestrate` and a `description:` line. A missing or malformed
    frontmatter block is the usual reason a skill silently fails to register.
 
-For the Codex install target (`~/.agents/skills/orchestrate/`), registration is governed by your
-Codex CLI version's own skill-discovery mechanism — confirm the directory and `SKILL.md` exist, and
-consult your Codex CLI's docs if it isn't picking the skill up.
+For the other hosts, registration is governed by each CLI's own skill-discovery mechanism —
+confirm the directory and `SKILL.md` exist, then note the per-host invocation differences:
+opencode invokes skills via its `skill` tool (no slash form); Gemini-lineage hosts may show a
+one-time consent prompt on first activation; Grok Build loads skills at session start only (start
+a new session after installing); Hermes requires explicit `/orchestrate` (no description
+auto-trigger). Quirk list: `skills/orchestrate/references/shared/hosts.md`.
 
 ## Updating
 
@@ -107,14 +118,18 @@ that's per-project state, not part of the skill install. Delete it separately (`
 
 ## Optional: external engines (codex/grok)
 
-Needed only if you plan to dispatch work with `engine=codex`, `engine=grok`, `engine=mixed`, or the
-`xcli` strategy (see [strategies.md](strategies.md#xcli) and
+Needed only if you plan to dispatch work with `engine=codex|grok|cursor|agy|opencode|hermes`,
+`engine=mixed`, or the `xcli` strategy (see [strategies.md](strategies.md#xcli) and
 [usage.md](usage.md#invocation-grammar)).
 
 | Engine | Install | Auth | Notes |
 |---|---|---|---|
 | `codex` | `codex` CLI on `PATH` | `codex login status` — not logged in → run `codex login` | Most script-friendly; sessions in `~/.codex` |
 | `grok` | `grok` CLI on `PATH` | cookie-based session; run once interactively to authenticate | Approval is all-or-nothing (`--always-approve`); sessions in `~/.grok/sessions` |
+| `cursor` | `cursor-agent` on `PATH` | interactive login once | Headless ask-user is broken — human-gated work needs ACP or interactive |
+| `agy` | `agy` on `PATH` | keyring/OAuth (interactive) | `agy -p` confirmed; other flags under-documented — probe `agy --help` first |
+| `opencode` | `opencode` on `PATH` | provider keys via its config | `opencode run` one-shots; parallel via multiple processes or `opencode serve` |
+| `hermes` | `hermes` on `PATH` | its own config | `hermes -z` one-shots; pin models per process (in-agent pinning is broken upstream) |
 
 `orchestrate` never reads or copies credential files for either CLI — auth is always the user's,
 done outside the skill. CLI flags drift between versions; run `codex --help` / `grok --help` once

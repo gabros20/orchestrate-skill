@@ -81,8 +81,10 @@
   h2 .lu{color:var(--accent); width:20px; height:20px}
   section{margin-top:64px}
   .lede{font-size:19px; color:var(--muted); max-width:60ch; margin:0}
-  .hosts{margin-top:12px; font-family:ui-monospace,Menlo,monospace; font-size:12.5px; color:var(--muted); letter-spacing:.01em}
-  .hosts b{color:var(--accent); font-weight:600}
+  .hosts{display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin:16px 0 0}
+  .hosts .hl{font-family:"Avenir Next Condensed","Arial Narrow",system-ui,sans-serif; text-transform:uppercase; letter-spacing:.14em; font-weight:600; font-size:11px; color:var(--muted); margin-right:2px}
+  .hosts span:not(.hl){font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:var(--muted); background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:3px 9px; white-space:nowrap}
+  .hosts span.ref{color:var(--accent); font-weight:600}
   .lede b{color:var(--ink)}
   p{max-width:68ch}
   a{color:var(--accent)}
@@ -317,7 +319,7 @@
   one command, many fresh agents, every result checked before it counts.</p>
   <div class="term" style="margin-top:22px"><span class="c"># that's the whole start</span>
 <span class="p">/orchestrate</span> plan.md</div>
-  <p class="hosts">runs on <b>Claude Code</b> · Codex · Cursor · Antigravity · opencode · Grok Build · Hermes</p>
+  <p class="hosts"><span class="hl">runs on</span><span class="ref">Claude Code</span><span>Codex</span><span>Cursor</span><span>Antigravity</span><span>opencode</span><span>Grok Build</span><span>Hermes</span></p>
   <nav aria-label="page sections">
     <a href="#idea">the idea</a><a href="#strat">choose a strategy</a><a href="#gates">safety</a>
     <a href="#tokens">cost</a><a href="#start">start</a>

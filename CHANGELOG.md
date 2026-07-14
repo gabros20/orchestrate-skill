@@ -14,6 +14,11 @@ every PR).
 
 ## [Unreleased]
 
+### Site & visual guide
+- Hero "runs on" line upgraded from plain wrapped text (dangling `·` separators at narrow widths)
+  to a chip row: small-caps RUNS ON label + hairline mono chips per host, Claude Code accented as
+  the reference; flex-wrap keeps every width tidy.
+
 ## [1.4.0] — 2026-07-14
 
 ### Added

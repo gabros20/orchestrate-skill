@@ -18,6 +18,13 @@ every PR).
 - CI: `scripts/check-sync` now runs on every PR and push to main
   (`.github/workflows/check-sync.yml`) — the release gate is enforced, not remembered.
 
+### Fixed
+- Human docs re-synced to the current skill (drift audit): usage.md's workspace table gains the
+  v1.1.0/v1.2.0 files (`review-task<N>-<kind>-r<round>.md` findings files, `raw/`, `toolbox.md`);
+  strategies.md's codex effort list corrected to `low..ultra` (was the pre-2026-07-13
+  `minimal..xhigh`); docs/README.md marks token-optimization research as implemented (v1.1.0),
+  lists the v1.1.0/v1.2.0 design docs, and adds check-sync to the release lifecycle.
+
 ## [1.2.1] — 2026-07-14
 
 Audit fixes — a full walk of the skill package (post-v1.2.0 sanity check) confirmed the design

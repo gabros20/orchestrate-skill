@@ -315,11 +315,12 @@ shared context (the prompt has to carry everything; the external CLI sees nothin
 engines in the same tree, with `.env*` copied in. Runs take minutes with no timeout, so background
 them (`run_in_background`) and poll the output file rather than blocking the controller.
 
-**Key mechanics per engine** — verify flags before scripting (`<cli> --help>` once per session; CLIs
+**Key mechanics per engine** — verify flags before scripting (`<cli> --help` once per session; CLIs
 drift):
 - **Codex** (`codex exec`) — the most script-friendly. `codex --version && codex login status` as
-  preflight; `--sandbox workspace-write`, `-m <model> -c model_reasoning_effort=minimal|low|medium|
-  high|xhigh`, `-o <file>` for output, `--output-schema` for validated structured output, `--json`
+  preflight; `--sandbox workspace-write`, `-m <model> -c model_reasoning_effort=low|medium|high|
+  xhigh|max|ultra` (medium default; `ultra` fans out Codex-side subagents — a fan-out decision,
+  not an effort bump), `-o <file>` for output, `--output-schema` for validated structured output, `--json`
   for JSONL events. `</dev/null` is **mandatory** in scripts — an open stdin makes Codex wait
   forever; for a long prompt, pipe `- < task.md` instead. Approvals via `-a
   untrusted|on-request|never`; network inside the sandbox via

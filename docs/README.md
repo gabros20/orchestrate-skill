@@ -34,16 +34,20 @@ Two folders separate *what we learned* from *what we shipped*:
   - [research/foundations.md](research/foundations.md) — the original research that fed v1.0.0
     (X posts, official Claude Code docs, prior orchestration skills, CLI docs).
   - [research/token-optimization.md](research/token-optimization.md) — token/context/cost
-    optimization for multi-agent orchestration (research only as of v1.0.1).
+    optimization for multi-agent orchestration (implemented in v1.1.0).
 - **[designs/](designs/)** — implementation designs that shipped, one per release that changed
   behavior. **The filename carries the release version** (`v<version>-<topic>.md`) and the header
   states the version + date; [CHANGELOG.md](../CHANGELOG.md) is the cross-reference.
   - [designs/v1.0.0-initial-architecture.md](designs/v1.0.0-initial-architecture.md) — why
     strategies are presets over dimensions, the file layout, the build decisions.
+  - [designs/v1.1.0-token-optimization.md](designs/v1.1.0-token-optimization.md) — the token
+    economy layer: role-scoped communication blocks, priming anatomy, brief-check.
+  - [designs/v1.2.0-orientation.md](designs/v1.2.0-orientation.md) — worker orientation licensed
+    and tooled (the graded ritual + `scripts/toolbox`).
 
 Lifecycle: research lands in `research/` → when acted on, an implementation design lands in
 `designs/` as `v<next-version>-<topic>.md` → the release bumps `version:` in SKILL.md, adds a
-CHANGELOG entry, and tags `v<version>`.
+CHANGELOG entry, passes `scripts/check-sync` (CI-enforced on every PR), and tags `v<version>`.
 
 Read these if you want to know *why* something works the way it does, or if you're extending the
 skill yourself.

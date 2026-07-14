@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f7fa">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#12151d">
 <title>orchestrate — nine subagent orchestration strategies for AI coding agents</title>
 <meta name="description" content="orchestrate is a Claude Code skill offering nine subagent-orchestration strategies, auto-triaged and gated, from staged fan-out to loops and adversarial planning.">
 <meta name="robots" content="index, follow">
@@ -243,6 +245,9 @@
   .files .hl{color:var(--accent); font-weight:600}
 
   footer{margin-top:72px; padding-top:20px; border-top:1px solid var(--line); font-size:13px; color:var(--muted); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px}
+  /* iOS 26 chrome tint: Safari samples fixed edge elements; theme-color alone is ignored */
+  .edge{position:fixed; left:0; right:0; height:8px; background:var(--bg); z-index:0; pointer-events:none}
+  .edge.top{top:0} .edge.bottom{bottom:0}
   @media (max-width:720px){
     .pipe{grid-template-columns:1fr} .pipe.p4{grid-template-columns:1fr}
     .pipe>div{border-left:1px solid var(--line); border-top:none; border-radius:0}
@@ -257,6 +262,8 @@
 </style>
 </head>
 <body>
+<div class="edge top" aria-hidden="true"></div>
+<div class="edge bottom" aria-hidden="true"></div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="lu-file-input" viewBox="0 0 24 24"><path d="M4 11V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M2 15h10"/><path d="m9 18 3-3-3-3"/></symbol>
   <symbol id="lu-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>

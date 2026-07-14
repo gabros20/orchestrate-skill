@@ -6,6 +6,12 @@ executes it in the background; your context holds only the final result. Use whe
 outgrows what you can coordinate turn-by-turn, or when the orchestration itself should be
 repeatable/re-runnable.
 
+**Host availability**: the Workflow tool is Claude Code-only. On other hosts, keep the
+script-holds-the-plan shape with a controller-held driver — a shell/JS script fanning out
+headless engines per item (`strategies/xcli.md`); the discipline below (pilot, budget, pipeline,
+adversarial verify, no silent caps) applies unchanged — or downshift to `parallel`/`hierarchical`
+(`shared/hosts.md`).
+
 ## When script-holds-the-plan beats you-holding-it
 
 - 20+ homogeneous items (audit every route, migrate every component, review every changed file)

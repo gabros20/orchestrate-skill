@@ -12,6 +12,11 @@ Estimate total context the work needs (files to read + plan + expected diffs).
 - A loop earns its cost only when ALL four hold (Karpathy test): the task repeats or grinds;
   verification is automated; the token budget can absorb retries; the agent has real tools to see
   failures. Miss one → don't pick `loop`.
+- **Host gate** (non-Claude-Code hosts only): resolve the host first (`shared/hosts.md`). `team`
+  needs Claude Code or Antigravity; `workflow` needs Claude Code; in-session parallel fan-out is
+  missing on opencode/Hermes. An unsupported pick maps to its degradation (team→hierarchical,
+  workflow→scripted xcli fan-out, parallel→headless engines in worktrees) — name the downgrade in
+  the one-line pick.
 
 ## Step 1 — measure the shape
 
@@ -50,8 +55,9 @@ parallel/workflow.
 
 1. State the pick in one line: `strategy=X because <signals>`. Apply user dimension overrides.
 2. Write `.orchestrate/run.md`: task, resolved dimensions, budget, timestamp.
-3. Only if two strategies fit equally and the cost difference is large → AskUserQuestion with the
-   trade-off. Otherwise proceed.
+3. Only if two strategies fit equally and the cost difference is large → ask the user
+   (AskUserQuestion on Claude Code; host equivalent per `shared/hosts.md`) with the trade-off.
+   Otherwise proceed.
 
 ## Re-triage triggers (mid-run)
 

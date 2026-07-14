@@ -4,8 +4,13 @@ Preset: `topology=team review=dual workers=3..5`.
 Use when workers must TALK to each other mid-task: competing hypotheses, cross-layer features,
 adversarial review debates. Teams are experimental; costs scale ~linearly per teammate.
 
-Requires: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (settings.json `env` or shell). Without it, no
-teammates spawn — fall back to `parallel` or `hierarchical`.
+**Host availability**: Claude Code (experimental flag below) or Antigravity (`invoke_subagent` +
+any-to-any `send_message` approximate the topology — no shared task list, so carry state in
+`.orchestrate/` files). Every other host: degrade to `hierarchical` with file-based handoff and
+say so (`shared/hosts.md`).
+
+Requires (Claude Code): `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (settings.json `env` or shell).
+Without it, no teammates spawn — fall back to `parallel` or `hierarchical`.
 
 ## Preset team compositions (pick, don't invent)
 

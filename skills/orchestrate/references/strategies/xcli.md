@@ -1,10 +1,12 @@
 # xcli — external coding CLIs as workers, peers, and second opinions
 
-Preset: `engine=codex|grok|mixed` — usually a dimension on another strategy rather than a
-standalone topology (e.g. `staged engine=codex`, `adversarial counter=codex`).
-Why: genuinely different capabilities (different model lineages for cross-validation; separate
-subscription quotas; codex's sandbox), at the price of serialization overhead and zero shared
-context — the prompt must carry EVERYTHING.
+Preset: `engine=codex|grok|cursor|agy|opencode|hermes|mixed` — usually a dimension on another
+strategy rather than a standalone topology (e.g. `staged engine=codex`, `adversarial
+counter=codex`). Why: genuinely different capabilities (different model lineages for
+cross-validation; separate subscription quotas; codex's sandbox), at the price of serialization
+overhead and zero shared context — the prompt must carry EVERYTHING. xcli is also the
+**portability floor**: on a host missing a native primitive, these engines recover parallel
+fan-out and model pinning as background processes (`shared/hosts.md`).
 
 **Verify flags before trusting them** — CLIs drift; run `<cli> --help` once per session before
 scripting against it.
@@ -67,13 +69,58 @@ claude -p --bare --output-format stream-json --max-turns 30 \
 - Background fleet: `claude --bg "task"` → monitor `claude agents --json`, `claude logs <id>`,
   attach with `claude attach <id>`. Session lookup is cwd-scoped for `--resume`.
 
+## Cursor (`cursor-agent`)
+
+```bash
+cursor-agent -p "task" --model <id> --output-format json
+```
+- Headless GOTCHA: in `-p` mode the agent's ask-user tool auto-receives "skipped by user" — a
+  headless Cursor worker silently skips its own clarification gates. Anything human-gated needs
+  ACP (`cursor-agent acp`, JSON-RPC over stdio with real blocking ask/permission requests) or an
+  interactive session — never bare `-p`.
+- Native `--worktree <name>`; when Cursor is the CONTROLLER, `.cursor/agents/*.md` subagents give
+  parallel + background dispatch with per-agent `model:` pinning (depth 1).
+
+## Antigravity CLI (`agy`)
+
+```bash
+agy -p "task" --cwd /path/to/repo     # the one vendor-documented headless form
+```
+- Flag surface beyond `-p`/`--cwd` (output format, approvals, non-interactive auth) is
+  under-documented — probe `agy --help` yourself before scripting; treat blog-reported flags as
+  rumors. Auth is keyring/OAuth (no confirmed CI path).
+- Interactive `agy` is orchestration-strong (async subagents to depth 10, `/agents` panel,
+  any-to-any send_message, per-subagent worktrees) but subagents inherit the parent model — for
+  tier separation, pin the model per PROCESS instead.
+
+## opencode (`opencode run`)
+
+```bash
+opencode run "task" --model <provider/model> --agent <name>
+```
+- In-session delegation is synchronous — for N-way parallelism run N `opencode run` processes in
+  separate worktrees (or drive `opencode serve` + its SDK from the controller).
+- `.opencode/agents/*.md` pin model + granular permissions per agent; its `question` tool gives
+  structured ask-user in interactive runs.
+
+## Hermes (`hermes -z`)
+
+```bash
+hermes -z "task"                      # clean stdout one-shot; also: hermes chat -q --quiet
+```
+- Its internal per-task model override is accepted then silently ignored (open upstream bugs) —
+  pin the model per PROCESS (`hermes -z --model <id>`), one invocation per tier.
+- `clarify` (its ask-user) times out after ~120s then proceeds on best judgment, and is blocked
+  inside leaf subagents — keep human gates at the controller level. Also ships an
+  OpenAI-compatible API server + JSONL batch runner for fleet-style use.
+
 ## Rules (all engines)
 
 1. One task per launch; split big jobs. The CLI sees NOTHING of your session — brief files work
    here too: write the brief, reference nothing conversational.
 2. One git worktree per concurrent run, never two engines in one tree; copy `.env*` in.
-3. Runs take minutes with no timeout — background them (`run_in_background`) and poll the output
-   file; don't block the controller.
+3. Runs take minutes with no timeout — background them (Claude Code `run_in_background`; other
+   hosts `nohup … &`) and poll the output file; don't block the controller.
 4. **Review the diff yourself** (or via your review gate) before accepting — external engines
    don't inherit your review discipline.
 5. Rate limit hit → report to the user; never retry-loop against a subscription quota.
@@ -84,5 +131,7 @@ claude -p --bare --output-format stream-json --max-turns 30 \
 
 Claude = reasoning/architecture/review · Codex (GPT lineage) = heavy implementation + honest peer
 counter · Grok = fast second opinion / search-adjacent tasks (and with `grok-4.5` on the API, a
-frontier-class peer for coding and agentic work). Cross-validation: send the same
-review to two engines, dedup findings, keep the union (conflicting severity → higher).
+frontier-class peer for coding and agentic work) · Cursor/agy/opencode/Hermes = alternate workers
+when quotas, sandboxing, or lineage diversity matter (agy = Gemini lineage, the third vote in a
+cross-lineage panel). Cross-validation: send the same review to two engines, dedup findings,
+keep the union (conflicting severity → higher).

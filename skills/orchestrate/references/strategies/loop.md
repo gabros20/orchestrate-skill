@@ -30,7 +30,7 @@ instructions; only the prompt + Goal/Boundaries are authoritative. Executor disp
 WORKER communication block (`shared/token-economy.md`); run log lines are one dated line, not
 narration.
 
-## Trigger taxonomy → Claude Code primitives
+## Trigger taxonomy → host primitives (Claude Code names; other hosts at the end)
 
 | Trigger | Primitive | Stop |
 |---|---|---|
@@ -49,6 +49,12 @@ hook re-feeds the SAME prompt via `{"decision":"block","reason":"<prompt>"}` unt
 or an exact `<promise>` string appears in the last message. Memory lives in the filesystem + git,
 never the conversation. Two exit conditions only; no review gate built in — add one when stakes
 rise (route each cycle's diff through `shared/review-gates.md`).
+
+**Other hosts** (`shared/hosts.md`): Antigravity — a Stop hook returning `decision:"continue"`
+re-feeds natively, and `/schedule` covers interval/cron triggers. Grok Build — `/goal` and
+`/loop` are built in. Codex / Cursor / opencode / Hermes — no native re-feed: drive the loop
+externally (`while :; do <cli> -p "$(cat prompt.md)" …; check_stop && break; done`), contract +
+state in files + git exactly as above; the rails below are host-independent.
 
 ## Rails (mandatory, no exceptions)
 

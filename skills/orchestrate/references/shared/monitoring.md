@@ -29,8 +29,10 @@ State files: `~/.claude/daemon/roster.json`, `~/.claude/jobs/<id>/state.json`.
   post-hoc analysis (the evolve pass reads these). Convention, not documented API — verify the
   path exists before scripting against it.
 - Codex: `$CODEX_HOME` (default `~/.codex`) — sessions/rollouts/logs. Grok: `~/.grok/sessions`.
+  Cursor/agy/opencode/Hermes: stores vary and drift — don't script against them.
 - External CLI runs: capture `--json` / `--output-format streaming-json` to a file per run and
-  tail THAT — more stable than their internal stores.
+  tail THAT — more stable than their internal stores (and the only portable option on hosts
+  whose stores aren't documented — `shared/hosts.md`).
 
 ## Hooks (mechanical enforcement, not observation)
 
@@ -44,7 +46,9 @@ State files: `~/.claude/daemon/roster.json`, `~/.claude/jobs/<id>/state.json`.
 
 ## Rules
 
-1. Every long-running dispatch gets `run_in_background` + a deliverable FILE path you can check.
-2. An idle-without-report agent gets ONE nudge (SendMessage) — if it still returns nothing, read
-   its transcript; don't respawn blind.
+1. Every long-running dispatch gets `run_in_background` (Claude Code; hosts without background
+   shells — codex — use `nohup … &`) + a deliverable FILE path you can check.
+2. An idle-without-report agent gets ONE nudge (SendMessage on Claude Code, `send_message` on
+   Antigravity; elsewhere resume its session with a nudge prompt) — if it still returns nothing,
+   read its transcript; don't respawn blind.
 3. Silence is not success: no report + no artifact = failed, treat it as BLOCKED.

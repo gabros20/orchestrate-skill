@@ -10,9 +10,10 @@ the merge) — partitioning and merge gates handle those (`shared/contracts.md`)
   def). Each parallel invocation gets its own temporary worktree, auto-removed if it finishes
   unchanged. ~200–500ms + disk per agent — use only for parallel WRITERS.
 - **Sessions you run**: `claude --worktree <name>` (`-w`) → `.claude/worktrees/<name>/` on branch
-  `worktree-<name>`; EnterWorktree/ExitWorktree switch mid-session.
-- **External CLIs**: `git worktree add /tmp/wt-taskA -b agent/task-a` then `--cd`/`--cwd` the CLI
-  into it. One engine per tree, never two.
+  `worktree-<name>`; EnterWorktree/ExitWorktree switch mid-session. Other hosts' accelerators:
+  Cursor `--worktree` · Grok subagents auto-worktree · Antigravity per-subagent worktree option.
+- **Plain git (canonical — works on every host)**: `git worktree add /tmp/wt-taskA -b
+  agent/task-a` then `--cd`/`--cwd` the CLI into it. One engine per tree, never two.
 
 ## Contract per worktree
 

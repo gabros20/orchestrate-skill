@@ -14,6 +14,38 @@ every PR).
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-07-14
+
+### Added
+- **Multi-CLI (coding-agent-agnostic) support** — the skill now runs on any Agent Skills host,
+  with Claude Code as the reference implementation. Design: `docs/designs/v1.4.0-multi-cli-support.md`
+  (built on eight sourced research reports covering the agentskills.io standard, skills.sh, and
+  each target CLI).
+  - New `references/shared/hosts.md` — host detection (from the agent's own toolset), a
+    capability matrix across Claude Code / Codex / Cursor / Antigravity / opencode / Grok Build /
+    Hermes, bindings for six abstract primitives (dispatch, parallel, message, ask-user,
+    worktree, loop), a stated-never-silent degradation ladder (native → xcli shell-out → solo
+    with a warning), per-host state paths and quirks.
+  - SKILL.md: new "Host" section; `engine` dimension widened to
+    `claude|codex|grok|cursor|agy|opencode|hermes|mixed`; frontmatter gains `license: MIT` +
+    `metadata` (source/guide URLs) per the open spec.
+  - `xcli` strategy: four new engine blocks (Cursor `cursor-agent -p` + the headless-ask-user
+    trap and ACP alternative; Antigravity `agy -p` with its under-documented flag caveat;
+    `opencode run`; `hermes -z` with per-process model pinning) — xcli is now documented as the
+    portability floor for hosts missing native primitives.
+  - Triage: host gate in step 0 (unsupported strategy → named degradation).
+  - `team`/`workflow`: explicit **Host availability** headers (team = Claude Code or Antigravity;
+    workflow = Claude Code only) with degradation paths; `loop`: native variants (Antigravity
+    Stop-hook continue + `/schedule`, Grok `/goal`/`/loop`) and the universal external-driver
+    form; model-routing rule 10 (hosts where per-dispatch pinning is absent or broken);
+    monitoring/isolation/token-economy/evolve generalized (host state paths, plain-git worktrees
+    as the canonical form, CLAUDE.md/AGENTS.md/GEMINI.md conventions).
+- `install.sh`: per-host targets (`claude|codex|cursor|antigravity|opencode|grok|hermes|agents|all`);
+  `agents` = the cross-agent `~/.agents/skills` standard path. README gains a **Supported agents**
+  matrix; docs/installation.md covers every host's paths, quirks, and engine table.
+- `scripts/check-sync`: host-layer invariants (hosts.md present, team/workflow availability notes
+  present, SKILL.md ≤120 lines, hosts.md ≤200 lines).
+
 ### Site & visual guide
 - Strategy decision strip restructured: six free-wrapping mini-cards became one bordered panel —
   a 2×3 grid of aligned "question → strategy" rows with internal hairlines (single column <720px).

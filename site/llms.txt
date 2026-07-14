@@ -6,16 +6,18 @@ orchestrate turns "run this plan with subagents" into a controlled process inste
 one. Point it at a plan file or a task description and it picks (or you force) a strategy — staged
 sequential cycles, parallel worktree fan-out, hierarchical sub-orchestrator fleets, agent teams,
 deterministic workflows, goal/Ralph loops, advisor/executor cost splits, adversarial planning, or
-external CLIs (Codex/Grok) as workers — then coordinates, dispatches, and gates the subagent work
-through it. `/orchestrate` auto-triages when no strategy is forced: it measures task shape (plan
-present, task count, file-overlap independence, context size, verifiable stop condition) and states
-why it picked what it picked. Built for Claude Code first; the skill itself is plain agent-skills
-format, so any agent that reads a `SKILL.md` can use it.
+external CLIs (Codex/Grok/Cursor/Antigravity/opencode/Hermes) as workers — then coordinates,
+dispatches, and gates the subagent work through it. `/orchestrate` auto-triages when no strategy is
+forced: it measures task shape (plan present, task count, file-overlap independence, context size,
+verifiable stop condition) and states why it picked what it picked. Claude Code is the reference
+host; the skill is plain Agent Skills format (agentskills.io) with a host-adapter layer
+(references/shared/hosts.md), so it runs on Codex, Cursor, Antigravity, opencode, Grok Build, and
+Hermes too — detecting its host at kickoff and degrading honestly where a primitive is missing.
 
 ## Install
 
 - npm/skills.sh: `npx skills add gabros20/orchestrate@orchestrate -g`
-- Clone + installer (Claude Code, Codex, or both): `git clone https://github.com/gabros20/orchestrate && cd orchestrate && ./install.sh claude`
+- Clone + installer (per-host targets: claude | codex | cursor | antigravity | opencode | grok | hermes | agents | all): `git clone https://github.com/gabros20/orchestrate && cd orchestrate && ./install.sh claude`
 - Manual copy: `cp -R skills/orchestrate ~/.claude/skills/orchestrate`
 
 ## Docs

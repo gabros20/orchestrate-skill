@@ -123,20 +123,18 @@
   .pcap{font-size:13.5px; color:var(--muted); margin:14px 0 0; max-width:68ch}
   .pcap b{color:var(--ink)}
 
-  /* pipeline */
-  .pipe{display:grid; grid-template-columns:repeat(5,1fr); gap:0; counter-reset:step; margin-top:20px; overflow-x:auto}
-  .pipe.p4{grid-template-columns:repeat(4,1fr)}
-  .pipe>div{position:relative; padding:16px 18px 16px 20px; border:1px solid var(--line); border-left:none; background:var(--panel); min-width:150px}
-  .pipe>div:first-child{border-left:1px solid var(--line); border-radius:8px 0 0 8px}
-  .pipe>div:last-child{border-radius:0 8px 8px 0}
-  .pipe b{display:flex; align-items:center; gap:7px; font-family:ui-monospace,Menlo,monospace; font-size:13.5px; margin-bottom:4px}
-  .pipe b::before{counter-increment:step; content:counter(step) " "; color:var(--accent)}
-  .pipe b .lu{width:15px; height:15px; color:var(--accent)}
-  .pipe span{font-size:13px; color:var(--muted); display:block; line-height:1.45}
-  .pipe span b{display:inline; font-family:inherit; font-size:inherit; color:var(--ink); margin:0}
-  .pipe span b::before{content:none}
-  .pipe span code{font-size:11.5px; background:var(--code-bg); padding:1px 4px; border-radius:4px; overflow-wrap:anywhere}
-  .pipe>div:not(:last-child)::after{content:"▸"; position:absolute; right:-7px; top:14px; color:var(--glyph); z-index:2; background:var(--panel); line-height:1}
+  /* numbered step timeline (same family as .tl) */
+  .steps{margin-top:20px; counter-reset:step}
+  .steps>div{position:relative; padding:0 0 22px 46px; --sc:var(--accent)}
+  .steps>div::before{counter-increment:step; content:counter(step); position:absolute; left:0; top:-3px; width:28px; height:28px; border-radius:50%; background:var(--panel); border:2px solid var(--sc); color:var(--sc); font-family:ui-monospace,Menlo,monospace; font-size:13px; font-weight:600; display:flex; align-items:center; justify-content:center}
+  .steps>div::after{content:""; position:absolute; left:13px; top:31px; bottom:-6px; width:2px; background:var(--line)}
+  .steps>div:last-child{padding-bottom:0}
+  .steps>div:last-child::after{display:none}
+  .steps b{display:flex; align-items:center; gap:8px; font-family:ui-monospace,Menlo,monospace; font-size:14px; margin:2px 0 4px}
+  .steps b .lu{width:15px; height:15px; color:var(--sc)}
+  .steps span{font-size:13.5px; color:var(--muted); display:block; line-height:1.55; max-width:66ch}
+  .steps span b{display:inline; font-family:inherit; font-size:inherit; color:var(--ink); margin:0; font-weight:600}
+  .steps span code{font-size:12px; background:var(--code-bg); padding:1px 4px; border-radius:4px; overflow-wrap:anywhere}
 
   /* preset override figure */
   .ov{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:20px}
@@ -211,8 +209,9 @@
   .rules li{background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--amber); border-radius:6px; padding:12px 16px; font-size:14px; line-height:1.5}
   .rules li b{display:flex; align-items:center; gap:7px; font-family:ui-monospace,Menlo,monospace; font-size:13px; margin-bottom:3px}
   .rules li b .lu{width:15px; height:15px; color:var(--amber)}
-  .gp>div:nth-child(2) b{color:var(--amber)}
-  .gp>div:nth-child(3) b{color:var(--amber)}
+  .gp>div:nth-child(2),.gp>div:nth-child(3){--sc:var(--amber)}
+  .gp>div:nth-child(4){--sc:var(--good)}
+  .gp>div:nth-child(2) b,.gp>div:nth-child(3) b{color:var(--amber)}
   .gp>div:nth-child(4) b{color:var(--good)}
   .loopback{display:flex; gap:10px; margin-top:12px; font-size:13.5px; color:var(--muted); line-height:1.55; max-width:none}
   .loopback .ic{color:var(--bad); flex:none; margin-top:1px}
@@ -264,11 +263,6 @@
   .edge{position:fixed; left:0; right:0; height:8px; background:var(--bg); z-index:0; pointer-events:none}
   .edge.top{top:0} .edge.bottom{bottom:0}
   @media (max-width:720px){
-    .pipe{grid-template-columns:1fr} .pipe.p4{grid-template-columns:1fr}
-    .pipe>div{border-left:1px solid var(--line); border-top:none; border-radius:0}
-    .pipe>div:first-child{border-top:1px solid var(--line); border-radius:8px 8px 0 0}
-    .pipe>div:last-child{border-radius:0 0 8px 8px}
-    .pipe>div:not(:last-child)::after{content:"▾"; right:14px; top:auto; bottom:-8px}
     .ov{grid-template-columns:1fr}
     .prow{flex-direction:column; align-items:flex-start}
     .prow .arr{transform:rotate(90deg); margin-left:18px}
@@ -367,7 +361,7 @@
 <section id="run">
   <h2>How a run works</h2>
   <p>Every strategy shares the same five-step spine.</p>
-  <div class="pipe">
+  <div class="steps">
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-file-input"/></svg>invoke</b><span>You point it at a plan file, or just describe the task. Every flag is optional.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-gauge"/></svg>triage</b><span><b>Triage</b> measures the task — size, independence, whether success is checkable — then picks a run shape and says why.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-bot"/></svg>dispatch</b><span>The controller writes a brief and sends a fresh subagent to do exactly that task, on an explicitly chosen model.</span></div>
@@ -495,7 +489,7 @@
   <h2><svg class="lu" aria-hidden="true"><use href="#lu-shield-check"/></svg>Gated by default</h2>
   <p>Nothing lands because an agent says it's done. Every result passes two gates, in a fixed
   order, and reviewers verify by reading the code — never the worker's own report.</p>
-  <div class="pipe p4 gp">
+  <div class="steps gp">
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-bot"/></svg>implement</b><span>A fresh worker builds exactly what its brief asks.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-clipboard-check"/></svg>spec gate</b><span>"Did they build what was asked?" Nothing missing, nothing extra.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-search-check"/></svg>quality gate</b><span>"Is it well-built?" Runs only after spec passes — never before.</span></div>

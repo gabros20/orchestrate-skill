@@ -98,6 +98,12 @@
   .term .c{color:var(--muted)}
   .term .p{color:var(--accent); font-weight:600}
 
+  /* the idea — animated explainer (progressive enhancement over the static poster) */
+  .vidwrap{display:none; margin-top:20px}
+  .vidwrap video{display:block; width:100%; border:1px solid var(--line); border-radius:8px; background:var(--bg)}
+  body.has-vid .vidwrap{display:block}
+  body.has-vid .poster{display:none}
+
   /* the idea — poster diagram */
   .poster{background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:20px; margin-top:20px; display:flex; flex-direction:column; gap:14px}
   .prow{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
@@ -323,6 +329,7 @@
   it, works, and writes a <b>report</b> file back. The files outlive the worker — so a run
   survives crashes, compaction, and restarts, because its state lives on disk instead of in
   anyone's head.</p>
+  <div class="vidwrap" id="vidwrap"></div>
   <div class="poster" role="img" aria-label="Diagram: a controller exchanges brief and report files with disposable workers; the files and ledger remain after workers are discarded.">
     <div class="prow">
       <span class="pbox ctl"><span class="t"><svg class="lu" aria-hidden="true"><use href="#lu-user"/></svg>controller</span><small>coordinates, never implements</small></span>
@@ -606,5 +613,31 @@ npx skills add gabros20/orchestrate
   <span><a href="https://github.com/gabros20/orchestrate">github.com/gabros20/orchestrate</a> · MIT</span>
 </footer>
 </div>
+<script>
+(function () {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (innerWidth < 720) return; // the stacked static poster reads better on phones
+  var wrap = document.getElementById("vidwrap");
+  if (!wrap || !document.createElement("video").canPlayType) return;
+  var mq = matchMedia("(prefers-color-scheme: dark)");
+  var v = document.createElement("video");
+  v.muted = true;
+  v.loop = true;
+  v.autoplay = true;
+  v.playsInline = true;
+  v.setAttribute("playsinline", "");
+  v.setAttribute("aria-label", "Animated: a controller writes brief files, fresh workers return reports and are discarded, gates stamp each report, and the ledger records every task.");
+  function apply() {
+    var theme = document.documentElement.getAttribute("data-theme") || (mq.matches ? "dark" : "light");
+    v.poster = "assets/life-of-a-task-" + theme + "-poster.png";
+    v.src = "assets/life-of-a-task-" + theme + ".mp4";
+    v.play && v.play().catch(function () {});
+  }
+  apply();
+  mq.addEventListener && mq.addEventListener("change", apply);
+  wrap.appendChild(v);
+  document.body.classList.add("has-vid");
+})();
+</script>
 </body>
 </html>

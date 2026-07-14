@@ -15,6 +15,12 @@ every PR).
 ## [Unreleased]
 
 ### Site & visual guide
+- "The idea" section: the planned V1 **"Life of a task" Remotion animation** shipped as a
+  progressive enhancement — a 15s themed loop (light + dark renders from one parameterized
+  composition in `remotion/`) showing the problem (one agent's context filling), the split
+  (controller writes a brief, a fresh worker takes it), the discard (worker fades, files remain),
+  the gates (spec ✓ then quality ✓), and the ledger. Desktop ≥720px only; the static poster
+  remains for mobile, `prefers-reduced-motion`, no-JS, and the claude.ai guide artifact.
 - Site readability redesign (expert-panel run: codex gpt-5.6-sol high · grok-build · fable 5, two
   rounds + synthesis — plan in the run workspace): the page now teaches before it references.
   New narrative order (hero → "The idea" mental-model poster → run spine → preset-over-dimensions

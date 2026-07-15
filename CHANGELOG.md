@@ -21,6 +21,8 @@ every PR).
 - Hero row disambiguation: the host chips lost their border (filled `--code-bg` tokens, same
   language as inline code — data, not buttons) and the section-nav pills gained a `#` anchor
   prefix, so metadata tags and in-page links no longer look like the same component.
+- Start-here install block now shows both install paths (skills.sh + clone/installer), aligned
+  with the sibling skill sites.
 
 ## [1.4.0] — 2026-07-14
 

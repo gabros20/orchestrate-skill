@@ -43,7 +43,9 @@ State files: `~/.claude/daemon/roster.json`, `~/.claude/jobs/<id>/state.json`.
   post-hoc analysis (the evolve pass reads these). Convention, not documented API — verify the
   path exists before scripting against it.
 - Codex: `$CODEX_HOME` (default `~/.codex`) — sessions/rollouts/logs. Grok: `~/.grok/sessions`.
-  Cursor/agy/opencode/Hermes: stores vary and drift — don't script against them.
+  Kimi: `~/.kimi-code` (`KIMI_CODE_HOME`) — `sessions/<workDirKey>/<sessionId>/` with
+  `state.json` + `agents/<id>/wire.jsonl` per subagent. Cursor/agy/opencode/Hermes: stores vary
+  and drift — don't script against them.
 - External CLI runs: capture `--json` / `--output-format streaming-json` to a file per run and
   tail THAT — more stable than their internal stores (and the only portable option on hosts
   whose stores aren't documented — `shared-hosts.md`).

@@ -10,7 +10,28 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
-## [Unreleased]
+## [1.6.0] — 2026-07-20
+
+### Added
+- **Kimi Code CLI support** — the eighth `xcli` engine and eighth Agent Skills host; CLI flag
+  surface live-verified against the installed `kimi` 0.28.0 binary (2026-07-20).
+  - `references/strategy-xcli.md`: new Kimi engine block (`kimi -p`,
+    `--output-format text|stream-json`, model pin `-m k3|kimi-for-coding|kimi-for-coding-highspeed`,
+    auto-only permission mode headless, no `--cwd` flag, poisoned-session landmine).
+  - `references/shared-hosts.md`: Kimi host detection signature and capability-matrix row
+    (`Agent`/`AgentSwarm` dispatch and parallel; native `/goal` state machine + blockable Stop
+    hook + Cron tools — the strongest non-Claude loop story; `AskUserQuestion` suppressed
+    headless; plain-git worktree; no per-dispatch model pin), quirks-that-bite entry,
+    invocation-name entry, `references/shared-monitoring.md`'s Kimi state path, and
+    `references/strategy-loop.md`'s native `/goal` loop entry.
+  - SKILL.md: `engine=` dimension widened; `references/shared-model-routing.md`: `kimi` tier
+    entries (`k3`/`kimi-for-coding`/`kimi-for-coding-highspeed`) + host caveat.
+  - Public surfaces synced to the runtime: README's supported-hosts matrix, docs/installation.md's
+    install table, docs/usage.md and docs/strategies.md's engine enumerations and per-engine
+    mechanics, `install.sh`'s `kimi)` target (`~/.kimi-code/skills` + `~/.agents/skills` — Kimi
+    does not read `~/.claude/skills/`), and the site's host chip row + agents table. Division-of-
+    labor heuristic notes Kimi (Moonshot lineage, K3) as the fourth vote in cross-lineage panels
+    and the pick for 1M-context long-horizon work.
 
 ### Site & visual guide
 - Hero "runs on" line upgraded from plain wrapped text (dangling `·` separators at narrow widths)

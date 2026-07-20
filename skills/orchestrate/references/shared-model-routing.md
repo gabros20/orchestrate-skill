@@ -53,10 +53,17 @@ Produces:
    `gpt-5.6-terra` ≈ standard worker/reviewer · `gpt-5.6-sol` ≈ reasoner/advisor/peer.
    Grok (verified 2026-07-14): `grok-4.5` = flagship (500k ctx, coding/agentic/reasoning) ≈
    reasoner/advisor/peer — API-only for now; the grok CLI exposes a separate, shorter list
-   (`grok models`). Model lists drift — re-verify slugs before pinning (`strategy-xcli.md`).
+   (`grok models`). Kimi (verified 2026-07-20, live 0.28.0): `k3` = flagship (1M ctx on
+   Allegretto+ membership, 256k below; `reasoning_effort: low|high|max`, default `high` — set via
+   config.toml or `/effort`, NOT a CLI
+   flag) ≈ reasoner/advisor/peer · `kimi-for-coding` ≈ balanced worker/reviewer (256k ctx) ·
+   `kimi-for-coding-highspeed` ≈ latency-critical worker (6× speed at 3× quota — budget-relevant,
+   not a cheap tier; no cheap tier exists). Switching model or effort mid-session invalidates
+   Kimi's prompt cache — pin both per session. Model lists drift — re-verify slugs before pinning
+   (`strategy-xcli.md`).
 10. **Host caveat** (non-Claude-Code hosts): per-dispatch pinning is native on Codex (agents
     TOML), Cursor (`model:` frontmatter), and opencode (agent files) — but Antigravity subagents
-    inherit the parent model and Hermes accepts a per-task model then silently ignores it. On
-    those hosts, tier separation routes through xcli engines (one process per tier,
-    `strategy-xcli.md`) or collapses to one model + effort knobs — record which in run.md
-    (`shared-hosts.md`).
+    inherit the parent model, Hermes accepts a per-task model then silently ignores it, and there is
+    no documented per-dispatch pin on Kimi. On those hosts, tier separation routes
+    through xcli engines (one process per tier, `strategy-xcli.md`) or collapses to one model +
+    effort knobs — record which in run.md (`shared-hosts.md`).

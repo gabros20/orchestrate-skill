@@ -6,13 +6,14 @@ orchestrate turns "run this plan with subagents" into a controlled process inste
 one. Point it at a plan file or a task description and it picks (or you force) a strategy — staged
 sequential cycles, parallel worktree fan-out, hierarchical sub-orchestrator fleets, agent teams,
 deterministic workflows, goal/Ralph loops, advisor/executor cost splits, adversarial planning, or
-external CLIs (Codex/Grok/Cursor/Antigravity/opencode/Hermes) as workers — then coordinates,
+external CLIs (Codex/Grok/Cursor/Antigravity/opencode/Hermes/Kimi) as workers — then coordinates,
 dispatches, and gates the subagent work through it. `/orchestrate` auto-triages when no strategy is
 forced: it measures task shape (plan present, task count, file-overlap independence, context size,
 verifiable stop condition) and states why it picked what it picked. Claude Code is the reference
 host; the skill is plain Agent Skills format (agentskills.io) with a host-adapter layer
-(references/shared-hosts.md), so it runs on Codex, Cursor, Antigravity, opencode, Grok Build, and
-Hermes too — detecting its host at kickoff and degrading honestly where a primitive is missing.
+(references/shared-hosts.md), so it runs on Codex, Cursor, Antigravity, opencode, Grok Build,
+Hermes, and Kimi Code CLI too — detecting its host at kickoff and degrading honestly where a
+primitive is missing.
 
 ## Install
 

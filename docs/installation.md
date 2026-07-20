@@ -7,7 +7,7 @@ documentation and evaluation assets outside the runtime context.
 
 - `git`
 - An Agent Skills-compatible coding client
-- Optional external worker CLIs only when using `engine=codex|grok|cursor|agy|opencode|hermes`
+- Optional external worker CLIs only when using `engine=codex|grok|cursor|agy|opencode|hermes|kimi`
 
 The runtime detects the active client at kickoff. Read
 [host adapters](../skills/orchestrate/references/shared-hosts.md) when a primitive or invocation
@@ -41,6 +41,7 @@ The installer accepts one target and transactionally replaces only the installed
 | `opencode` | `~/.config/opencode/skills/orchestrate` |
 | `grok` | `~/.grok/skills/orchestrate` |
 | `hermes` | `~/.hermes/skills/orchestrate` |
+| `kimi` | `~/.kimi-code/skills/orchestrate` + `~/.agents/skills/orchestrate` (Kimi does not read `~/.claude/skills/`) |
 | `all` | Claude, Codex, and cross-agent standard directories |
 
 Repository-only docs, evals, release metadata, and site assets are not installed.

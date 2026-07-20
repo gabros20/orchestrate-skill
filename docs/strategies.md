@@ -304,7 +304,7 @@ single strong-model plan review would already catch.
 
 ## xcli
 
-`engine=codex|grok|cursor|agy|opencode|hermes|mixed` — usually layered as a dimension on another
+`engine=codex|grok|cursor|agy|opencode|hermes|kimi|mixed` — usually layered as a dimension on another
 strategy rather than run standalone (e.g. `strategy=staged engine=codex`, `strategy=adversarial
 counter=codex`).
 
@@ -357,6 +357,16 @@ drift):
 - **Hermes** (`hermes -z "task"`) — clean stdout one-shot. Its internal per-task model override is
   silently ignored (open upstream bugs) — pin per process with `--model`. Also ships an
   OpenAI-compatible API server + JSONL batch runner.
+- **Kimi** (`kimi -p "task" -m k3|kimi-for-coding|kimi-for-coding-highspeed
+  --output-format text|stream-json`) — `cd` into the target tree first (no `--cwd` flag); `-p` forces the `auto`
+  permission policy, so worktree + diff review is the only containment. Models: `k3` (flagship, up
+  to 1M context) · `kimi-for-coding` (256k, balanced) · `kimi-for-coding-highspeed` (6× speed at 3×
+  quota — not a cheap tier). No CLI effort flag (set via `/effort` or config.toml); switching model
+  or effort mid-session invalidates the prompt cache. No programmatic quota check headless. A
+  legacy-tracker-reported session-poisoning bug (re-verify on current kimi-code) means: a malformed
+  tool call can wedge a session into a permanent HTTP-400 loop — kill and restart as a new session,
+  never resume a wedged run. `</dev/null` defensively (stdin behavior undocumented). CLI flag
+  surface live-verified against kimi-code 0.28.0 (2026-07-20).
 
 **Failure handling**: review the diff yourself (or via your normal review gate) before accepting —
 external engines don't inherit your review discipline. A rate limit hit gets reported to the user,
@@ -365,7 +375,8 @@ never retried in a loop against a subscription quota. Auth is always the user's
 
 **Composition overrides**: the division-of-labor heuristic — Claude for reasoning/architecture/
 review, Codex (GPT lineage) for heavy implementation and an honest peer counter, Grok for a fast
-second opinion or search-adjacent tasks, Cursor/agy/opencode/Hermes as alternate workers when
+second opinion or search-adjacent tasks, Cursor/agy/opencode/Hermes/Kimi as alternate workers when
 quotas, sandboxing, or lineage diversity matter (agy = Gemini lineage — the third vote in a
-cross-lineage panel). For cross-validation, send the same review to two engines,
+cross-lineage panel; Kimi = Moonshot lineage — the fourth vote, and the pick for 1M-context
+long-horizon work). For cross-validation, send the same review to two engines,
 dedup the findings, and keep the union (conflicting severity → the higher one wins).

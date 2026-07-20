@@ -62,6 +62,7 @@ cd orchestrate-skill
 | `opencode` | `~/.config/opencode/skills/orchestrate` |
 | `grok` | `~/.grok/skills/orchestrate` |
 | `hermes` | `~/.hermes/skills/orchestrate` |
+| `kimi` | `~/.kimi-code/skills/orchestrate` + `~/.agents/skills/orchestrate` |
 | `all` | Claude, Codex, and the cross-agent path |
 
 The installer stages a complete runtime copy before replacement and restores the prior
@@ -105,9 +106,11 @@ then an external CLI, then a named solo degradation.
 | opencode | Synchronous in-session | Agent-file model | External processes recover fan-out |
 | Grok Build | Parallel, auto-worktree | Host-dependent | Skills load at session start |
 | Hermes | Small flat pool | Host-dependent | Explicit activation may be required |
+| Kimi Code CLI | `Agent`/`AgentSwarm`, built-in coder/explore/plan | Host-dependent | `-p` auto-approves every action — worktree + diff review only |
 
 The runtime [host adapter](skills/orchestrate/references/shared-hosts.md) instructs the controller to
-verify current tools and CLI flags rather than trust a static matrix.
+verify current tools and CLI flags rather than trust a static matrix. Kimi bindings: flag surface
+live-verified against v0.28.0; end-to-end smoke run pending.
 
 ## Safety and quality model
 

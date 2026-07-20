@@ -65,10 +65,12 @@ never the conversation. Two exit conditions only; no review gate built in — ad
 rise (route each cycle's diff through `shared-review-gates.md`).
 
 **Other hosts** (`shared-hosts.md`): Antigravity — a Stop hook returning `decision:"continue"`
-re-feeds natively, and `/schedule` covers interval/cron triggers. Grok Build — `/goal` and
-`/loop` are built in. Codex / Cursor / opencode / Hermes — no native re-feed: drive the loop
-externally (`while :; do <cli> -p "$(cat prompt.md)" …; check_stop && break; done`), contract +
-state in files + git exactly as above; the rails below are host-independent.
+re-feeds natively, and `/schedule` covers interval/cron triggers. Grok Build — `/goal` and `/loop`
+are built in. Kimi — native `/goal` (state machine, exit 0/3/6=complete/blocked/paused), stop
+criteria in objective text (no turn-limit flag), blockable `Stop` hook (exit 2+stderr, fail-open on
+script error), Cron tools for scheduled triggers. Codex / Cursor / opencode / Hermes — no native
+re-feed: drive the loop externally (`while :; do <cli> -p "$(cat prompt.md)" …; check_stop && break;
+done`), contract + state in files + git exactly as above; the rails below are host-independent.
 
 ## Rails (mandatory, no exceptions)
 

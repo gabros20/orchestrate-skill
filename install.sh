@@ -42,10 +42,12 @@ case "$target" in
   opencode)    install_to "$HOME/.config/opencode/skills" ;;
   grok)        install_to "$HOME/.grok/skills" ;;
   hermes)      install_to "$HOME/.hermes/skills" ;;
+  kimi)        install_to "$HOME/.kimi-code/skills"
+               install_to "$HOME/.agents/skills" ;;
   all)         install_to "$HOME/.claude/skills"
                install_to "${CODEX_HOME:-$HOME/.codex}/skills"
                install_to "$HOME/.agents/skills" ;;
-  *) echo "usage: ./install.sh [claude|codex|agents|cursor|antigravity|opencode|grok|hermes|all]" >&2; exit 1 ;;
+  *) echo "usage: ./install.sh [claude|codex|agents|cursor|antigravity|opencode|grok|hermes|kimi|all]" >&2; exit 1 ;;
 esac
 
 echo "Codex explicit invocation: \$$skill_name. Other clients may use slash commands, @mentions, a skill tool, or natural language."

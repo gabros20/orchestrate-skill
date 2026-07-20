@@ -31,7 +31,7 @@ slash-command clients, or the host's equivalent. Documentation uses `/orchestrat
 <plan-file | task description>
   [strategy=auto|staged|parallel|hierarchical|team|workflow|loop|advisor|adversarial|xcli]
   [review=dual|spec|quality|panel:N|consensus:N|off]
-  [engine=claude|codex|grok|cursor|agy|opencode|hermes|mixed]
+  [engine=claude|codex|grok|cursor|agy|opencode|hermes|kimi|mixed]
   [models=orchestrator:<tier>,worker:<tier>,advisor:<tier>,reviewer:<tier>]
   [isolation=worktree|branch|off]
   [trigger=once|goal:"<stop condition>"|interval:<t>|schedule:"<cron>"]
@@ -102,7 +102,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | `topology` | solo · staged · parallel · hierarchical · team · workflow · loop | selected strategy |
 | `planning` | none · plan-first · interview · adversarial | plan-first |
 | `review` | off · spec · quality · dual · panel:N · consensus:N | dual |
-| `engine` | claude · codex · grok · cursor · agy · opencode · hermes · mixed | host-appropriate |
+| `engine` | claude · codex · grok · cursor · agy · opencode · hermes · kimi · mixed | host-appropriate |
 | `models` | advisor · orchestrator · reasoner · worker · reviewer · peer tier map | model routing |
 | `isolation` | none · worktree · branch | worktree for multiple writers |
 | `trigger` | once · goal · interval · schedule | once |

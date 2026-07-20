@@ -321,7 +321,7 @@
   one command, many fresh agents, every result checked before it counts.</p>
   <div class="term" style="margin-top:22px"><span class="c"># that's the whole start</span>
 <span class="p">/orchestrate</span> plan.md</div>
-  <p class="hosts"><span class="hl">runs on</span><span class="ref">Claude Code</span><span>Codex</span><span>Cursor</span><span>Antigravity</span><span>opencode</span><span>Grok Build</span><span>Hermes</span></p>
+  <p class="hosts"><span class="hl">runs on</span><span class="ref">Claude Code</span><span>Codex</span><span>Cursor</span><span>Antigravity</span><span>opencode</span><span>Grok Build</span><span>Hermes</span><span>Kimi Code</span></p>
   <nav class="secnav" aria-label="page sections">
     <a href="#idea">the idea</a><a href="#strat">choose a strategy</a><a href="#gates">safety</a>
     <a href="#tokens">cost</a><a href="#start">start</a>
@@ -583,6 +583,7 @@ npx skills add gabros20/orchestrate-skill -g
         <tr><td class="dim">opencode</td><td>synchronous only</td><td>✓</td><td>parallel via <code>opencode serve</code> or external processes</td></tr>
         <tr><td class="dim">Grok Build</td><td>8 parallel, auto-worktree</td><td>—</td><td>reads <code>.claude/</code> wholesale; skills load at session start</td></tr>
         <tr><td class="dim">Hermes</td><td>3 concurrent, flat</td><td>—</td><td>invoke <code>/orchestrate</code> explicitly — no auto-trigger</td></tr>
+        <tr><td class="dim">Kimi Code CLI</td><td><code>Agent</code>/<code>AgentSwarm</code>, coder/explore/plan</td><td>—</td><td>native <code>/goal</code> loop; live-verified v0.28.0, smoke run pending</td></tr>
       </table></div>
       <p style="margin-top:12px"><code class="mono">team</code> needs Claude Code or Antigravity and
       <code class="mono">workflow</code> needs Claude Code; every other strategy runs everywhere —

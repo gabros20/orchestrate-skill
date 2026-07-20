@@ -23,10 +23,11 @@ Produces:
 - Antigravity CLI (`agy`)
 - opencode (`opencode run`)
 - Hermes (`hermes -z`)
+- Kimi (`kimi -p`)
 - Rules (all engines)
 - Division-of-labor heuristic
 
-Preset: `engine=codex|grok|cursor|agy|opencode|hermes|mixed` — usually a dimension on another
+Preset: `engine=codex|grok|cursor|agy|opencode|hermes|kimi|mixed` — usually a dimension on another
 strategy rather than a standalone topology (e.g. `staged engine=codex`, `adversarial
 counter=codex`). Why: genuinely different capabilities (different model lineages for
 cross-validation; separate subscription quotas; codex's sandbox), at the price of serialization
@@ -140,6 +141,37 @@ hermes -z "task"                      # clean stdout one-shot; also: hermes chat
   inside leaf subagents — keep human gates at the controller level. Also ships an
   OpenAI-compatible API server + JSONL batch runner for fleet-style use.
 
+## Kimi (`kimi -p`)
+
+```bash
+kimi --version && kimi doctor                 # preflight; not logged in → user runs `kimi login` (device-code OAuth)
+cd /path/to/repo && kimi -p "Full task: goal, constraints, files to touch, definition of done." \
+  -m k3 --output-format text </dev/null   # no cwd flag — cd first; stdin undocumented, `</dev/null` defensively
+```
+- `--output-format text|stream-json` (only valid with `-p`) — `text` prefixes thinking/assistant
+  lines with `•`; `stream-json` emits one JSON object per line.
+- `-p` forces the `auto` permission policy — no approval gating exists headless (rejects
+  `--yolo`/`--auto`/`--plan`); worktree + diff review is the ONLY containment.
+- Models: `k3` (flagship, up to 1M context, `reasoning_effort: low|high|max`, default `high`) ·
+  `kimi-for-coding` (256k, balanced worker) · `kimi-for-coding-highspeed` (6× speed at 3× quota —
+  not a cheap tier, none exists). Effort has NO CLI flag — set via `/effort`,
+  `[models."<alias>".overrides]` in config.toml, or the `KIMI_MODEL_*` env channel; switching
+  model or effort mid-session invalidates the prompt cache.
+- No programmatic quota check headless (`/usage` is TUI-only, rejected in `-p` mode) — don't
+  dispatch a fleet assuming quota headroom.
+- Kimi workers carry their OWN subagents (`Agent`/`AgentSwarm`) — nested orchestration multiplies
+  spend like codex `ultra`; instruct workers not to swarm unless intended.
+- Poisoned-session landmine: malformed tool-call JSON can wedge a session into permanent HTTP 400
+  loops with no self-recovery — kill and restart as a NEW session, never resume a wedged run
+  (legacy-tracker provenance; re-verify before trusting it as fixed).
+- Resume: `-c` (most recent session, cwd-scoped) · `-S <id>` (specific; bare = picker) — mutually
+  exclusive.
+- State: `~/.kimi-code` (`KIMI_CODE_HOME` relocates it), sessions cwd-scoped underneath.
+- CI env: `KIMI_CODE_NO_AUTO_UPDATE=1` (skip update preflight), `KIMI_DISABLE_TELEMETRY=1`.
+- Legacy Python `MoonshotAI/kimi-cli` is a DIFFERENT tool (verified 2026-07-20 against live
+  0.28.0) — its flags (`--print`, `--input-format`, `--quiet`, `--final-message-only`) are absent
+  from kimi-code 0.28.0; never cite them.
+
 ## Rules (all engines)
 
 1. One task per launch; split big jobs. The CLI sees NOTHING of your session — brief files work
@@ -150,14 +182,17 @@ hermes -z "task"                      # clean stdout one-shot; also: hermes chat
 4. **Review the diff yourself** (or via your review gate) before accepting — external engines
    don't inherit your review discipline.
 5. Rate limit hit → report to the user; never retry-loop against a subscription quota.
-6. Auth is the user's: `codex login` / grok cookie / `claude` login. Never read or copy
+6. Auth is the user's: `codex login` / grok cookie / `claude` login / `kimi login`. Never read or copy
    credential files.
 
 ## Division-of-labor heuristic
 
 Claude = reasoning/architecture/review · Codex (GPT lineage) = heavy implementation + honest peer
 counter · Grok = fast second opinion / search-adjacent tasks (and with `grok-4.5` on the API, a
-frontier-class peer for coding and agentic work) · Cursor/agy/opencode/Hermes = alternate workers
-when quotas, sandboxing, or lineage diversity matter (agy = Gemini lineage, the third vote in a
-cross-lineage panel). Cross-validation: send the same review to two engines, dedup findings,
-keep the union (conflicting severity → higher).
+frontier-class peer for coding and agentic work) · Kimi (Moonshot lineage, K3 — Artificial Analysis
+Intelligence Index 4/189 as of 2026-07-20, behind Fable 5/GPT-5.6 Sol, ahead of Opus 4.8) =
+frontier-class independent lineage, the fourth vote in cross-lineage panels, and the pick for
+1M-context long-horizon/large-context work · Cursor/agy/opencode/Hermes = alternate workers when
+quotas, sandboxing, or lineage diversity matter (agy = Gemini lineage, the third vote in a
+cross-lineage panel). Cross-validation: send the same review to two engines, dedup findings, keep
+the union (conflicting severity → higher).

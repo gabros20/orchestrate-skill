@@ -14,7 +14,7 @@ export const RemotionRoot: React.FC = () => {
       component={LifeOfATask}
       schema={schema}
       defaultProps={{ theme: "light" as const }}
-      durationInFrames={450}
+      durationInFrames={1440}
       fps={30}
       width={1200}
       height={520}

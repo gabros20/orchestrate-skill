@@ -61,4 +61,7 @@ paraphrase. Ordered multi-step instructions stay full prose.
 ## Return (INLINE, <1500 tokens)
 Verdict first. Findings summary. Artifact paths (reports your workers wrote, files changed).
 Cross-domain flags. What you did NOT cover and why.
+DELIVERING this return is your completion condition — finishing the domain and going idle
+without it means the domain is NOT done. Running as a teammate or background agent, deliver
+it via SendMessage to the parent controller as your final action.
 ```

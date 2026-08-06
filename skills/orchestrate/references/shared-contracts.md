@@ -57,6 +57,10 @@ Reviewer "read-only" means the REPO; `.orchestrate/` is the one place a reviewer
   `run.md`). Briefs CITE IDs, never restate.
   Contradictions reconcile in the record FIRST, by the owner (integrator only when explicitly
   designated, never invents design intent), then propagate outward.
+  **The record outranks the brief**: when a brief and the binding record (decisions.md, the
+  run's inventory/plan) disagree, workers defer to the record and FLAG the contradiction — never
+  silently follow the brief (observed: a deliverable double-assigned across two briefs didn't
+  clobber precisely because the worker deferred to the binding inventory).
 - `field-guide.md` — optional, created only on the first controller-accepted surprise (any
   WORKER-role report may append one `surprise:` line; controller curates), per-run scope, hard
   ≤40-line cap; entry criteria in `shared-token-economy.md`.
@@ -76,6 +80,10 @@ Task 3: complete (commits a1b2c3d..e4f5a6b, review clean)
 Card api: merged (gate: contract tests green)
 Cycle 7: shipped PR #142 (verifier: works, evidence/run7.png)
 ```
+**Reports are claims; the disk is the record.** After any fan-out completes, reconcile the ledger
+against the artifacts actually on disk — never against report summaries alone (observed: reports
+regressing on their own raw files, and a message race resolved only by disk evidence). A ledger
+line that names an artifact nobody can `ls` is a defect.
 Resume rule: on any restart/compaction, `cat progress.md` + `git log` are the truth; recollection
 is not. The single most expensive observed failure is re-dispatching completed work. `git clean
 -fdx` destroys the workspace → reconstruct from `git log`.

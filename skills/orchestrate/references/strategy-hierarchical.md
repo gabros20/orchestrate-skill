@@ -50,6 +50,15 @@ Prompt: `prompt-sub-orchestrator.md`.
   decision to a worker; no two delegated subtrees may decide the same question.
 - **Peek before deep**: have each sub-orchestrator sample structure (cheap greps/reads) before
   committing its worker fan-out.
+- **Decide worker-control ownership before spawn.** On hosts where lifecycle controls
+  (stop/attach) sit with the top controller, a flat-roster lead CANNOT stop its own hung workers
+  — observed mid-incident, at full cost. Either grant the lead real control over its fleet, or
+  pre-agree that stop requests route through the controller, or plan the lead's work serialized.
+  Discovering this during the incident is the expensive path.
+- **Shared rate-limited resources are declared per subtree**: a sub-orchestrator whose workers
+  touch a per-IP/per-account-limited service gets the single-flight ownership rule in its brief
+  (`shared-safety-rails.md`) — three sibling workers hitting one relay concurrently wedges the
+  whole crew, not just the offending subtree.
 - Token budget drives shape (it explains ~80% of multi-agent quality variance): give each branch
   an explicit effort tier; simple domain = 1 worker/3–10 tool calls, complex = several workers.
 - **Blind parallel counsel** for judgment calls: task two different-lineage agents (e.g. an opus

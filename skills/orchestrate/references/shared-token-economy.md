@@ -117,6 +117,9 @@ A quality brief contains, in order:
 3. **Pointers, not payloads** — one per line, machine-checkable:
    `read: <path> — <why>` (optional `@ <commit-sha>`; `(will exist)` marks generated artifacts
    brief-check skips). Paths resolve from the repo root stated at the top of the brief.
+   Exclusive deliverables use the same shape: `write: <path> — <what>` — one owner per path,
+   run-wide; `scripts/brief-check` in multi-brief mode fails two briefs claiming the same
+   `write:` path (a double-assigned deliverable is a clobber waiting for a less careful worker).
    **Pin with `@ <sha>`** whenever more than one writer is active or the run uses worktrees — a
    branch name is not a pin. Inline content only when it is *semantically complete, stable, and
    cheaper than rediscovery* (an interface, invariants, a constraint table — verbatim); on high

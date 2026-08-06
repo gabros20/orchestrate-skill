@@ -21,6 +21,10 @@ Produces:
   user's go-ahead unless durably authorized. Approval in one context doesn't extend to the next.
 - Workers get the NARROWEST permission mode that works; headless runs pre-allowlist the exact
   commands instead of `bypassPermissions`. Never `--dangerously-*` flags on external CLIs.
+- **The controller is a hazard to its own writers**: while any writer is active in a shared tree,
+  controller commits are pathspec-scoped — never `git add -A`/`-u` (observed: an unscoped add
+  swept a concurrent agent's half-written files into an unrelated commit). Prefer worktree
+  isolation for writers; sharing a tree, the controller stages only paths it owns.
 
 ## Loops & budgets
 
@@ -40,6 +44,13 @@ Produces:
 - Escalations are never ignored: BLOCKED means something must CHANGE (context, model tier, task
   split, or the human) before any re-dispatch.
 - Rate-limited external CLI → report to the user; no retry loops against subscription quotas.
+- **Shared rate-limited resources get single-flight ownership, decided before spawn.** Any
+  external service with per-IP/per-account limits (search relays, scrapers, quota'd APIs) is
+  named in `run.md` with ONE owning agent; everyone else routes requests through the owner or
+  waits. A documented concurrency cap is a ceiling, not a license — observed: three workers
+  hitting a 3-proc-cap relay concurrently wedged the whole crew, and the wedge's hung child
+  processes outlived their stopped parent agents (cleanup kills by PROCESS, not by agent).
+  Serialize with gaps, explicit timeouts, and backoff-on-hang written into the owner's brief.
 
 ## Human bandwidth
 

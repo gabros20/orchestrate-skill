@@ -10,6 +10,42 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.8.0] — 2026-08-06
+
+Field-hardening release: every entry is a failure observed (most repeatedly) across a 15-skill
+family build program run with this pack — the through-line is moving trust from what agents SAY
+to what they WROTE. No strategy contracts change.
+
+### Added
+- **Delivery-is-completion clause** in the implementer and sub-orchestrator templates: the inline
+  report/return is the completion condition; background/teammate roles deliver it via SendMessage
+  as their final action. Motivated by the single most common observed worker failure (six
+  occurrences): work complete, report parked undelivered (`prompt-implementer.md`,
+  `prompt-sub-orchestrator.md`).
+- **Disk-first liveness rule** (`shared-monitoring.md` rules 2/3b): check the deliverable's disk
+  state before the one nudge; liveness is read from artifact existence + mtime, never process
+  count or idle state — both lie in both directions (hung children outlive stopped parents;
+  quiet agents write good files).
+- **Controller-git rail** (`shared-safety-rails.md`): while any writer is active in a shared
+  tree, controller commits are pathspec-scoped — never `git add -A` (observed sweep of a
+  concurrent agent's half-written files).
+- **Single-flight ownership for shared rate-limited resources** (`shared-safety-rails.md`,
+  `strategy-hierarchical.md`): per-IP/per-account-limited services named in `run.md` with one
+  owning agent; a documented concurrency cap is a ceiling, not a license (observed 3-worker
+  wedge on a 3-proc-cap relay); cleanup kills by process, not by agent.
+- **Control-ownership-before-spawn rule** (`strategy-hierarchical.md`): on hosts where lifecycle
+  controls sit with the top controller, a flat-roster lead cannot stop its own hung workers —
+  grant control, route stops through the controller, or serialize; decide before spawn.
+- **Record-outranks-brief precedence** (`shared-contracts.md`, `prompt-implementer.md`): when a
+  brief contradicts the binding record (decisions.md, run inventory), workers defer to the
+  record and flag it (a double-assigned deliverable was saved exactly this way).
+- **Reconcile-from-disk rule** (`shared-contracts.md` ledger): reports are claims, the disk is
+  the record — after any fan-out, the ledger reconciles against artifacts on disk, never report
+  summaries alone.
+- **`write: <path>` exclusive-deliverable pointer** in the priming anatomy
+  (`shared-token-economy.md`) + **multi-brief collision mode in `scripts/brief-check`**: two
+  briefs claiming the same `write:` path or report path fail before dispatch.
+
 ## [1.7.0] — 2026-07-21
 
 Informed by Cursor's agent-swarm write-up (2026) via a 3-model cross-lineage panel review —

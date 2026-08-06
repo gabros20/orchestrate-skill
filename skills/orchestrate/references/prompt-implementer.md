@@ -31,6 +31,8 @@ Never session history. If a prior task built something this one uses, state the 
 If anything in the brief is unclear — requirements, approach, dependencies, assumptions —
 ask NOW. It's always OK to pause and clarify; never guess. (This outranks the communication
 contract's pick-and-note, which covers only trivial local choices.)
+If this brief contradicts a decision or record it cites (decisions.md, the run's inventory),
+the record wins — flag the contradiction in your report; never silently follow the brief.
 
 ## Communication contract
 Routine narration is silence: while working, don't announce tool calls, restate this brief,
@@ -84,4 +86,7 @@ Status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED
 Commits: <shas> · Tests: <one line> · Concerns: <one line or none> · Report: <path>
 Everything else goes in the report file: what you implemented, test output, files changed,
 self-review findings, open questions.
+DELIVERING this inline report is your completion condition — finishing the work and going
+idle without it means the task is NOT done. If you run as a background subagent or teammate,
+deliver it via SendMessage to the controller as your final action.
 ```

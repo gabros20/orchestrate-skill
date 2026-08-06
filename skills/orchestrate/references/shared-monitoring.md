@@ -64,10 +64,17 @@ State files: `~/.claude/daemon/roster.json`, `~/.claude/jobs/<id>/state.json`.
 
 1. Every long-running dispatch gets `run_in_background` (Claude Code; hosts without background
    shells — codex — use `nohup … &`) + a deliverable FILE path you can check.
-2. An idle-without-report agent gets ONE nudge (SendMessage on Claude Code, `send_message` on
-   Antigravity; elsewhere resume its session with a nudge prompt) — if it still returns nothing,
-   read its transcript; don't respawn blind.
+2. An idle-without-report agent gets the disk check FIRST, then ONE nudge (SendMessage on Claude
+   Code, `send_message` on Antigravity; elsewhere resume its session with a nudge prompt) — if it
+   still returns nothing, read its transcript; don't respawn blind. Field note: this is the
+   single most common worker failure observed (six occurrences across one skill-family program,
+   including finished reviews parked undelivered) — the work is almost always complete and the
+   nudge yields the finished report instantly; delivery, not execution, is the fragile step.
 3. Silence is not success: no report + no artifact = failed, treat it as BLOCKED.
+3b. **Liveness is read from artifact deltas — existence and mtime of the deliverable path — never
+   from process count or idle state, which lie in BOTH directions:** hung child processes outlive
+   their stopped parent agents (look alive, are dead), and a quietly working agent looks stalled
+   while writing perfectly good files. Check the deliverable's mtime before any recovery action.
 4. Thrash signals — repeated conflicts/rework WITHOUT acceptance-gate movement, a growing
    contested seam/file (megafile: flag it, controller queues an isolated decomposition task), or
    duplicate structural expansion — are REPARTITION signals, not push-harder ones; no absolute

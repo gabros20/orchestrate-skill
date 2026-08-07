@@ -413,6 +413,185 @@ const BeatHead: React.FC<{ t: Theme; frame: number; from: number; kicker: string
   </div>
 );
 
+// ---------- beat 2: the flight plan (no silent launch) ----------
+
+// Every line here is the shape shared-flight-plan.md specifies: a header with the triage why, one
+// node per agent carrying `model @ effort` and isolation, gates as children, the final gate last,
+// then the gates / rails / budget / tweak footer strips.
+const PLAN_TREE: [string, string, string][] = [
+  ["staged  ×2 tasks", "plan.md · independent, suite verifies", ""],
+  ["├─ implementer", "task N · shared tree", "sonnet @ high"],
+  ["    ├─ spec gate", "did it build what was asked", "sonnet @ medium"],
+  ["    └─ quality gate", "runs only after spec ✓", "opus @ high"],
+  ["└─ final gate", "whole branch vs the stated goal", "opus @ high"],
+];
+
+const PLAN_STRIPS: [string, string][] = [
+  ["gates", "spec → quality per task · final-deliverable gate at finish"],
+  ["rails", "branch first · PR cap 1 · never a duplicate agent on overload"],
+  ["budget", "7 agents · token range from the 15× multi-agent multiplier"],
+  ["tweak", "[1] strategy  [2] models  [3] effort  [4] engine  [5] review  [6] isolation"],
+];
+
+const FlightPlan: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
+  const S = 108;
+  const opacity = io(frame, [S, S + 18], [0, 1]) * io(frame, [S + 242, S + 260], [1, 0]);
+  if (opacity <= 0.01) return null;
+
+  const panelOp = io(frame, [S + 10, S + 26], [0, 1]);
+  const tickO = io(frame, [S + 168, S + 178], [0, 1]);
+  const tickScale = io(frame, [S + 168, S + 184], [1.6, 1]);
+
+  return (
+    <AbsoluteFill style={{ opacity }}>
+      <BeatHead t={t} frame={frame} from={S} kicker="no silent launch" title="the flight plan" />
+      <div
+        style={{
+          position: "absolute",
+          top: 96,
+          left: 80,
+          right: 80,
+          background: t.codeBg,
+          border: `1.5px solid ${t.line}`,
+          borderRadius: 12,
+          padding: "14px 22px 16px",
+          opacity: panelOp,
+        }}
+      >
+        {PLAN_TREE.map(([node, note, pin], i) => {
+          const from = S + 24 + i * 11;
+          const o = io(frame, [from, from + 13], [0, 1]);
+          const head = i === 0;
+          return (
+            <div
+              key={node}
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: 14,
+                height: 27,
+                opacity: o,
+                translate: `${io(frame, [from, from + 13], [-10, 0])}px 0`,
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 17,
+                  fontWeight: head ? 600 : 400,
+                  color: head ? t.accent : t.ink,
+                  width: 230,
+                  whiteSpace: "pre",
+                }}
+              >
+                {node}
+              </span>
+              <span style={{ fontFamily: SANS, fontSize: 15, color: t.muted, flex: 1, whiteSpace: "nowrap" }}>
+                {note}
+              </span>
+              <span
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 15.5,
+                  color: pin ? t.amber : "transparent",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {pin || "—"}
+              </span>
+            </div>
+          );
+        })}
+
+        <div style={{ borderTop: `1px dashed ${t.line}`, margin: "10px 0 10px" }} />
+
+        {PLAN_STRIPS.map(([k, v], i) => {
+          const from = S + 84 + i * 11;
+          const o = io(frame, [from, from + 13], [0, 1]);
+          return (
+            <div key={k} style={{ display: "flex", alignItems: "baseline", gap: 14, height: 25, opacity: o }}>
+              <span
+                style={{
+                  fontFamily: SANS,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.12em",
+                  fontWeight: 600,
+                  fontSize: 12.5,
+                  color: t.muted,
+                  width: 64,
+                }}
+              >
+                {k}
+              </span>
+              <span style={{ fontFamily: MONO, fontSize: 15.5, color: t.ink, whiteSpace: "nowrap" }}>{v}</span>
+            </div>
+          );
+        })}
+
+        <div
+          style={{
+            marginTop: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            opacity: io(frame, [S + 128, S + 144], [0, 1]),
+          }}
+        >
+          <span style={{ fontFamily: MONO, fontSize: 16.5, color: t.accent, fontWeight: 600 }}>
+            approve, or name a change ▸
+          </span>
+          <span
+            style={{
+              opacity: tickO,
+              scale: String(tickScale),
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontFamily: MONO,
+              fontSize: 16.5,
+              fontWeight: 600,
+              color: t.good,
+            }}
+          >
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 22,
+                height: 22,
+                borderRadius: 11,
+                border: `2px solid ${t.good}`,
+                fontSize: 13,
+              }}
+            >
+              ✓
+            </span>
+            approved
+          </span>
+          <span
+            style={{
+              fontFamily: SANS,
+              fontSize: 15,
+              color: t.muted,
+              opacity: io(frame, [S + 196, S + 212], [0, 1]),
+            }}
+          >
+            · dispatching the fleet
+          </span>
+        </div>
+      </div>
+
+      <Caption t={t} frame={frame} from={S + 24} to={S + 122}>
+        Before anything spawns, the run prints itself — every agent, its <b style={{ color: t.ink }}>model and effort</b>, the gates, the budget.
+      </Caption>
+      <Caption t={t} frame={frame} from={S + 128} to={S + 250}>
+        Then it waits. Approve, or say <b style={{ color: t.ink }}>change 3</b> and it re-resolves that knob and re-asks.
+      </Caption>
+    </AbsoluteFill>
+  );
+};
+
 // ---------- beat 3: nine strategies (the option space) ----------
 
 const STRATS: [string, string][] = [
@@ -657,25 +836,33 @@ const Close: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
 // ---------- composition ----------
 
 // Reader-first pacing: each beat animates in, HOLDS long enough to read, then fades out before the
-// next begins. Beats 1–2 (Problem, Stage) are the original life-of-a-task; 3–6 enrich it with the
-// strategy space, the dimension knobs, external-CLI workers, and a close. 48s, loops.
+// next begins. Beats 1–3 (Problem, FlightPlan, Stage) are the life of a task — the plan is printed
+// and approved BEFORE the fleet exists; 4–7 enrich it with the strategy space, the dimension knobs,
+// external-CLI workers, and a close. ~56s, loops.
 //   B1 problem      0–113
-//   B2 stage        98–470     (the staged strategy — the poster beat)
-//   B3 strategies   470–740    nine strategies
-//   B4 dimensions   744–1000   compose the run
-//   B5 xcli         1004–1292  external CLIs, first-class
-//   B6 close        1296–1440
+//   B2 flight plan  108–368    (print the design, gate on approval, then dispatch)
+//   B3 stage        350–722    (the staged strategy — the poster beat)
+//   B4 strategies   722–992    nine strategies
+//   B5 dimensions   996–1252   compose the run
+//   B6 xcli         1256–1544  external CLIs, first-class
+//   B7 close        1548–1692
+// Beats from Stage on keep their original internal timing and are offset by SHIFT, so the flight
+// plan could be inserted without re-timing four beats by hand.
+const SHIFT = 252;
+
 export const LifeOfATask: React.FC<{ theme: ThemeName }> = ({ theme }) => {
   const frame = useCurrentFrame();
   const t = themes[theme];
+  const late = frame - SHIFT;
   return (
     <AbsoluteFill style={{ background: t.bg }}>
       <Problem t={t} frame={frame} />
-      <Stage t={t} frame={frame} />
-      <Strategies t={t} frame={frame} />
-      <Dimensions t={t} frame={frame} />
-      <Xcli t={t} frame={frame} />
-      <Close t={t} frame={frame} />
+      <FlightPlan t={t} frame={frame} />
+      <Stage t={t} frame={late} />
+      <Strategies t={t} frame={late} />
+      <Dimensions t={t} frame={late} />
+      <Xcli t={t} frame={late} />
+      <Close t={t} frame={late} />
     </AbsoluteFill>
   );
 };

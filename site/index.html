@@ -215,10 +215,10 @@
   .rules li{background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--amber); border-radius:6px; padding:12px 16px; font-size:14px; line-height:1.5}
   .rules li b{display:flex; align-items:center; gap:7px; font-family:ui-monospace,Menlo,monospace; font-size:13px; margin-bottom:3px}
   .rules li b .lu{width:15px; height:15px; color:var(--amber)}
-  .gp>div:nth-child(2),.gp>div:nth-child(3){--sc:var(--amber)}
-  .gp>div:nth-child(4){--sc:var(--good)}
-  .gp>div:nth-child(2) b,.gp>div:nth-child(3) b{color:var(--amber)}
-  .gp>div:nth-child(4) b{color:var(--good)}
+  .gp>div:nth-child(2),.gp>div:nth-child(3),.gp>div:nth-child(4){--sc:var(--amber)}
+  .gp>div:nth-child(5){--sc:var(--good)}
+  .gp>div:nth-child(2) b,.gp>div:nth-child(3) b,.gp>div:nth-child(4) b{color:var(--amber)}
+  .gp>div:nth-child(5) b{color:var(--good)}
   .loopback{display:flex; gap:10px; margin-top:12px; font-size:13.5px; color:var(--muted); line-height:1.55; max-width:none}
   .loopback .ic{color:var(--bad); flex:none; margin-top:1px}
   .loopback .ic .lu{width:17px; height:17px}
@@ -226,7 +226,7 @@
 
   /* token role cards */
   .card .mech{font-size:13px; border-top:1px dashed var(--line); padding-top:8px; line-height:1.55}
-  .card .mech code{font-size:12px; background:var(--code-bg); padding:1px 5px; border-radius:4px}
+  .card .mech code,.card .use code{font-size:12px; background:var(--code-bg); padding:1px 5px; border-radius:4px}
 
   /* token timeline */
   .tl{list-style:none;margin:22px 0 0;padding:0}
@@ -409,17 +409,19 @@
   <p style="margin-top:16px">That one line means: Codex implements every task, Claude still reviews
   every result. Strategies compose the same way — <code class="mono">strategy=loop
   topology=parallel</code> makes each loop cycle fan out.</p>
-  <p>Eight knobs exist; you'll only ever touch two or three:</p>
+  <p>The knobs you'll actually type — most runs touch two or three:</p>
   <div class="tblwrap"><table>
     <tr><th>knob</th><th>what it controls</th><th>default</th></tr>
     <tr><td class="dim">strategy</td><td>the run shape — one of the nine below</td><td><code>auto</code> → triage picks</td></tr>
     <tr><td class="dim">review</td><td>which gates run on each result</td><td><code>dual</code> — spec, then quality</td></tr>
-    <tr><td class="dim">engine</td><td>who executes — <code>claude</code>, <code>codex</code>, <code>grok</code>, or <code>mixed</code></td><td><code>claude</code></td></tr>
+    <tr><td class="dim">engine</td><td>who executes — <code>claude</code>, <code>codex</code>, <code>grok</code>, <code>cursor</code>, <code>agy</code>, <code>opencode</code>, <code>hermes</code>, <code>kimi</code>, or <code>mixed</code></td><td><code>claude</code></td></tr>
     <tr><td class="dim">models</td><td>which model tier does which job</td><td>tier map (appendix)</td></tr>
+    <tr><td class="dim">effort</td><td>reasoning level per role — the first cost knob, model tier is the second</td><td>pinned per dispatch where the surface allows</td></tr>
     <tr><td class="dim">isolation</td><td>whether workers get their own git worktree</td><td><code>worktree</code> when &gt;1 writer</td></tr>
     <tr><td class="dim">trigger</td><td>run once, on a goal, on an interval, on a schedule</td><td><code>once</code></td></tr>
     <tr><td class="dim">workers</td><td>how many run at once</td><td>3–5</td></tr>
     <tr><td class="dim">budget</td><td>hard caps — cycles, agents, tokens, open PRs</td><td>per strategy</td></tr>
+    <tr><td class="dim">confirm</td><td>whether the flight plan gates on your approval</td><td><code>on</code> — <code>off</code> still prints the plan</td></tr>
   </table></div>
   <details class="disc">
     <summary>the full command grammar</summary>
@@ -427,11 +429,12 @@
       <div class="gram">/orchestrate <span class="g-file">[plan-file | task description]</span>
     <span class="g-dim">strategy=</span><span class="g-strat">auto|staged|parallel|hierarchical|team|workflow|loop|advisor|adversarial|xcli</span>
     <span class="g-dim">review=</span><span class="g-val">dual|spec|quality|panel:N|consensus:N|off</span>
-    <span class="g-dim">engine=</span><span class="g-val">claude|codex|grok|mixed</span>
+    <span class="g-dim">engine=</span><span class="g-val">claude|codex|grok|cursor|agy|opencode|hermes|kimi|mixed</span>
     <span class="g-dim">models=</span><span class="g-val">orchestrator:opus,worker:sonnet,advisor:strongest,…</span>
+    <span class="g-dim">effort=</span><span class="g-val">low|medium|high|xhigh|max</span> | <span class="g-val">worker:low,reviewer:high,…</span>
     <span class="g-dim">isolation=</span><span class="g-val">worktree|branch|off</span>   <span class="g-dim">workers=</span><span class="g-val">N</span>
     <span class="g-dim">trigger=</span><span class="g-val">once|goal:"tests green"|interval:5m|schedule:"0 6 * * *"</span>
-    <span class="g-dim">budget=</span><span class="g-val">cycles|agents|tokens</span>   <span class="g-dim">alias=</span><span class="g-val">saved-preset</span></div>
+    <span class="g-dim">budget=</span><span class="g-val">cycles|agents|tokens</span>   <span class="g-dim">confirm=</span><span class="g-val">on|off</span>   <span class="g-dim">alias=</span><span class="g-val">saved-preset</span></div>
       <p>Full reference: <a href="https://github.com/gabros20/orchestrate-skill/blob/main/docs/usage.md">docs/usage.md</a> — every dimension, every value, selection precedence.</p>
     </div>
   </details>
@@ -458,31 +461,31 @@
 
     <div class="card" id="c-staged"><div class="top"><h3>staged<em>default</em></h3>
       <svg width="88" height="40" viewBox="0 0 88 40" aria-label="sequential chain"><circle class="n2" cx="8" cy="20" r="5"/><line class="e" x1="14" y1="20" x2="28" y2="20"/><circle class="n" cx="34" cy="20" r="5"/><line class="e" x1="40" y1="20" x2="54" y2="20"/><circle class="n" cx="60" cy="20" r="5"/><line class="e" x1="66" y1="20" x2="80" y2="20"/><circle class="n" cx="84" cy="20" r="4" opacity=".4"/></svg></div>
-      <div class="use"><b>Use it when</b> you have a plan of mostly-independent tasks and want quality on every one. <b>It works by</b> sending a fresh implementer per task and reviewing each result twice before it counts.</div></div>
+      <div class="use"><b>Use it when</b> you have a plan of mostly-independent tasks and want quality on every one. <b>It works by</b> sending a fresh implementer per task and reviewing each result twice before it counts. Every task's acceptance check is authored before the first dispatch — ideally by an agent other than the one who'll implement it.</div></div>
 
     <div class="card" id="c-parallel"><div class="top"><h3>parallel</h3>
       <svg width="88" height="40" viewBox="0 0 88 40" aria-label="fan-out"><circle class="n2" cx="10" cy="20" r="5"/><line class="e" x1="15" y1="17" x2="42" y2="7"/><line class="e" x1="16" y1="20" x2="42" y2="20"/><line class="e" x1="15" y1="23" x2="42" y2="33"/><circle class="n" cx="48" cy="7" r="5"/><circle class="n" cx="48" cy="20" r="5"/><circle class="n" cx="48" cy="33" r="5"/><line class="e2" x1="53" y1="7" x2="76" y2="18"/><line class="e2" x1="53" y1="20" x2="76" y2="20"/><line class="e2" x1="53" y1="33" x2="76" y2="22"/><circle class="n2" cx="80" cy="20" r="5"/></svg></div>
-      <div class="use"><b>Use it when</b> tasks are independent, share no files, and wall-clock time matters. <b>It works by</b> running 3–5 workers at once in isolated git worktrees, then merging in dependency order.</div></div>
+      <div class="use"><b>Use it when</b> tasks are independent, share no files, and wall-clock time matters. <b>It works by</b> running 3–5 workers at once in isolated git worktrees, then merging in dependency order. The merge counts returns against dispatches and refuses to synthesize a partial set — one dead worker never slips into a report that looks complete.</div></div>
 
     <div class="card"><div class="top"><h3>hierarchical</h3>
       <svg width="88" height="40" viewBox="0 0 88 40" aria-label="tree"><circle class="n2" cx="10" cy="20" r="5"/><line class="e" x1="15" y1="17" x2="38" y2="9"/><line class="e" x1="15" y1="23" x2="38" y2="31"/><circle class="n2" cx="44" cy="9" r="4"/><circle class="n2" cx="44" cy="31" r="4"/><line class="e" x1="48" y1="7" x2="70" y2="4"/><line class="e" x1="48" y1="11" x2="70" y2="14"/><line class="e" x1="48" y1="29" x2="70" y2="26"/><line class="e" x1="48" y1="33" x2="70" y2="36"/><circle class="n" cx="74" cy="4" r="3.5"/><circle class="n" cx="74" cy="14" r="3.5"/><circle class="n" cx="74" cy="26" r="3.5"/><circle class="n" cx="74" cy="36" r="3.5"/></svg></div>
-      <div class="use"><b>Use it when</b> the work is too broad for one context and each domain needs real thinking. <b>It works by</b> giving every domain its own sub-orchestrator, which returns conclusions instead of transcripts.</div></div>
+      <div class="use"><b>Use it when</b> the work is too broad for one context and each domain needs real thinking. <b>It works by</b> giving every domain its own sub-orchestrator, which returns conclusions instead of transcripts. Wide and shallow beats deep — and who can stop a hung worker is settled before anything spawns.</div></div>
 
     <div class="card" id="c-team"><div class="top"><h3>team</h3>
       <svg width="88" height="40" viewBox="0 0 88 40" aria-label="mesh"><circle class="n2" cx="14" cy="10" r="5"/><circle class="n" cx="64" cy="8" r="5"/><circle class="n" cx="40" cy="32" r="5"/><circle class="n" cx="76" cy="30" r="5"/><line class="e" x1="19" y1="10" x2="59" y2="8"/><line class="e" x1="17" y1="14" x2="37" y2="28"/><line class="e" x1="62" y1="12" x2="44" y2="29"/><line class="e" x1="68" y1="11" x2="73" y2="26"/><line class="e" x1="45" y1="31" x2="71" y2="30"/></svg></div>
-      <div class="use"><b>Use it when</b> workers must talk to each other — debates, competing hypotheses, cross-layer features. <b>It works by</b> spawning named teammates who share a task list and message each other directly. Experimental.</div></div>
+      <div class="use"><b>Use it when</b> workers must talk to each other — debates, competing hypotheses, cross-layer features. <b>It works by</b> spawning named teammates who share a task list and message each other directly. Teammates aren't worktree-isolated, so file ownership is partitioned in the spawn prompt; the team owes one final review before it disbands. Experimental.</div></div>
 
     <div class="card" id="c-workflow"><div class="top"><h3>workflow</h3>
       <svg width="88" height="40" viewBox="0 0 88 40" aria-label="scripted fleet"><rect x="4" y="12" width="16" height="16" rx="3" fill="none" class="e2" stroke-dasharray="3 2"/><line class="e" x1="21" y1="20" x2="32" y2="20"/><circle class="n" cx="38" cy="8" r="3.5"/><circle class="n" cx="38" cy="20" r="3.5"/><circle class="n" cx="38" cy="32" r="3.5"/><circle class="n" cx="52" cy="8" r="3.5"/><circle class="n" cx="52" cy="20" r="3.5"/><circle class="n" cx="52" cy="32" r="3.5"/><circle class="n" cx="66" cy="8" r="3.5"/><circle class="n" cx="66" cy="20" r="3.5"/><circle class="n" cx="66" cy="32" r="3.5"/><line class="e2" x1="70" y1="20" x2="80" y2="20"/><circle class="n2" cx="83" cy="20" r="4"/></svg></div>
-      <div class="use"><b>Use it when</b> you have 20+ similar items and a script should hold the plan instead of you. <b>It works by</b> fanning agents out from a deterministic script that verifies every finding and resumes with cached results.</div></div>
+      <div class="use"><b>Use it when</b> you have 20+ similar items and a script should hold the plan instead of you. <b>It works by</b> fanning agents out from a deterministic script that verifies every finding and resumes with cached results. Resume only holds while the script stays deterministic — a clock or a random draw silently defeats the journal.</div></div>
 
     <div class="card" id="c-loop"><div class="top"><h3>loop</h3>
       <svg width="88" height="40" viewBox="0 0 88 40" aria-label="cycle"><circle cx="44" cy="20" r="13" fill="none" class="e"/><circle class="n2" cx="44" cy="7" r="4.5"/><circle class="n" cx="57" cy="26" r="4.5"/><circle class="n" cx="31" cy="26" r="4.5"/><path d="M51 12.5 L55.7 14.1 L56 9.1" fill="none" class="e"/></svg></div>
-      <div class="use"><b>Use it when</b> work grinds toward a checkable goal — tests green, a metric hit. <b>It works by</b> running gated cycles against a stop condition, with hard caps and a kill switch.</div></div>
+      <div class="use"><b>Use it when</b> work grinds toward a checkable goal — tests green, a metric hit. <b>It works by</b> running gated cycles against a stop condition, with hard caps and a kill switch. Cycles of activity that never move an acceptance gate force a real result or repair; a replan that produces no visible delta doesn't count as one.</div></div>
 
     <div class="card"><div class="top"><h3>advisor</h3>
       <svg width="88" height="40" viewBox="0 0 88 40" aria-label="advisor consult"><circle class="n" cx="16" cy="20" r="5.5"/><line class="e2" x1="24" y1="16" x2="52" y2="16" stroke-dasharray="3 3"/><path d="M52 13 l4 3 l-4 3" fill="none" class="e2"/><line class="e2" x1="56" y1="24" x2="28" y2="24" stroke-dasharray="3 3"/><path d="M28 21 l-4 3 l4 3" fill="none" class="e2"/><rect x="58" y="8" width="24" height="24" rx="4" fill="none" class="e2"/><circle class="n2" cx="70" cy="20" r="5"/></svg></div>
-      <div class="use"><b>Use it when</b> budget is tight and most of the task is mechanical. <b>It works by</b> letting a cheap model do every turn while the strongest model answers only the few questions that need real judgment.</div></div>
+      <div class="use"><b>Use it when</b> budget is tight and most of the task is mechanical. <b>It works by</b> letting a cheap model do every turn while the strongest model answers only the few questions that need real judgment. Or invert it — the architect session never leaves the room and routes each dispatch to a routine, escalation, or review lane.</div></div>
 
     <div class="card"><div class="top"><h3>adversarial</h3>
       <svg width="88" height="40" viewBox="0 0 88 40" aria-label="debate"><circle class="n2" cx="16" cy="14" r="6"/><circle class="n" cx="60" cy="14" r="6"/><path d="M24 11 h28 m0 0 l-4 -3 m4 3 l-4 3" fill="none" class="e"/><path d="M52 18 h-28 m0 0 l4 -3 m-4 3 l4 3" fill="none" class="e"/><line class="e2" x1="38" y1="24" x2="38" y2="32"/><circle class="n" cx="38" cy="35" r="3.5"/></svg></div>
@@ -490,21 +493,31 @@
 
     <div class="card"><div class="top"><h3>xcli</h3>
       <svg width="88" height="40" viewBox="0 0 88 40" aria-label="external engines"><circle class="n2" cx="12" cy="20" r="5"/><line class="e" x1="18" y1="17" x2="34" y2="9"/><line class="e" x1="18" y1="20" x2="34" y2="20"/><line class="e" x1="18" y1="23" x2="34" y2="31"/><rect x="36" y="3" width="20" height="12" rx="2" fill="none" class="e"/><rect x="36" y="14" width="20" height="12" rx="2" fill="none" class="e2"/><rect x="36" y="25" width="20" height="12" rx="2" fill="none" class="e"/><text x="40" y="12" font-size="7" fill="var(--muted)" font-family="monospace">cdx</text><text x="40" y="23" font-size="7" fill="var(--accent)" font-family="monospace">cld</text><text x="40" y="34" font-size="7" fill="var(--muted)" font-family="monospace">grk</text></svg></div>
-      <div class="use"><b>Use it when</b> a task fits another coding CLI, or you want a second opinion from a different model family. <b>It works by</b> routing tasks to codex or grok as workers or reviewers — one task per launch, and their diffs get reviewed too.</div></div>
+      <div class="use"><b>Use it when</b> a task fits another coding CLI, or you want a second opinion from a different model family. <b>It works by</b> routing tasks to codex or grok as workers or reviewers — one task per launch, and their diffs get reviewed too. An empty diff is never <code>complete</code>: exit 0 with nothing changed is a refusal, quoted verbatim, not a finished task.</div></div>
   </div>
 </section>
 
 <section id="gates">
   <h2><svg class="lu" aria-hidden="true"><use href="#lu-shield-check"/></svg>Gated by default</h2>
   <p>Nothing lands because an agent says it's done. Every result passes two gates, in a fixed
-  order, and reviewers verify by reading the code — never the worker's own report.</p>
+  order, and reviewers verify by reading the code — never the worker's own report. Every gate that
+  judges produced work names at least one fact <b>no agent produced</b>: a command that ran with its
+  output, a file on disk at a stated sha, an external readback. A topology of agents reading each
+  other's reports can be perfectly consistent and entirely unverified.</p>
   <div class="steps gp">
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-bot"/></svg>implement</b><span>A fresh worker builds exactly what its brief asks.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-clipboard-check"/></svg>spec gate</b><span>"Did they build what was asked?" Nothing missing, nothing extra.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-search-check"/></svg>quality gate</b><span>"Is it well-built?" Runs only after spec passes — never before.</span></div>
+    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-shield-check"/></svg>final gate</b><span>Before the run reports done, a <b>fresh context</b> judges the whole accumulated change set against your originally stated goal — per-task gates structurally cannot see drift <i>across</i> tasks. Verdict: ship, fix-first, or rethink.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-scroll-text"/></svg>ledger</b><span>The task becomes one ledger line; the run can always resume from here.</span></div>
   </div>
-  <div class="loopback"><span class="ic"><svg class="lu" aria-hidden="true"><use href="#lu-iteration-ccw"/></svg></span><span>Any failure sends <b>one fix agent</b> back through the <b>same gate</b> until it's clean — no skipping, no downgrading a finding to pass. High-stakes plans can add more lenses: <code class="mono">review=panel:3</code>.</span></div>
+  <div class="loopback"><span class="ic"><svg class="lu" aria-hidden="true"><use href="#lu-iteration-ccw"/></svg></span><span>Any failure sends <b>one fix agent</b> back through the <b>same gate</b> until it's clean — no skipping, no downgrading a finding to pass. Two or three failed rounds on the same gate escalates the model tier, never a fourth identical round. Judges are cross-family where the host allows, and pinned and logged per round — a silently upgraded judge makes round 1 and round 3 incomparable. High-stakes plans can add more lenses: <code class="mono">review=panel:3</code>.</span></div>
+  <p style="margin-top:26px">Four invariants sit under every status, gate, and ledger line:</p>
+  <div class="term">observation ≠ transition          proposal ≠ authority
+tool success ≠ accepted progress
+accepted progress = validation + durable writeback + committed readback</div>
+  <p class="pcap">The third is the one most runs get wrong: <b>an exit code of 0 only proves the
+  process exited</b> — not that the work landed.</p>
   <ul class="rules">
     <li><b><svg class="lu" aria-hidden="true"><use href="#lu-git-branch"/></svg>branch first</b>It never starts work on main without your explicit consent.</li>
     <li><b><svg class="lu" aria-hidden="true"><use href="#lu-copy-x"/></svg>no duplicates on overload</b>If the API chokes, it resumes the same agent — it never spawns a competing copy.</li>
@@ -520,14 +533,15 @@
   <p>The target is <b>zero wasted tokens, not minimal tokens</b>. Workers get every pointer they
   need to do the job — then stay quiet while working and report densely when done. Noisy command
   output is redirected to files, so dumps never enter anyone's context.</p>
-  <p>Every dispatch carries a short contract matched to its role:</p>
+  <p>Every dispatch carries a short contract matched to its role — a dispatch with no block is a
+  defect, not a default:</p>
   <div class="cards">
-    <div class="card"><div class="top"><h3>WORKER<em>&approx;300 tok</em></h3></div>
+    <div class="card"><div class="top"><h3>WORKER<em>&approx;334 tok</em></h3></div>
       <div class="use"><b>Who:</b> implementers, integrators, loop executors.</div>
-      <div class="mech">Orient first — reading to understand is work, not waste. Then silence: no narration, no restating the brief. Blockers come back structured, and safety messages are never silenced.</div></div>
-    <div class="card"><div class="top"><h3>REVIEWER<em>&approx;140 tok</em></h3></div>
+      <div class="mech">Orient first — reading to understand is work, not waste. Then silence: no narration, no restating the brief. Blockers come back structured, and safety messages are never silenced. Written files follow the same discipline: length matched to what the task needs, no filler sections or boilerplate.</div></div>
+    <div class="card"><div class="top"><h3>REVIEWER<em>&approx;176 tok</em></h3></div>
       <div class="use"><b>Who:</b> spec, quality, and panel reviewers.</div>
-      <div class="mech"><b>Never self-filters.</b> Every finding goes to a findings file with severity and confidence; inline is just the verdict and counts. Deciding what matters is the controller's job.</div></div>
+      <div class="mech"><b>Never self-filters.</b> Every finding goes to a findings file with severity and confidence; inline is just the verdict and counts. Deciding what matters is the controller's job. Delivering that verdict <i>is</i> the completion condition — a finished-but-silent reviewer never finished.</div></div>
     <div class="card"><div class="top"><h3>MINIMAL<em>&approx;19 tok</em></h3></div>
       <div class="use"><b>Who:</b> advisors, verifiers, one-line judges.</div>
       <div class="mech">One line: return only the answer in the asked shape. A 300-token contract on a 4-line return would cost more than it saves.</div></div>
@@ -598,7 +612,7 @@ npx skills add gabros20/orchestrate-skill -g
   <div class="tblwrap"><table>
     <tr><th>alias</th><th>expands to</th><th>for</th></tr>
     <tr><td class="dim">red-team</td><td><code>adversarial</code> + <code>panel:3</code></td><td>high-stakes builds — debate the plan, triple-lens the output</td></tr>
-    <tr><td class="dim">codex-grind</td><td><code>staged</code> + <code>engine=codex</code></td><td>cheap bulk implementation, Claude reviews every task</td></tr>
+    <tr><td class="dim">codex-grind</td><td><code>staged</code> + <code>engine=codex</code> + <code>effort=high</code></td><td>cheap bulk implementation, Claude reviews every task</td></tr>
     <tr><td class="dim">swarm</td><td><code>parallel</code> + <code>workers=4</code> + <code>review=spec</code></td><td>fast independent fan-out, minimal ceremony</td></tr>
     <tr><td class="dim">afk</td><td><code>loop</code> + <code>trigger=goal</code> + <code>cycles:20, open_prs:1</code></td><td>walk-away grinding with hard rails</td></tr>
     <tr><td class="dim">architect</td><td><code>advisor</code> + <code>worker:sonnet</code></td><td>big-model thinking, small-model doing</td></tr>
@@ -609,9 +623,11 @@ npx skills add gabros20/orchestrate-skill -g
   <details class="disc">
     <summary>model tiers — who runs on what</summary>
     <div>
-      <p>The model is explicit on every dispatch — an omitted model silently inherits the most
-      expensive one. And turn count beats token price: a too-cheap model takes 2–3× the turns and
-      loses the savings.</p>
+      <p>Model <b>and</b> reasoning effort are explicit on every dispatch — an omitted model
+      silently inherits the most expensive one, and effort is the first cost knob, tier the second.
+      A pin you requested is not a pin you got: the run records the model that actually ran beside
+      the one you asked for. And turn count beats token price — a too-cheap model takes 2–3× the
+      turns and loses the savings.</p>
       <div class="tblwrap"><table>
         <tr><th>tier</th><th>job</th><th>default</th><th>never</th></tr>
         <tr><td class="dim">advisor</td><td>rare judgment consults, out of the hot path</td><td>strongest</td><td>executes</td></tr>
@@ -633,8 +649,9 @@ npx skills add gabros20/orchestrate-skill -g
 └─ references/                 <span class="d">strategies, shared contracts, dispatch templates</span>
 
 <span class="hl">&lt;your repo&gt;/.orchestrate/</span>     <span class="d">per-run workspace — self-ignoring, invisible to git</span>
-├─ run.md                      <span class="d">resolved dimensions + budget (the audit trail)</span>
+├─ run.md                      <span class="d">dimensions, budget, flight-plan outcome (the audit trail)</span>
 ├─ task-N-brief.md / -report.md<span class="d">  per-task handoffs</span>
+├─ decisions.md                <span class="d">cross-cutting decisions — briefs cite IDs, never restate</span>
 ├─ raw/                        <span class="d">redirected command output — dumps never enter context</span>
 ├─ toolbox.md                  <span class="d">probed orientation recipes — read, don't re-probe</span>
 └─ progress.md                 <span class="d">THE LEDGER — resume trusts this + git log, not memory</span></div>
@@ -661,7 +678,7 @@ npx skills add gabros20/orchestrate-skill -g
   v.autoplay = true;
   v.playsInline = true;
   v.setAttribute("playsinline", "");
-  v.setAttribute("aria-label", "Animated explainer: a controller writes brief files, fresh workers return reports and are discarded, gates stamp each report, and a ledger records every task; then the skill's nine strategies, the composable run dimensions (review, models, isolation, trigger, budget), and dispatching external coding CLIs as sandboxed workers.");
+  v.setAttribute("aria-label", "Animated explainer: one agent's context fills up; the run prints a flight plan — a topology tree with the model and reasoning effort per agent, the gates, the rails and the budget — and waits for approval before anything spawns; then a controller writes brief files, fresh workers return reports and are discarded, gates stamp each report, and a ledger records every task; then the skill's nine strategies, the composable run dimensions (review, models, isolation, trigger, budget), and dispatching external coding CLIs as sandboxed workers.");
   function apply() {
     var theme = document.documentElement.getAttribute("data-theme") || (mq.matches ? "dark" : "light");
     v.poster = "assets/life-of-a-task-" + theme + "-poster.png";

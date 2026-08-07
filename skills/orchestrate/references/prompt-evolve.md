@@ -14,7 +14,8 @@ Inputs:
 Produces:
 - Proposed process adjustment with evidence, expected benefit, and rollback condition.
 
-Agent tool, `model: <standard tier>`. Run every N loop cycles. Internal pass: it never notifies
+Agent tool, `model: <standard tier>`, `effort: <pin if the surface supports it; else session
+effort — record in run.md>`. Run every N loop cycles. Internal pass: it never notifies
 the user, never declares the loop finished, and NO-OP IS A VALID, COMMON OUTCOME.
 
 ```

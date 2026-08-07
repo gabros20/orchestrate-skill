@@ -10,11 +10,13 @@ aliases:
     review: panel:3
     models: { planner: strongest, worker: sonnet }
 
-  # Cheap bulk execution with Claude reviewing Codex's work
+  # Cheap bulk execution with Claude reviewing Codex's work — the staged-codex recipe
+  # (strategy-xcli.md): per-task model+effort by complexity, empty-diff check every return
   codex-grind:
     strategy: staged
     engine: codex
     review: dual
+    effort: high
     models: { reviewer: sonnet }
 
   # Fast independent fan-out, minimal ceremony
@@ -31,7 +33,8 @@ aliases:
     budget: { cycles: 20, open_prs: 1 }
     review: dual
 
-  # Big-model thinking, small-model doing
+  # Big-model thinking, small-model doing (Variant A/B; for Variant C — the architect session
+  # routing per dispatch — see strategy-advisor.md)
   architect:
     strategy: advisor
     models: { advisor: strongest, worker: sonnet }

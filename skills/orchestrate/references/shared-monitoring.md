@@ -81,6 +81,9 @@ rewrites as progress is exactly what lets a thrashing agent look healthy. The th
 illustrative defaults from one working-code source, chosen by reasoning rather than by benchmark;
 tune them per run.
 
+Run the detector scan at every liveness check and before any recovery action — a detector that
+never runs detects nothing; there is no separate cadence to remember.
+
 What travels upward on a stall is **evidence, never a transcript**: counts, error classes and
 digests, plus the plan, the files at their shas, the actions attempted, and paths to the failure
 evidence. Reasoning is never evidence. The escalation itself follows `shared-model-routing.md`

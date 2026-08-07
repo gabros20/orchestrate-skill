@@ -14,6 +14,14 @@ Inputs:
 Produces:
 - Gated task commits, review findings, fix waves, and integrated progress.
 
+## Contents
+
+- Setup (once per run)
+- Per-task cycle
+- Finish
+- Dimension overrides that change this file's behavior
+- Red flags (inherited from the original skill — still law)
+
 Preset: `topology=staged planning=plan-first review=dual isolation=off trigger=once`.
 Sequential per-task cycles. The controller never implements; every task gets a FRESH subagent with
 a curated brief; two ordered reviews gate every task. Descends from superpowers SDD.
@@ -63,11 +71,15 @@ brief → dispatch implementer → (questions? answer, re-dispatch) → implemen
    truncates multi-commit tasks). Dispatch spec reviewer with brief + report + diff paths and the
    plan's Global Constraints copied VERBATIM. Then, only after spec ✅, the quality reviewer.
    Reviewers are read-only. Never pre-judge findings in a reviewer prompt ("don't flag X", "at
-   most Minor") — that's you sparing yourself a review loop.
+   most Minor") — that's you sparing yourself a review loop. Judge selection follows judge hygiene
+   (`shared-review-gates.md`): cross-family lineage where the host allows, pinned and logged in
+   the findings file.
 6. **Fix waves**: Critical/Important → ONE fix subagent carrying the full implementer contract
    (re-run covering tests, name files, report command+output) → re-review. Minor → ledger, batched
    for the final review. Implementer rationale never downgrades a severity. ⚠️ "cannot verify from
-   diff" items are YOURS to resolve — you hold cross-task context.
+   diff" items are YOURS to resolve — you hold cross-task context. Cap fix→re-review at 2–3
+   rounds per gate: hitting the cap is a model-tier escalation (`shared-model-routing.md` rule 4),
+   never a fourth identical round.
 7. **Ledger**: append `Task N: complete (commits <base7>..<head7>, review clean)`.
 
 ## Finish

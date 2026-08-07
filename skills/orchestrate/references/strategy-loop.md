@@ -86,7 +86,8 @@ Max-cycle cap · kill switch (delete the state file stops everything) · regress
 cycle that makes verified metrics worse reverts, and two in a row halts) · **review-bandwidth cap:
 never open a new PR while the loop's previous PR is unmerged** · ratchet gating: cheap checks
 between cycles, heavy validation only at cycle boundary · no-op is a SUCCESSFUL run (zero drift
-found ≠ wasted run).
+found ≠ wasted run) · at goal-met, a loop whose cycles accumulated shipped changes owes the
+final-deliverable gate before its closing report (`shared-review-gates.md`).
 
 ## Measured-target loop (named variant)
 

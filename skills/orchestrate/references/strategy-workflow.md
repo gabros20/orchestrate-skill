@@ -42,7 +42,10 @@ Not for: work needing mid-run human sign-off between stages (run each stage as i
    Workflows can spawn hundreds of agents; the 25-agent / 1.5M-token warning is advisory only.
 2. **Explicit budget in the script** — cap agents; use loop-until-dry with a dry-round counter,
    never `while(true)`; the runtime caps 16 concurrent / 1000 total, but your budget should bind
-   far earlier.
+   far earlier. On Claude Code the script also reads the user's token target (`budget.total`,
+   `budget.spent()`, `budget.remaining()` — set by a "+500k"-style directive): guard loops on
+   `remaining()`, and guard on `budget.total` being set, since without a target `remaining()` is
+   infinite.
 3. **pipeline() over barriers** — items flow through stages independently; barrier only when a
    stage truly needs ALL prior results (dedup, early-exit, cross-comparison).
 4. **Adversarial verify as a stage, not a hope** — every finding gets N independent refuters;
@@ -55,6 +58,8 @@ Not for: work needing mid-run human sign-off between stages (run each stage as i
 8. **Fan-in guard** — every merge or synthesis stage counts returns against dispatches and refuses
    to synthesize on a partial set; in a wide graph one dead node otherwise slips into a report
    that looks complete. Wide runs layer the fan-in: summarize per batch, then combine summaries.
+9. **A workflow that mutated the repo owes the final-deliverable gate** before reporting done:
+   fresh context, accumulated change set vs the originally stated goal (`shared-review-gates.md`).
 
 ## What breaks replay
 

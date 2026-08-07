@@ -54,7 +54,11 @@ non-compliant code is wasted tokens.
   Findings go to the findings file (`shared-contracts.md`) so inline caps can't truncate them.
 - Findings loop: Critical/Important → fix subagent → RE-REVIEW (no skipping); Minor → ledger,
   batch to final review. ⚠️ "cannot verify from diff" → the CONTROLLER resolves (it holds
-  cross-task context), never auto-pass.
+  cross-task context), never auto-pass. N failed rounds on the same task (default 2–3) is a
+  model-tier escalation (`shared-model-routing.md` rule 4), never another identical round.
+- **A verdict binds the brief it judged**: the findings file records the brief's content hash
+  (`git hash-object <brief>`) beside the judge line — a brief edited after review re-opens the
+  gate, because the gate no longer describes the work that will ship.
 
 ## Anchors — topology is not truth
 
@@ -116,6 +120,7 @@ For anything user-facing or high-stakes, split verification:
    independence; the model that wrote the code grades its own homework too generously.
 2. **Objective second — the controller** runs the codified checks (typecheck/lint/unit/e2e) as a
    regression sweep.
-`fail` → fix → a NEW fresh verifier; cap ~3 rounds, then escalate. PRs ship with the evidence:
+`fail` → fix → a NEW fresh verifier; cap ~3 rounds — then escalate the worker's tier
+(`shared-model-routing.md` rule 4) before escalating to the human. PRs ship with the evidence:
 screenshot embedded inline, video linked — reviewers approve behavior, not vibes. A fix that
 doesn't move the real metric isn't a fix — keep watching it next cycle.

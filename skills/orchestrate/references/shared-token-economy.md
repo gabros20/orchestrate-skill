@@ -81,6 +81,8 @@ Report EVERY finding with severity + confidence — never self-filter to "import
 triage is the controller's job. Findings go to the findings FILE (path in your inputs); inline
 return = verdict + counts by severity + file path. Your repo access is read-only; the findings
 file under .orchestrate/ is your one write.
+Delivering your inline verdict is your completion condition — running as a background subagent
+or teammate, send it to the controller via SendMessage as your final action.
 ```
 
 "Report EVERY finding" is load-bearing and now vendor-confirmed: a reviewer told to be
@@ -141,6 +143,9 @@ A quality brief contains, in order:
    from the repo or conventions files, not a decision (`decisions.md`) or orientation
    (`toolbox.md`), and names the wasted turn it prevents.
 4. **Interfaces & constraints to honor** — exact values, formats, relationships (verbatim).
+   A spec may BE an artifact in code: a detailed test suite, a reference implementation to port,
+   or a rubric file handed to a verifier — code-shaped specs beat prose descriptions of the same
+   thing (vendor guidance).
 5. **Verification** — the command(s)/check(s) that prove done.
 6. **Report contract** — schema, cap, file path to write it.
 7. **Stop conditions** — when to return BLOCKED / NEEDS_CONTEXT instead of guessing, and which
@@ -155,7 +160,8 @@ turn.
 Anti-patterns: pasting session history · pasting whole files · a brief that says "explore the
 codebase and…" as a substitute for scoping (vague delegation — the worker's own orientation is
 licensed, see below) · duplicating plan text a path reference covers · unpinned pointers in
-parallel/worktree runs.
+parallel/worktree runs · illustrative examples of *behavior* (they constrain a modern model's
+exploration space — the line-shape output contracts tooling parses are not examples; they stay).
 
 ## Orientation — filling a fresh context is work, not waste
 
@@ -218,7 +224,7 @@ before big runs.
 
 ## Honest numbers
 
-The blocks' own cost (measured, words×1.33): WORKER ≈ 334 tokens/dispatch, REVIEWER ≈ 140,
+The blocks' own cost (measured, words×1.33): WORKER ≈ 334 tokens/dispatch, REVIEWER ≈ 176,
 MINIMAL ≈ 19 — vs the hundreds-to-thousands of narration tokens per worker turn they remove,
 and the controller-context bloat every verbose return would re-cost on every later turn.
 Expect **10–25% session-level savings** from output discipline — not the 65–75% output-only

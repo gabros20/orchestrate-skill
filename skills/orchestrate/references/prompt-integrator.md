@@ -14,7 +14,8 @@ Inputs:
 Produces:
 - Integrated branch, conflict decisions, combined validation, and integration report.
 
-Agent tool, `model: <REQUIRED — standard tier>`. Runs after workers' branches pass their gates.
+Agent tool, `model: <REQUIRED — standard tier>`, `effort: <pin if the surface supports it; else
+session effort — record in run.md>`. Runs after workers' branches pass their gates.
 
 ```
 You are integrating [K] gated branches into [target branch].

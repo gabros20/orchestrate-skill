@@ -66,7 +66,10 @@ vibes**. Return contract per worker: verdict first, <1000 tokens, branch/PR ref 
    parties FIRST — mechanical merges, and semantic ones it can settle from the cards/reports
    already on disk; it bounces back to the owning worker only when resolution needs that worker's
    INTENT, never hand-merged by the controller.
-6. **Cleanup is mandatory**: `git worktree remove` each finished tree (a leftover pins its branch);
+6. **Final-deliverable gate**: after integration, before the run reports done — one fresh-context
+   review of the accumulated merged change set against the ORIGINALLY stated goal
+   (`shared-review-gates.md`); per-branch gates cannot see drift across branches.
+7. **Cleanup is mandatory**: `git worktree remove` each finished tree (a leftover pins its branch);
    verify `git worktree list` is clean; kill any per-worker dev servers. Before removal, anything
    still needed from a worktree's `.orchestrate/raw/` is cited (excerpt) in the task report or
    copied next to it (`shared-token-economy.md`).

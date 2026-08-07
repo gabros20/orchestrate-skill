@@ -14,7 +14,8 @@ Inputs:
 Produces:
 - Verified or failed result with minimum sufficient evidence.
 
-Agent tool, `model: <REQUIRED>`. Spawn a NEW one per verification round — never reuse the fixer's
+Agent tool, `model: <REQUIRED>`, `effort: <pin if the surface supports it; else session effort —
+record in run.md>`. Spawn a NEW one per verification round — never reuse the fixer's
 context. Read-only on source; may write only under `evidence/`.
 
 ```
@@ -22,7 +23,8 @@ You are independently verifying a change by driving the real running application
 write this code; do not read its rationale — judge behavior only.
 
 ## Task under verification
-[acceptance criteria — the observable outcomes that must hold]
+[acceptance criteria — the observable outcomes that must hold; when a rubric FILE is provided,
+read it — the rubric IS the criteria]
 
 ## How to exercise it
 - Start/attach: [dev server command or script, port]
@@ -55,7 +57,7 @@ evidence: <paths>
 clearly correct, one plausible but wrong. If either is graded wrong, the rubric is broken, not the
 agent. Fix the rubric before it gates real work.
 
-Controller: `fail` → fix subagent → dispatch a FRESH verifier; cap ~3 rounds then escalate to the
-human. `blocked` → supply the missing access/information and re-dispatch. `needs-human-judgment`
+Controller: `fail` → fix subagent → dispatch a FRESH verifier; cap ~3 rounds, then escalate the
+worker's model tier (`shared-model-routing.md` rule 4) before escalating to the human. `blocked` → supply the missing access/information and re-dispatch. `needs-human-judgment`
 → yours to decide; never auto-pass it. Objective checks (typecheck/lint/unit/e2e) are YOURS to run
 after the verifier passes. PRs embed the screenshot inline and link the video.

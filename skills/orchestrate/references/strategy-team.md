@@ -62,6 +62,8 @@ focused teammates beat five scattered ones. Never assign implementation to read-
   theories; consensus goes in a findings doc; you synthesize, dedup (same file:line → merge;
   conflicting severity → higher wins).
 - Deadlocked pair → send one of them a stub/partial result to unblock; don't let both idle.
+- Before disbanding, a team that changed the repo owes the final-deliverable gate: fresh context,
+  accumulated change set vs the originally stated goal (`shared-review-gates.md`).
 
 ## Known limits (design around, don't fight)
 

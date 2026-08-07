@@ -14,7 +14,8 @@ Inputs:
 Produces:
 - Recommended strategy, conflicting signals, and concise rationale.
 
-Agent tool, `model: <mid-tier>`. Use only when the codebase/plan is unknown to the controller;
+Agent tool, `model: <mid-tier>`, `effort: <pin if the surface supports it; else session effort —
+record in run.md>`. Use only when the codebase/plan is unknown to the controller;
 otherwise triage inline (references/triage.md).
 
 ```

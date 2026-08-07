@@ -16,7 +16,8 @@ Produces:
 
 ## Counter/refuter prompt (the one that decides whether the chain works)
 
-Dispatch to a DIFFERENT-lineage model (codex peer, or an independently-prompted subagent).
+Dispatch to a DIFFERENT-lineage model (codex peer, or an independently-prompted subagent), model
+and effort pinned per `shared-model-routing.md` rule 1.
 
 ```
 You are the counter-planner. A plan is attached. Your job is to REFUTE it — find the strongest

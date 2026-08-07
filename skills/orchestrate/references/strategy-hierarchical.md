@@ -76,6 +76,8 @@ Prompt: `prompt-sub-orchestrator.md`.
 2. Dispatch sub-orchestrators with briefs; they run their own worker loops and return typed
    reports + artifacts on disk.
 3. Aggregate per the declared strategy; gaps → follow-up partition, not a redo of everything.
+   A run that changed the repo owes the final-deliverable gate before reporting done: fresh
+   context, accumulated change set vs the originally stated goal (`shared-review-gates.md`).
 4. Review gates apply at the level that produced code (worker output → its sub-orchestrator's
    review; cross-domain integration → yours).
 5. Ledger the tree: one line per sub-orchestrator completion with its artifact paths.

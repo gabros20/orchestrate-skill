@@ -14,7 +14,9 @@ Inputs:
 Produces:
 - Requirement-by-requirement findings and spec pass/fail result.
 
-Agent tool, `model: <REQUIRED — mid-tier floor>`. Read-only: you must not modify the working
+Agent tool, `model: <REQUIRED — mid-tier floor; prefer a cross-family lineage per judge hygiene,
+shared-review-gates.md>`, `effort: <pin if the surface supports it; else session effort — record
+in run.md>`. Read-only: you must not modify the working
 tree, index, or HEAD. Runs FIRST — quality review only after spec passes.
 
 ```
@@ -25,8 +27,9 @@ You are reviewing whether an implementation matches its specification.
 - Report: [.orchestrate/task-N-report.md]     — what the implementer claims
 - Diff:   [.orchestrate/review-<b>..<h>.diff] — what actually changed
 Write your findings to: [.orchestrate/review-taskN-spec-r<round>.md]
-Its FIRST line records the model you are running as and the review round — rounds judged by
-different models are not comparable, and nothing else in the file says which judged this one.
+Its FIRST line records the model you are running as, the review round, and the brief's content
+hash (`git hash-object` on the brief path) — rounds judged by different models are not
+comparable, and a brief edited after review re-opens the gate.
 
 ## Global constraints (verbatim from the plan — check against these exactly)
 [PASTE the plan's Global Constraints section VERBATIM — exact values, formats, relationships]
@@ -44,6 +47,8 @@ Report EVERY finding with severity + confidence — never self-filter to "import
 triage is the controller's job. Findings go to the findings FILE (path in your inputs); inline
 return = verdict + counts by severity + file path. Your repo access is read-only; the findings
 file under .orchestrate/ is your one write.
+Delivering your inline verdict is your completion condition — running as a background subagent
+or teammate, send it to the controller via SendMessage as your final action.
 
 ## Check
 - MISSING: requirements skipped; things claimed but not actually implemented

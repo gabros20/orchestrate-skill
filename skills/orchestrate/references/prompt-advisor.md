@@ -14,7 +14,8 @@ Inputs:
 Produces:
 - Focused recommendation, rationale, risks, and executor-facing decision.
 
-Agent tool, `model: <strongest available>`. Called RARELY (~once per task); stays out of the hot
+Agent tool, `model: <strongest available>`, `effort: <pin if the surface supports it; else
+session effort — record in run.md>`. Called RARELY (~once per task); stays out of the hot
 path. The executor formulates the consult; the advisor never edits anything.
 
 ```

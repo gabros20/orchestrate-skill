@@ -14,7 +14,13 @@ Inputs:
 Produces:
 - Implemented change, validation evidence, dense report, and terminal status.
 
-Agent tool, `model: <REQUIRED — set explicitly, see shared-model-routing.md>`.
+## Contents
+
+- The dispatch template
+- Why the worker no longer re-checks its own work
+
+Agent tool, `model: <REQUIRED — set explicitly, see shared-model-routing.md>`,
+`effort: <pin if the surface supports it; else session effort — record in run.md>`.
 
 ```
 You are implementing Task N: [name]

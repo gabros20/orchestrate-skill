@@ -70,6 +70,9 @@ Produces:
 
 - **Open-PR cap**: never open a new PR while the previous one from the same run/loop is unmerged
   (default cap 1; the user can raise it). A loop that buries the reviewer is a failed loop.
+  The cap bounds volume; **authority is a per-child grant** — a worker or child session opens a
+  PR only on an explicit grant issued after the controller reviewed the actual diff and checks
+  (suggested marker: `PR AUTHORIZED FOR <id>`); a standing cap is never standing permission.
 - Tiered autonomy: ship-alone rights are EARNED per work-class by track record; new classes start
   drafts-only/PR-only. The ship-alone-vs-ask-human line is written in the contract, not implied.
 - Batch questions: pre-flight ambiguities go to the human as ONE question, not a drip.

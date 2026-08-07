@@ -71,7 +71,8 @@ ambiguous, ask the user — a wrong host assumption mis-binds every dispatch aft
 
 1. **Native binding** from the matrix above.
 2. **xcli shell-out** — every host can run bash, so every host can drive any headless engine
-   (`strategy-xcli.md` has per-engine invocation blocks). This recovers PARALLEL (N background
+   (`shared-engines.md` has per-engine invocation blocks; rules in `strategy-xcli.md`). This
+   recovers PARALLEL (N background
    processes in worktrees), model pinning (pick the engine/model per process), and DISPATCH depth.
 3. **Solo with a warning** — do the work in-context, tell the user which strategy you couldn't
    honor and why. Never silently pretend a primitive worked.

@@ -55,10 +55,15 @@ that justifies it (over-engineering is destructive upstream of a fan-out, harmle
 
 ## Rules
 
+Rule numbers are a stable citation surface (cited from five other files): append new rules at the
+end, never renumber.
+
 1. **Model — and reasoning effort — explicit on EVERY dispatch.** An omitted model silently
    inherits the session's most expensive one; an unset effort silently takes the host default
-   (codex: medium), the same silent-inheritance bug one rung down. Both are cost bugs and routing
-   bugs — make both required fields in every prompt template.
+   (codex: medium), the same silent-inheritance bug one rung down. Both appear in every prompt
+   template header; where the dispatch surface has no per-dispatch effort parameter (the reference
+   host's Agent tool — only workflow `agent()` and xcli flags pin effort per call), the session
+   effort governs — record it in `run.md` rather than pretending it was pinned.
 2. **"Turn count beats token price."** Too-cheap models take 2–3× the turns and lose the savings.
    Mid-tier is the FLOOR for reviewers and prose-driven implementers; the cheapest tier only for
    transcription-grade work (the plan already contains the code). Corroboration: a harness vendor
@@ -85,7 +90,7 @@ that justifies it (over-engineering is destructive upstream of a fan-out, harmle
    routing over downgrading the whole run.
 8. **Effort is the FIRST cost knob; model tier is the second.** Flags: Claude `--effort low..max`,
    codex `-c model_reasoning_effort=none|minimal|low|medium|high|xhigh|max` (medium default; enum
-   live-verified 2026-08-07, `strategy-xcli.md`), grok-4.5 API `reasoning_effort=low|medium|high`
+   live-verified 2026-08-07, `shared-engines.md`), grok-4.5 API `reasoning_effort=low|medium|high`
    (high default; no CLI flag as of grok CLI 0.2.106); kimi's is in rule 9.
    Use low/medium liberally wherever quality holds; step up to xhigh/max for demanding agentic
    work — and re-run an effort sweep for the model you are actually dispatching instead of
@@ -114,7 +119,7 @@ that justifies it (over-engineering is destructive upstream of a fan-out, harmle
    `kimi-for-coding-highspeed` ≈ latency-critical worker (6× speed at 3× quota — budget-relevant,
    not a cheap tier; no cheap tier exists). Switching model or effort mid-session invalidates
    Kimi's prompt cache — pin both per session. Model lists drift — re-verify slugs before pinning
-   (`strategy-xcli.md`).
+   (`shared-engines.md`).
 10. Sensitivity to emphasized/literal wording varies by model — re-tune dispatch templates per
     model at a recorded boundary, never mid-run (cache hygiene, `shared-token-economy.md`).
 11. **Hybrid preferred when the brief is transcription-grade**: planner spend converts

@@ -87,6 +87,21 @@ if [ "$#" -ge 2 ]; then
   if [ -n "$collisions" ]; then
     while IFS= read -r c; do err "cross-brief collision: $c"; done <<< "$collisions"
   fi
+
+  # One snapshot per batch (warn, not fail): all pinned pointers across a batch should share one
+  # repo revision — two workers each correct against a different version of the truth raise no
+  # error on their own (shared-token-economy.md). A deliberate mixed batch is a re-dispatch
+  # decision the controller makes knowingly.
+  distinct_pins="$(
+    for brief in "$@"; do
+      [ -f "$brief" ] || continue
+      grep -oE '@ [0-9a-fA-F]{7,40}' "$brief" || true
+    done | sort -u
+  )"
+  pin_count="$(printf '%s\n' "$distinct_pins" | grep -c '@' || true)"
+  if [ "$pin_count" -gt 1 ]; then
+    echo "brief-check: warning: mixed snapshot — $pin_count distinct '@ <sha>' pins across this batch; one snapshot per fan-out batch unless the mix is a deliberate re-dispatch decision" >&2
+  fi
 fi
 
 exit "$fail"

@@ -10,6 +10,72 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.10.0] — 2026-08-07
+
+Wiring release from a full-pack audit (every runtime file read end-to-end against the v1.9.0
+research records and design): v1.9.0 shipped several rules whose applying surfaces never received
+them, four research items had fallen through neither adopted nor rejected, and the engine catalog
+had outgrown its strategy file. Nothing here adds new doctrine; it makes the existing doctrine
+reachable from the places that execute it.
+
+### Added
+- **`effort` is now a first-class dimension** (SKILL.md grammar + dimensions table): every prompt
+  template header carries an `effort:` field beside `model:`, honestly scoped — where the dispatch
+  surface has no per-dispatch effort parameter (the reference host's Agent tool; only workflow
+  `agent()` and xcli flags pin per call), the session effort governs and is recorded in `run.md`.
+  Routing rule 1 rewritten to say exactly that instead of promising template fields that did not
+  exist.
+- **`shared-engines.md`** — the per-CLI catalog (codex/grok/claude/cursor/agy/opencode/hermes/
+  kimi invocation blocks with verified dates) split out of `strategy-xcli.md`, which keeps the
+  rules, lane hardening, staged-codex recipe, and division-of-labor and now sits back under the
+  size ceiling. Linked from SKILL.md's shared route; catalog-meaning cross-references re-pointed.
+- **Delivery-is-completion for reviewers**: the REVIEWER block (all three byte-identical copies)
+  now ends with the delivery clause — the finished-but-silent-reviewer pattern recurred three more
+  times in one session, always in roles the clause did not yet cover. Stated block cost updated
+  140 → 176 (measured).
+- **A verdict binds the brief it judged**: reviewer findings files record the brief's content hash
+  (`git hash-object`) beside the judge line; a brief edited after review re-opens the gate
+  (`shared-review-gates.md` + both reviewer templates).
+- **Spec-as-code**: the priming anatomy names test suites, reference implementations, and rubric
+  files as valid spec forms; `prompt-verifier.md` reads a provided rubric file as the criteria
+  (vendor guidance item that had fallen through v1.9.0 unrecorded).
+- **PR grant beside the PR cap** (`shared-safety-rails.md`): the cap bounds volume; authority is a
+  per-child grant issued only after the controller reviewed the actual diff and checks.
+- **`run.md` contents enumerated** (`shared-contracts.md`): goal verbatim, dimensions + budget,
+  host bindings/degradations, requested AND observed model/effort, single-flight owners, named
+  cost postures — the six record obligations v1.9.0 scattered across five files, now listed where
+  the file is defined.
+- **brief-check mixed-snapshot warning**: multi-brief mode warns when a batch pins more than one
+  distinct `@ <sha>` (one-snapshot-per-batch, previously prose-only). Tested: mixed warns, uniform
+  is silent, collision detection unchanged.
+- **Workflow budget API named** (`strategy-workflow.md`): `budget.total`/`spent()`/`remaining()`
+  and the "+500k" directive, with the guard that an unset target makes `remaining()` infinite.
+- The "examples constrain" ruling recorded in the priming-anatomy anti-patterns: behavioral
+  examples go; parsed output contracts stay.
+
+### Fixed (wiring — rules that had no carrier)
+- **Cross-family judge** now reaches its surfaces: staged step 5 and both reviewer template
+  headers say it, not only the judge-hygiene section.
+- **Failed-rounds tier escalation** wired into the loops that count rounds: staged fix waves cap
+  at 2–3 rounds per gate, the review-gates findings loop and the /verify split escalate the tier
+  (routing rule 4) before the human — replacing the pre-v1.9 human-only ladder text.
+- **The final-deliverable gate is owed explicitly** by every strategy that accumulates changes:
+  one-line pointers added to parallel (after integration), hierarchical (after aggregation), team
+  (before disband), loop (at goal-met), and workflow (rule 9) — previously only `staged` carried
+  it despite the gates file claiming universality.
+- **Trajectory-detector cadence stated** (`shared-monitoring.md`): the scan runs at every liveness
+  check and before any recovery action — a detector with no cadence never fires.
+- Routing rules gain the stable-citation convention (append, never renumber — cited by number from
+  five files).
+- `config.yaml`: `codex-grind` pins `effort: high` and points at the staged-codex recipe;
+  `architect` names Variant C.
+
+### Deliberately not done (recorded)
+- No split of `shared-token-economy.md` (2,867 tok, over ceiling): its remaining mass is mandated
+  content; a blocks-vs-priming split touches check-sync's block tracking and waits until the file
+  grows again. The still-open v1.9.0 watchlist (positive-form block rewrite, computed autonomy +
+  shadow mode, provider failover, the full cross-file conflicting-instructions audit) stands.
+
 ## [1.9.0] — 2026-08-07
 
 Frontier-hardening release, drawn from a two-part August 2026 sweep: fifteen practitioner sources

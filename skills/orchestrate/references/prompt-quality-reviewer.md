@@ -14,7 +14,9 @@ Inputs:
 Produces:
 - Complete quality findings, severity, evidence, and pass/fail result.
 
-Agent tool, `model: <REQUIRED — mid-tier floor; most-capable for the final whole-branch review>`.
+Agent tool, `model: <REQUIRED — mid-tier floor; most-capable for the final whole-branch review;
+prefer a cross-family lineage per judge hygiene, shared-review-gates.md>`, `effort: <pin if the
+surface supports it; else session effort — record in run.md>`.
 Read-only. Dispatch ONLY after spec compliance is ✅.
 
 ```
@@ -24,8 +26,9 @@ You are reviewing code quality for Task N: [summary from implementer report].
 - Brief:  [.orchestrate/task-N-brief.md]
 - Diff:   [.orchestrate/review-<b>..<h>.diff]   (base = task BASE, never HEAD~1)
 Write your findings to: [.orchestrate/review-taskN-quality-r<round>.md]
-Its FIRST line records the model you are running as and the review round — rounds judged by
-different models are not comparable, and nothing else in the file says which judged this one.
+Its FIRST line records the model you are running as, the review round, and the brief's content
+hash (`git hash-object` on the brief path) — rounds judged by different models are not
+comparable, and a brief edited after review re-opens the gate.
 
 ## Communication contract
 Read enough surrounding code to judge the diff in context — outline first, then the regions
@@ -36,6 +39,8 @@ Report EVERY finding with severity + confidence — never self-filter to "import
 triage is the controller's job. Findings go to the findings FILE (path in your inputs); inline
 return = verdict + counts by severity + file path. Your repo access is read-only; the findings
 file under .orchestrate/ is your one write.
+Delivering your inline verdict is your completion condition — running as a background subagent
+or teammate, send it to the controller via SendMessage as your final action.
 
 ## Judge
 - Correctness risks: edge cases, error handling, concurrency, resource leaks

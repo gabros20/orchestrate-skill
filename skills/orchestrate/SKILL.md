@@ -33,6 +33,7 @@ slash-command clients, or the host's equivalent. Documentation uses `/orchestrat
   [review=dual|spec|quality|panel:N|consensus:N|off]
   [engine=claude|codex|grok|cursor|agy|opencode|hermes|kimi|mixed]
   [models=orchestrator:<tier>,worker:<tier>,advisor:<tier>,reviewer:<tier>]
+  [effort=<level | role:level map>]
   [isolation=worktree|branch|off]
   [trigger=once|goal:"<stop condition>"|interval:<t>|schedule:"<cron>"]
   [workers=N] [budget=<cycles|agents|tokens>] [alias=<saved-preset>]
@@ -74,6 +75,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | Every dispatched task | [Contracts](references/shared-contracts.md) | Brief, status, report, findings, and workspace schemas |
 | Any review-enabled run | [Review gates](references/shared-review-gates.md) | Ordered spec/quality gates and panel behavior |
 | Any role or engine selection | [Model routing](references/shared-model-routing.md) | Explicit model tiers, cost posture, and drift verification |
+| Any external-CLI dispatch | [Engines](references/shared-engines.md) | Verified per-CLI invocation blocks, model slugs, effort enums, and quirks |
 | More than one writer | [Isolation](references/shared-isolation.md) | Worktree/branch rules and integration ownership |
 | Background, long-running, or external work | [Monitoring](references/shared-monitoring.md) | Polling, liveness, timeout, and recovery rules |
 | Every run | [Safety rails](references/shared-safety-rails.md) | Main-branch, overload, loop, budget, and reward-hacking guards |
@@ -104,6 +106,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | `review` | off · spec · quality · dual · panel:N · consensus:N | dual |
 | `engine` | claude · codex · grok · cursor · agy · opencode · hermes · kimi · mixed | host-appropriate |
 | `models` | advisor · orchestrator · reasoner · worker · reviewer · peer tier map | model routing |
+| `effort` | per-host reasoning levels (e.g. low · medium · high · xhigh · max) | pinned per dispatch where the surface supports it; else session effort, recorded |
 | `isolation` | none · worktree · branch | worktree for multiple writers |
 | `trigger` | once · goal · interval · schedule | once |
 | `budget` | max cycles · agents · tokens · open PRs | selected strategy |

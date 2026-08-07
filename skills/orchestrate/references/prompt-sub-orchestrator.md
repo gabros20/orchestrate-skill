@@ -14,7 +14,8 @@ Inputs:
 Produces:
 - Domain plan, worker ledger, gated results, and compact domain summary.
 
-Agent tool or teammate spawn, `model: <REQUIRED — orchestrator tier>`. A sub-orchestrator THINKS
+Agent tool or teammate spawn, `model: <REQUIRED — orchestrator tier>`, `effort: <pin if the
+surface supports it; else session effort — record in run.md>`. A sub-orchestrator THINKS
 about one domain and runs its own worker fan-out; it returns conclusions, not raw material.
 
 ```

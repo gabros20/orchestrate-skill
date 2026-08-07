@@ -167,7 +167,9 @@ aliases:
     strategy: staged
     engine: codex
     review: panel:3
+    effort: high
     models: { reviewer: opus }
+    # confirm: off   # for walk-away/scripted use — skips the flight-plan gate, never the print
 ```
 
 Invoke it the same way as a built-in: `/orchestrate plan.md alias=my-alias`. Explicit

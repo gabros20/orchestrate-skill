@@ -114,9 +114,13 @@ live-verified against v0.28.0; end-to-end smoke run pending.
 
 ## Safety and quality model
 
+- **No silent launch**: before the first multi-agent dispatch, the flight plan prints the
+  topology, models, effort, gates, and budget, and gates on the user's approval
+  (`confirm=off` skips the gate, never the print).
 - **Controller does not silently implement** failed worker tasks.
 - **Artifacts on disk are the interface** under `.orchestrate/`.
-- **Every dispatch pins a model** rather than inheriting an accidental default.
+- **Every dispatch pins a model and a reasoning effort** rather than inheriting an accidental
+  default — and verifies the pin actually landed.
 - **Dual review is ordered**: spec review, then quality review.
 - **Ledger before memory**: durable progress wins over recollection after resume or compaction.
 - **No duplicate workers on overload**: resume or nudge the existing worker.
@@ -127,7 +131,7 @@ live-verified against v0.28.0; end-to-end smoke run pending.
 ```text
 skills/orchestrate/SKILL.md       activation, routing, workflow, and completion
 skills/orchestrate/config.yaml    saved strategy/dimension aliases
-skills/orchestrate/references/    29 flat strategy, shared, and prompt references
+skills/orchestrate/references/    31 flat strategy, shared, and prompt references
 skills/orchestrate/scripts/       workspace, brief, review-package, and toolbox helpers
 ```
 

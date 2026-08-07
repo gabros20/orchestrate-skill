@@ -367,10 +367,11 @@
 
 <section id="run">
   <h2>How a run works</h2>
-  <p>Every strategy shares the same five-step spine.</p>
+  <p>Every strategy shares the same six-step spine.</p>
   <div class="steps">
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-file-input"/></svg>invoke</b><span>You point it at a plan file, or just describe the task. Every flag is optional.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-gauge"/></svg>triage</b><span><b>Triage</b> measures the task — size, independence, whether success is checkable — then picks a run shape and says why.</span></div>
+    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-clipboard-check"/></svg>flight&nbsp;plan</b><span>Before anything launches, the <b>flight plan</b> prints the design — topology tree, model + effort per agent, gates, budget range — and waits for your approval. Say <code>change 3</code> to tweak a dimension, or approve. <code>confirm=off</code> skips the gate, never the print.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-bot"/></svg>dispatch</b><span>The controller writes a brief and sends a fresh subagent to do exactly that task, on an explicitly chosen model.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-shield-check"/></svg>gate</b><span><b>Gates</b> review each result — first against the brief, then for quality. Failures loop back until clean.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-scroll-text"/></svg>ledger</b><span>Each finished task becomes one line in the <b>ledger</b>, <code>progress.md</code>. A resumed run trusts the ledger, not memory.</span></div>
@@ -378,9 +379,10 @@
 </section>
 
 <section id="knobs">
-  <h2><svg class="lu" aria-hidden="true"><use href="#lu-sliders-horizontal"/></svg>One preset, eight knobs</h2>
-  <p>A <b>strategy</b> is a preset, not a product. orchestrate has eight <b>dimensions</b> — knobs
-  like how work splits, who reviews it, and which engine runs it. Each of the nine strategies is
+  <h2><svg class="lu" aria-hidden="true"><use href="#lu-sliders-horizontal"/></svg>One preset, ten knobs</h2>
+  <p>A <b>strategy</b> is a preset, not a product. orchestrate has ten <b>dimensions</b> — knobs
+  like how work splits, who reviews it, which engine runs it at which reasoning effort, and
+  whether the flight plan gates on your approval (<code>confirm</code>, on by default). Each of the nine strategies is
   just a named preset over those knobs. Learn one command and you've learned all nine.</p>
   <p>Any knob you set yourself overrides its preset value. That's the whole override model:</p>
   <div class="ov">

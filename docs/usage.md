@@ -18,7 +18,8 @@ The grammar below uses the slash form as host-neutral documentation shorthand.
     [models=orchestrator:opus,worker:sonnet,advisor:<strongest>,...]
     [isolation=worktree|branch|off]
     [trigger=once|goal:"<stop condition>"|interval:<t>|schedule:"<cron>"]
-    [workers=N] [budget=<cycles|agents|tokens>] [alias=<saved-preset>]
+    [effort=<level | role:level map>]
+    [workers=N] [budget=<cycles|agents|tokens>] [confirm=on|off] [alias=<saved-preset>]
 ```
 
 | Argument | What it takes | Meaning |
@@ -32,6 +33,8 @@ The grammar below uses the slash form as host-neutral documentation shorthand.
 | `trigger=` | `once`, `goal:"<condition>"`, `interval:<t>`, `schedule:"<cron>"` | What starts/repeats the run. |
 | `workers=N` | integer | Worker count for topologies that fan out (`parallel`, `team`). |
 | `budget=` | `cycles:N`, `agents:N`, `tokens:N`, or a bare cap | The hard stop for loops/fleets — see [Dimensions → budget](#budget). |
+| `effort=` | a reasoning level (`low`…`max`), or `role:level` pairs | Reasoning effort per dispatch — pinned where the surface supports it (workflow `agent()`, external-CLI flags); elsewhere the session effort governs and is recorded in `run.md`. |
+| `confirm=` | `on` (default), `off` | Whether the pre-dispatch **flight plan** gates on your approval. `off` skips the gate, never the printed plan. |
 | `alias=` | a name from `config.yaml` | Expands to a saved dimension preset (see [Aliases](#aliases-configyaml)); explicit dimensions on the same invocation still win. |
 
 Only the first positional argument is required. Everything else defaults from the picked strategy
@@ -45,11 +48,43 @@ Only the first positional argument is required. Everything else defaults from th
 - If you pass `alias=Y` (and no `strategy=`), the alias's `strategy` field applies, plus whatever
   other dimensions the alias sets. Any dimension you also pass explicitly on the same invocation
   overrides the alias's value for that dimension.
-- Bare invocation (neither `strategy=` nor `alias=`) runs the triage procedure below, states the
-  pick and a one-line reason, and proceeds — no confirmation needed.
-- `AskUserQuestion` is used **only** when triage signals genuinely conflict (two strategies fit
-  equally well and the cost difference between them is large). Otherwise the controller decides and
-  moves on.
+- Bare invocation (neither `strategy=` nor `alias=`) runs the triage procedure below and states
+  the pick and a one-line reason.
+- Either way, a multi-agent run then prints its **flight plan** and gates on your approval before
+  the first dispatch (below). During strategy *selection*, `AskUserQuestion` is used only when
+  triage signals genuinely conflict; the flight-plan gate is separate and fires regardless of how
+  the strategy was chosen.
+
+## The flight plan (no silent launch)
+
+Before the first dispatch of any multi-agent run, the controller prints the resolved design and
+asks first — so you see (and can tweak) the composition before it costs anything:
+
+```
+ORCHESTRATION PLAN — approve before anything dispatches
+
+strategy=parallel — 4 independent tasks, no shared files (fake-edge test passed)
+
+  controller  (this session: opus @ session-high)
+  ├─ worker A  card-auth   sonnet @ high    wt-auth
+  ├─ worker B  card-api    sonnet @ high    wt-api
+  │    each → review: spec ✓ then quality ✓  (codex terra @ high — cross-family)
+  └─ integrator             sonnet @ high    merge A→B, suite after each
+
+  gates   dual per worker · fan-in 2/2 · final gate (fresh context vs stated goal)
+  rails   branch feat/x · worktrees · PR cap 1
+  budget  ~7 agents · est 300–450k tokens
+
+  tweak:  [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget
+```
+
+One node per agent that will exist, `model @ effort` on every line, gates as children, the
+final-deliverable gate last. Answer "change 3 to max" to re-resolve a dimension (only the changed
+lines reprint), or approve to launch. The plan is `run.md` rendered — never a second source — and
+the outcome is recorded there. `confirm=off` skips the gate (the plan still prints); headless
+(`-p`) runs print the plan into their output and proceed, because a gate that cannot render must
+not hang the run; solo and single-reviewer runs are exempt. Full spec:
+`references/shared-flight-plan.md`.
 
 ### What triage measures
 
@@ -84,7 +119,7 @@ never bolt new scope onto a running strategy), repeated `BLOCKED` from workers o
 
 ## Dimensions
 
-Every strategy is a **preset over these eight dimensions** — nothing reads the strategy name
+Every strategy is a **preset over these ten dimensions** — nothing reads the strategy name
 directly; a custom combination of dimensions is just as valid as picking a named strategy.
 
 | Dimension | Values | Default |
@@ -94,9 +129,11 @@ directly; a custom combination of dimensions is just as valid as picking a named
 | `review` | `off` · `spec` · `quality` · `dual` · `panel:N` · `consensus:N` | `dual` |
 | `engine` | `claude` · `codex` · `grok` · `cursor` · `agy` · `opencode` · `hermes` · `kimi` · `mixed` | `claude` |
 | `models` | tier map (`advisor`/`orchestrator`/`reasoner`/`worker`/`reviewer`/`peer`) | see [Model tiers](#model-tiers) |
+| `effort` | per-host reasoning levels (e.g. `low` · `medium` · `high` · `xhigh` · `max`) | pinned per dispatch where the surface supports it; else session effort, recorded |
 | `isolation` | `none` · `worktree` · `branch` | `worktree` when more than one writer |
 | `trigger` | `once` · `goal` · `interval` · `schedule` | `once` |
 | `budget` | max cycles / agents / tokens / open-PR cap | per strategy |
+| `confirm` | `on` · `off` | `on` for any multi-agent dispatch; headless prints the plan and proceeds |
 
 ### `topology`
 
@@ -266,7 +303,8 @@ task — reach for that shape under budget pressure rather than downgrading the 
    fixing in the controller (that's context pollution).
 2. **Artifacts on disk are the interface, never chat.** Briefs, reports, ledgers, diffs — files,
    every time.
-3. **Model explicit on every dispatch** (see [the two cost laws](#the-two-cost-laws) above).
+3. **Model — and reasoning effort — explicit on every dispatch** (see
+   [the two cost laws](#the-two-cost-laws) above).
 4. **Gate with typed checks, enforced not trusted.** Review order is fixed: spec, then quality.
 5. **Ledger before memory.** Append to `progress.md` after each gated unit; on resume, trust the
    ledger and `git log` over recollection.
@@ -274,6 +312,9 @@ task — reach for that shape under budget pressure rather than downgrading the 
 7. **When not to orchestrate**: under ~50K tokens of coupled work, use `solo`. A strategy that
    costs more than it returns is a bug, not a feature.
 8. **Token economy**: prime with pointers, work silent, report dense — see below.
+9. **No silent launch**: before the first multi-agent dispatch, the flight plan prints the
+   topology, models, gates, and budget, and gates on your approval — see
+   [The flight plan](#the-flight-plan-no-silent-launch).
 
 ## Token economy
 

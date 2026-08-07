@@ -10,6 +10,10 @@ Each section: **use when** it's the right fit · **how it runs** (the step flow)
 worth knowing before you dispatch · **failure handling** · **composition overrides** that change
 its behavior.
 
+Whatever the strategy, a multi-agent run prints its **flight plan** — the topology tree, model +
+effort per agent, gates, and budget — and gates on your approval before the first dispatch
+([usage.md → The flight plan](usage.md#the-flight-plan-no-silent-launch)).
+
 ## staged
 
 *(the default)* — `topology=staged planning=plan-first review=dual isolation=off trigger=once`
@@ -320,7 +324,8 @@ engines in the same tree, with `.env*` copied in. Runs take minutes with no time
 them (`run_in_background`) and poll the output file rather than blocking the controller.
 
 **Key mechanics per engine** — verify flags before scripting (`<cli> --help` once per session; CLIs
-drift):
+drift). In the runtime skill the per-engine catalog lives in `references/shared-engines.md`
+(rules and lane hardening stay in `references/strategy-xcli.md`):
 - **Codex** (`codex exec`) — the most script-friendly. `codex --version && codex login status` as
   preflight; `--sandbox workspace-write`, `-m <model> -c model_reasoning_effort=none|minimal|low|
   medium|high|xhigh|max` (medium default; enum live-verified against codex 0.144.3 on 2026-08-07),

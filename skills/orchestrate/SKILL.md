@@ -36,7 +36,7 @@ slash-command clients, or the host's equivalent. Documentation uses `/orchestrat
   [effort=<level | role:level map>]
   [isolation=worktree|branch|off]
   [trigger=once|goal:"<stop condition>"|interval:<t>|schedule:"<cron>"]
-  [workers=N] [budget=<cycles|agents|tokens>] [alias=<saved-preset>]
+  [workers=N] [budget=<cycles|agents|tokens>] [confirm=on|off] [alias=<saved-preset>]
 ```
 
 Selection priority: explicit `strategy=` > `alias=` from [config.yaml](config.yaml) >
@@ -72,6 +72,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | Condition | Read | Contribution |
 |---|---|---|
 | Any non-reference host or uncertain primitive | [Hosts](references/shared-hosts.md) | Host detection, primitive binding, and honest degradation |
+| Before the first multi-agent dispatch | [Flight plan](references/shared-flight-plan.md) | Rendered topology plan, approval gate, and tweak loop |
 | Every dispatched task | [Contracts](references/shared-contracts.md) | Brief, status, report, findings, and workspace schemas |
 | Any review-enabled run | [Review gates](references/shared-review-gates.md) | Ordered spec/quality gates and panel behavior |
 | Any role or engine selection | [Model routing](references/shared-model-routing.md) | Explicit model tiers, cost posture, and drift verification |
@@ -110,6 +111,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | `isolation` | none · worktree · branch | worktree for multiple writers |
 | `trigger` | once · goal · interval · schedule | once |
 | `budget` | max cycles · agents · tokens · open PRs | selected strategy |
+| `confirm` | on · off | on for any multi-agent dispatch; headless prints the plan and proceeds |
 
 ## Universal rules
 
@@ -127,6 +129,10 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    messages while eliminating routine narration and raw output dumps.
 8. **Do not orchestrate small coupled work.** If one agent can complete the task efficiently within
    one coherent context, use solo execution and optionally one reviewer.
+9. **No silent launch.** Before the first multi-agent dispatch, print the flight plan — the
+   topology, models, gates, and budget the user is about to pay for — and gate on their approval
+   ([flight plan](references/shared-flight-plan.md)). `confirm=off` skips the gate, never the
+   print; headless runs print and proceed.
 
 ## Core workflow
 
@@ -135,11 +141,14 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 3. Initialize `.orchestrate/` with [workspace](scripts/workspace); record the resolved run.
 4. Create task briefs with [task-brief](scripts/task-brief) and validate them with
    [brief-check](scripts/brief-check).
-5. Dispatch only ready work. Monitor without duplicating agents and integrate through the selected
+5. Render the flight plan from the resolved record and gate on the user's approval
+   ([flight plan](references/shared-flight-plan.md)); apply any tweaks by re-resolving that
+   dimension and re-asking.
+6. Dispatch only ready work. Monitor without duplicating agents and integrate through the selected
    strategy's owner.
-6. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
+7. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
    and send failures back to the correct worker or owner.
-7. Append durable progress and finish or hand off only when the stop condition is verified.
+8. Append durable progress and finish or hand off only when the stop condition is verified.
 
 Use [toolbox](scripts/toolbox) to inventory available tools once and reuse the recorded result.
 

@@ -10,6 +10,22 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.11.0] — 2026-08-07
+
+### Added
+- **The flight plan — no silent launch** (new `shared-flight-plan.md`, universal rule 9, core
+  workflow step 5, `confirm=on|off` dimension). Before the first multi-agent dispatch, the
+  controller prints the resolved design — a topology tree (one node per agent that will exist,
+  `model @ effort` and isolation on every line, review gates as children, the final-deliverable
+  gate last), plus `gates` / `rails` / `budget` footer strips and numbered tweak keys — then
+  gates on the user's approval via the host's ASK_USER binding. "change 3 to max" re-resolves
+  that dimension, reprints only the changed lines, and re-asks. The plan is `run.md` rendered,
+  never a second source; the outcome (approved / changed / skipped and why) is appended to
+  `run.md`. `confirm=off` skips the gate, never the print; headless runs print and proceed (a
+  gate that cannot render must not hang the run); solo/single-reviewer runs are exempt. The
+  budget line is a range from the pack's own multipliers and must name any cap it crosses — the
+  flight plan is where cost surprises are supposed to die.
+
 ## [1.10.0] — 2026-08-07
 
 Wiring release from a full-pack audit (every runtime file read end-to-end against the v1.9.0

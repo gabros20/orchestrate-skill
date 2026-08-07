@@ -86,6 +86,8 @@ fabricated study, so any citation needs a primary source.
 3. Only if two strategies fit equally and the cost difference is large → ask the user
    (AskUserQuestion on Claude Code; host equivalent per `shared-hosts.md`) with the trade-off.
    Otherwise proceed.
+4. Before the first multi-agent dispatch, render the flight plan and gate on approval
+   (`shared-flight-plan.md`) — the pick line above becomes its header.
 
 ## Re-triage triggers (mid-run)
 

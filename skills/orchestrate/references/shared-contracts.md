@@ -84,7 +84,8 @@ Reviewer "read-only" means the REPO; `.orchestrate/` is the one place a reviewer
   budget · host + landed bindings and named degradations (`shared-hosts.md`) · requested AND
   observed model/effort per role (`shared-model-routing.md` rule 13) · single-flight owners of
   shared rate-limited resources (`shared-safety-rails.md`) · deliberately chosen cost postures
-  (e.g. mid-tier planner) · timestamp
+  (e.g. mid-tier planner) · the flight-plan outcome (approved / changed / skipped and why,
+  `shared-flight-plan.md`) · timestamp
 - `task-N-brief.md` / `task-N-report.md` — per-task handoffs (report named off brief); briefs
   follow the priming anatomy and pass `scripts/brief-check` (`shared-token-economy.md`)
 - `decisions.md` — cross-cutting decisions, one line each: ID + owner (small runs: keep in

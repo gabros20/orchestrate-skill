@@ -24,6 +24,8 @@ You are reviewing code quality for Task N: [summary from implementer report].
 - Brief:  [.orchestrate/task-N-brief.md]
 - Diff:   [.orchestrate/review-<b>..<h>.diff]   (base = task BASE, never HEAD~1)
 Write your findings to: [.orchestrate/review-taskN-quality-r<round>.md]
+Its FIRST line records the model you are running as and the review round — rounds judged by
+different models are not comparable, and nothing else in the file says which judged this one.
 
 ## Communication contract
 Read enough surrounding code to judge the diff in context — outline first, then the regions

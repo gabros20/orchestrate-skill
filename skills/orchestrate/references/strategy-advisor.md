@@ -15,8 +15,9 @@ Produces:
 - Bounded advice, executor decisions, and consultation ledger.
 
 Preset: `models=advisor:strongest,worker:cheap review=dual`.
-Two verified variants. Both keep the strong model OUT of the hot path — it plans or advises;
-cheap models burn the tokens. Anthropic's published data: executor+advisor ≈ 92% of the strong
+Three verified variants. A and B keep the strong model OUT of the hot path — it plans or advises;
+cheap models burn the tokens. C keeps it IN the session as the architect and routes each task
+instead. Anthropic's published data: executor+advisor ≈ 92% of the strong
 model's SWE-bench Pro score at ~63% of the cost; the advisor is consulted ~once per task.
 
 Prompt: `prompt-advisor.md`.
@@ -48,6 +49,20 @@ The strong model does the highest-leverage step once — review + plan — then 
 When to run B: before building on top of an existing project · when it grew messy and needs
 simplifying, not extending · ALWAYS before handing a codebase to a cheaper model (skip the review
 and it executes your existing mistakes faster).
+
+## Variant C — the architect session (per-dispatch routing)
+
+The session itself is the strong architect: it owns requirements, decomposition, specs, routing
+and verification, and almost never types implementation code (`shared-safety-rails.md`'s
+undelegated-spec test is how you catch yourself). Unlike B, the architect never leaves the room —
+and unlike a fixed `models=worker:<tier>` binding, it routes **per dispatch** to lanes: a default
+routine lane (cheap or cross-vendor), an escalation lane (strong model), and a read-only reviewer
+lane. The routing question is one line: *how much does the outcome depend on judgment the spec
+can't capture?* Little → the routine lane, since you verify the result anyway. A lot, and mistakes
+are costly → escalate. A routine-lane task that fails its spec once gets a corrected spec; twice,
+it escalates — repetition is evidence the task was misclassified (`shared-model-routing.md` rule
+4). For high-stakes work, race two lanes of different lineage on the SAME spec and judge the
+diffs; the final deliverable still passes the fresh-context gate in `shared-review-gates.md`.
 
 ## Server-side alternative (API pipelines)
 

@@ -14,6 +14,14 @@ Inputs:
 Produces:
 - Liveness checks, bounded polling, recovery action, and terminal status.
 
+## Contents
+
+- In-session (Claude Code)
+- Background sessions · Session transcripts · Hooks
+- Trajectory stalls — detecting the worker that hasn't noticed
+- Waiting on external systems (stateful backoff)
+- Rules
+
 Match the surface to the mechanism; don't poll what notifies you.
 
 ## In-session (Claude Code)
@@ -60,6 +68,33 @@ State files: `~/.claude/daemon/roster.json`, `~/.claude/jobs/<id>/state.json`.
 - Optional heavier rigs (OTel export, hook→HTTP→dashboard) exist; reach for them only when
   running fleets daily — one dashboard is worth less than one good ledger.
 
+## Trajectory stalls — detecting the worker that hasn't noticed
+
+The instruments above bound how long a run may thrash; none of them *detect* thrashing, and
+BLOCKED-only escalation never sees the worker that is confidently going nowhere. Five countable
+controller-side signals, read from the ledger, artifacts and raw logs with no extra
+infrastructure: the same action returning the same observation ~3× · one error class ~3× back to
+back · two actions alternating ~4× within the last ~8 · rewrite→retest→fail cycles (here the agent
+never repeats an *identical* action, so naive loop detection stays silent) · no successful
+execution for N steps. **Progress means a successful execution, not a file rewrite** — counting
+rewrites as progress is exactly what lets a thrashing agent look healthy. The thresholds are
+illustrative defaults from one working-code source, chosen by reasoning rather than by benchmark;
+tune them per run.
+
+What travels upward on a stall is **evidence, never a transcript**: counts, error classes and
+digests, plus the plan, the files at their shas, the actions attempted, and paths to the failure
+evidence. Reasoning is never evidence. The escalation itself follows `shared-model-routing.md`
+rule 4 — capability before retry, asymmetric hysteresis.
+
+## Waiting on external systems (stateful backoff)
+
+Waiting on CI, a review, or a long external CLI, keep per-target state: identity, next due time,
+last-result fingerprint, consecutive no-change count. A due poll has exactly three outcomes —
+changed → record the evidence and create the successor work; unchanged → update fingerprint and
+counter, quiet no-op; inconclusive → record a blocker, never fake progress. Escalate the interval
+on no-change (e.g. 15 → 30 → 60 min) and reset it on any state change. **A monitor that isn't due
+never wakes a strong model.**
+
 ## Rules
 
 1. Every long-running dispatch gets `run_in_background` (Claude Code; hosts without background
@@ -70,6 +105,11 @@ State files: `~/.claude/daemon/roster.json`, `~/.claude/jobs/<id>/state.json`.
    single most common worker failure observed (six occurrences across one skill-family program,
    including finished reviews parked undelivered) — the work is almost always complete and the
    nudge yields the finished report instantly; delivery, not execution, is the fragile step.
+2b. **`restart_clean` sits between nudge and respawn** when the context, not the model, is the
+   problem: rebuild the replacement's context keeping the task, the tool calls and their real
+   outputs, and dropping the prior model's narration and reasoning — polluted context is how one
+   bad turn becomes ten. It does not help when the model simply cannot do the work; change
+   capability first (`shared-model-routing.md` rule 4).
 3. Silence is not success: no report + no artifact = failed, treat it as BLOCKED.
 3b. **Liveness is read from artifact deltas — existence and mtime of the deliverable path — never
    from process count or idle state, which lie in BOTH directions:** hung child processes outlive
@@ -79,3 +119,7 @@ State files: `~/.claude/daemon/roster.json`, `~/.claude/jobs/<id>/state.json`.
    contested seam/file (megafile: flag it, controller queues an isolated decomposition task), or
    duplicate structural expansion — are REPARTITION signals, not push-harder ones; no absolute
    commit/LOC thresholds, activity ≠ progress → repartition (`strategy-parallel.md`).
+5. **Never address an agent by a provisional handle.** A setup handle returned before the agent
+   exists is not an identity — correlate the real one from post-spawn metadata (identity, project,
+   path, time, state) before polling, reading, or messaging it. And "report back" means YOU
+   perform the wait and the read: never assume an automatic child callback.

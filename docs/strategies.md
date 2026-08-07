@@ -20,7 +20,7 @@ this is the strategy triage falls back to.
 **How it runs**: setup once per run (create `.orchestrate/`, read the whole plan in one pass to
 batch any contradictions/ambiguities into a single upfront question, resume from `progress.md` if
 one exists), then per task: brief → dispatch a **fresh** implementer subagent → (questions get
-answered and it's re-dispatched) → implement/test/commit/self-review → spec review → fix loop until
+answered and it's re-dispatched) → implement/test/commit/verify → spec review → fix loop until
 clean → quality review → fix loop until clean → append a ledger line → next task. After all tasks,
 one whole-branch review runs on the most capable model over the full diff, with its findings
 resolved by a single fix subagent (never one fixer per finding).
@@ -322,9 +322,9 @@ them (`run_in_background`) and poll the output file rather than blocking the con
 **Key mechanics per engine** — verify flags before scripting (`<cli> --help` once per session; CLIs
 drift):
 - **Codex** (`codex exec`) — the most script-friendly. `codex --version && codex login status` as
-  preflight; `--sandbox workspace-write`, `-m <model> -c model_reasoning_effort=low|medium|high|
-  xhigh|max|ultra` (medium default; `ultra` fans out Codex-side subagents — a fan-out decision,
-  not an effort bump), `-o <file>` for output, `--output-schema` for validated structured output, `--json`
+  preflight; `--sandbox workspace-write`, `-m <model> -c model_reasoning_effort=none|minimal|low|
+  medium|high|xhigh|max` (medium default; enum live-verified against codex 0.144.3 on 2026-08-07),
+  `-o <file>` for output, `--output-schema` for validated structured output, `--json`
   for JSONL events. `</dev/null` is **mandatory** in scripts — an open stdin makes Codex wait
   forever; for a long prompt, pipe `- < task.md` instead. Approvals via `-a
   untrusted|on-request|never`; network inside the sandbox via

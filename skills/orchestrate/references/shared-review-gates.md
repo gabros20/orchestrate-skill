@@ -14,6 +14,16 @@ Inputs:
 Produces:
 - Typed review findings, pass/fail result, fix instructions, and re-review state.
 
+## Contents
+
+- Plan-veto (before any execution)
+- Output review (after execution)
+- Anchors — topology is not truth
+- Judge hygiene
+- Panels and consensus
+- Final-deliverable gate
+- Verification with evidence (the /verify split)
+
 Two DISTINCT gate kinds; don't conflate them. Gates are enforced, not trusted: a gate that can't
 fail the work isn't a gate.
 
@@ -46,6 +56,29 @@ non-compliant code is wasted tokens.
   batch to final review. ⚠️ "cannot verify from diff" → the CONTROLLER resolves (it holds
   cross-task context), never auto-pass.
 
+## Anchors — topology is not truth
+
+A gate topology built entirely of agents reading each other's reports can be fully consistent and
+entirely unverified — *"Everything is consistent. Nothing is verified."* Every gate that judges
+PRODUCED WORK therefore names at least one fact **no agent produced**: a command that ran, with
+its output; a file that exists on disk at a stated sha; an external readback (CI status, a
+deployed response, a merged PR). Plan-veto is outside this scope — nothing is built yet, so it
+judges intent. And some constraints are **frozen** — the ones an optimizer would be tempted to
+weaken are off-limits precisely because bending them is how it would win.
+
+## Judge hygiene
+
+- **Cross-family judge by default** wherever the host allows it: a model grades its own family's
+  writing more kindly, and same-family generate-and-grade shares its blind spots. (Lineage
+  decorrelation is an option for panels below; for a judging role it is the default.)
+- **Pin AND log the judge model per review round**, in the findings file. A silently upgraded
+  judge makes round 1 and round 3 incomparable, and nothing in the output says so.
+- **Never reward the shape of an answer**: no scoring on response length, keyword presence,
+  citation count, exact phrasing, tool-call count, or similarity to a reference. Reward the shape
+  and the agent learns the shape.
+- **One-line rubrics** wherever the check allows: `Pass iff [independently observable outcome]` —
+  one primary verdict, never a bundle of proxy scores.
+
 ## Panels (`review=panel:N`) and consensus (`review=consensus:N`)
 
 - Panel: N reviewers, each ONE lens (security / performance / architecture / testing / a11y…).
@@ -62,16 +95,27 @@ non-compliant code is wasted tokens.
 - Consensus: N independent verifiers vote real/refuted per finding; majority rules; prompt them
   to REFUTE (default-skeptic), or the vote is decorative.
 
+## Final-deliverable gate (before the run reports done)
+
+Per-task gates structurally cannot see scope drift ACROSS tasks: each task passed its own review
+and the accumulated change set still misses the point. So before a run reports done, one review of
+the whole accumulated change set, in a fresh context, judged against the ORIGINALLY stated goal
+rather than the conversation. Verdict: **ship / fix-first / rethink**. Two caveats, carried from
+the source: when the reviewer and the implementer are the same model this is a fresh-eyes check,
+not an independent-model check; and any fix made after the review discards the verdict — run a new
+fresh review. In `staged` this gate is the whole-branch review at Finish (`strategy-staged.md`);
+every other strategy owes it as its own step.
+
 ## Verification with evidence (the /verify split)
 
 For anything user-facing or high-stakes, split verification:
 1. **Subjective first — a FRESH read-only verifier subagent** drives the real running app (dev
    server + browser/CLI driver): exercises the change like a user, captures screenshot AND video
-   to a gitignored `evidence/` dir, returns strictly `works|broken / expected / observed /
-   evidence`. Fresh = independence; the model that wrote the code grades its own homework too
-   generously.
+   to a gitignored `evidence/` dir, returns strictly one of `pass | fail | blocked |
+   needs-human-judgment` / expected / observed / evidence (`prompt-verifier.md`). Fresh =
+   independence; the model that wrote the code grades its own homework too generously.
 2. **Objective second — the controller** runs the codified checks (typecheck/lint/unit/e2e) as a
    regression sweep.
-Broken → fix → a NEW fresh verifier; cap ~3 rounds, then escalate. PRs ship with the evidence:
+`fail` → fix → a NEW fresh verifier; cap ~3 rounds, then escalate. PRs ship with the evidence:
 screenshot embedded inline, video linked — reviewers approve behavior, not vibes. A fix that
 doesn't move the real metric isn't a fix — keep watching it next cycle.

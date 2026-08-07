@@ -32,11 +32,16 @@ Prompts: `prompt-implementer.md`, `prompt-spec-reviewer.md`, `prompt-quality-rev
    resume at the first task without one. Trust the ledger + `git log` over recollection; the most
    expensive observed failure mode is re-dispatching completed task sequences after compaction.
 4. Write `.orchestrate/run.md` with resolved dimensions.
+5. **Criteria before code** (multi-task plans): author every task's acceptance check as its own
+   step — after plan approval, before the first dispatch — ideally by a different agent than the
+   one that will implement it. A verification line written by the same reasoning that wrote the
+   task tests only that reasoning; authoring the checks as a set also exposes tasks that cannot
+   state what "done" observable looks like.
 
 ## Per-task cycle
 
 ```
-brief → dispatch implementer → (questions? answer, re-dispatch) → implement/test/commit/self-review
+brief → dispatch implementer → (questions? answer, re-dispatch) → implement/test/commit/verify
   → spec review → (fix → re-review)* → quality review → (fix → re-review)* → ledger line → next
 ```
 
@@ -68,9 +73,14 @@ brief → dispatch implementer → (questions? answer, re-dispatch) → implemen
 ## Finish
 
 After all tasks: ONE whole-branch review (most capable model) over
-`review-package $(git merge-base main HEAD) HEAD`. Its findings → ONE fix subagent with the
-complete list (never one fixer per finding — that costs more than all the tasks combined). Then
-hand off to the repo's branch-finishing flow (merge/PR per project convention).
+`review-package $(git merge-base main HEAD) HEAD`, with the originally stated goal (from
+`run.md`) pasted into the dispatch — the reviewer judges against it, so it must receive it.
+This is the final-deliverable gate (`shared-review-gates.md`): a FRESH context that never saw
+this run's conversation, judging the accumulated change set against that goal, returning
+ship / fix-first / rethink.
+Its findings → ONE fix subagent with the complete list (never one fixer per finding — that costs
+more than all the tasks combined); any fix wave discards the verdict, so re-review before handoff.
+Then hand off to the repo's branch-finishing flow (merge/PR per project convention).
 
 ## Dimension overrides that change this file's behavior
 
@@ -84,5 +94,5 @@ hand off to the repo's branch-finishing flow (merge/PR per project convention).
 
 Never: skip either review or run them out of order · proceed with unfixed Critical/Important ·
 run parallel implementers in this strategy (that's `parallel`) · make a subagent read the plan
-file (brief it) · ignore subagent questions · let self-review replace review · move on while a
-review has open issues · implement in the controller.
+file (brief it) · ignore subagent questions · let a worker's own check replace review · move on
+while a review has open issues · implement in the controller.

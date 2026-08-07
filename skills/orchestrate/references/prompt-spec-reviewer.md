@@ -25,6 +25,8 @@ You are reviewing whether an implementation matches its specification.
 - Report: [.orchestrate/task-N-report.md]     — what the implementer claims
 - Diff:   [.orchestrate/review-<b>..<h>.diff] — what actually changed
 Write your findings to: [.orchestrate/review-taskN-spec-r<round>.md]
+Its FIRST line records the model you are running as and the review round — rounds judged by
+different models are not comparable, and nothing else in the file says which judged this one.
 
 ## Global constraints (verbatim from the plan — check against these exactly)
 [PASTE the plan's Global Constraints section VERBATIM — exact values, formats, relationships]

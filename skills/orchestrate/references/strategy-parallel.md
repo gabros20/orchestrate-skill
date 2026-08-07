@@ -31,7 +31,9 @@ multiple independent problems?
           yes → sequential (staged) — or repartition until they don't
           no  → parallel
 ```
-Then partition along ONE axis — by layer, by component, by concern, or **by file ownership**
+The cheap first cut is the **fake-edge test**: does this step actually need the previous step's
+output? No edge → no wait → it can run concurrently; the file-overlap check answers the other
+half. Then partition along ONE axis — by layer, by component, by concern, or **by file ownership**
 (strongest for writers: each worker owns an exclusive file set, written into its brief).
 
 ## Task cards (narrow contracts)
@@ -72,6 +74,14 @@ vibes**. Return contract per worker: verdict first, <1000 tokens, branch/PR ref 
 ## Limits & failure handling
 
 - 3–5 workers is the sweet spot; scale only when work is genuinely independent.
+- **One snapshot per batch**: every worker in a batch pins the same `@ <sha>` and the same
+  revision of the shared records (`decisions.md`, plan, inventory). A mid-batch change to shared
+  state is a re-dispatch decision, never a silent update (`shared-token-economy.md`).
+- **Fan-in guard**: every merge or synthesis step counts returns against dispatches and refuses to
+  synthesize on a partial set — `shared-monitoring.md` rule 3 catches one silent worker, this
+  catches the aggregate, where a single dead worker slips into a report that looks complete. On
+  wide runs, layer the fan-in: summarize in batches, then combine the summaries, so no synthesizer
+  swallows N full reports at once.
 - Worker BLOCKED → same escalation ladder as staged. On API overload NEVER spawn a duplicate
   worker for the same card — resume/nudge the one that exists (`shared-safety-rails.md`).
 - Respect review bandwidth: don't open more PRs than the human can review; queue the rest.

@@ -29,6 +29,12 @@ the merge) — partitioning and merge gates handle those (`shared-contracts.md`)
 - **Plain git (canonical — works on every host)**: `git worktree add /tmp/wt-taskA -b
   agent/task-a` then `--cd`/`--cwd` the CLI into it. One engine per tree, never two.
 
+**Observed, not requested.** The sandbox you asked for is not necessarily the one you got: never
+call a lane OS-enforced read-only unless the observed sandbox policy is read-only. Observed and
+enforced → proceed; the host broadened it → proceed only when hard isolation isn't required and
+you capture and verify exact before/after state; unobservable, or any mutation occurred → record
+that plainly, drop the isolation claim, and never hide the mutation.
+
 ## Contract per worktree
 
 1. **Copy the repo's gitignored `.env*` in** — a fresh worktree has none; builds fail

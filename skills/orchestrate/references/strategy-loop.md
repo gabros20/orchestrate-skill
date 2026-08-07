@@ -14,6 +14,14 @@ Inputs:
 Produces:
 - Cycle ledger, verified improvements, terminal stop evidence, and evolution findings.
 
+## Contents
+
+- Qualify first · The loop contract · Trigger taxonomy
+- Rails (mandatory)
+- Measured-target loop (named variant)
+- Progress obligations (`replan_noop`, the Outcome Floor)
+- Roles at scale · The evolve pass
+
 Preset: `topology=loop trigger=goal|interval|schedule review=per-cycle-cheap,boundary-heavy`.
 An agent repeats cycles of work until a stop condition is met. Three parts make or break every
 loop — **a verifier** (a check that can fail the work without a human), **state** (memory across
@@ -79,6 +87,27 @@ cycle that makes verified metrics worse reverts, and two in a row halts) · **re
 never open a new PR while the loop's previous PR is unmerged** · ratchet gating: cheap checks
 between cycles, heavy validation only at cycle boundary · no-op is a SUCCESSFUL run (zero drift
 found ≠ wasted run).
+
+## Measured-target loop (named variant)
+
+When the goal IS a metric: declare the metric and its exact measurement command before cycle 1,
+and record a baseline. Each cycle is one experiment — change one thing, re-measure, keep measured
+wins, revert regressions (the regression breaker with a number behind it). The variant is
+legitimate **only while the target stays measurable**; an unmeasurable target turns the loop into
+a reward-hacking magnet, so stop rather than continue on the agent's judgment of "better".
+Published outcomes for this shape are Shopify-reported via a vendor essay (a test suite 300×
+faster, a component mounting 20% faster) — existence proof for the shape, not expected value.
+
+## Progress obligations (`replan_noop`, the Outcome Floor)
+
+- A **replan must produce at least one machine-visible delta**: a split todo, a successor, a
+  resume condition, a gate, or a patch to the plan. Recording "replanned" discharges nothing —
+  that is `replan_noop`; replan again with a delta or stop. (Distinct from the evolve pass's
+  no-op, which is a legitimate finding that nothing needs changing.)
+- **Outcome Floor**: consecutive surface-only rounds — activity without acceptance-gate movement —
+  force either a primary result next round or entry into repair. Delivery scale is not delivery
+  outcome: a multi-file diff can be surface-only while a tiny change that unblocks something is
+  real progress. Repair never lowers the gate (`shared-safety-rails.md`).
 
 ## Roles at scale (grow into, not from)
 

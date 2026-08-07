@@ -65,6 +65,20 @@ Scale-gating (task count refines within a strategy): 1–2 files w/ complete spe
 tier; 3–5 → standard flow; 6+ → require a written plan first (planning=plan-first) and consider
 parallel/workflow.
 
+**Long-context note**: a 1M-token default window whose behavior stays consistent throughout moves
+the "too broad for one context" trigger — capacity alone no longer routes to `hierarchical`; send
+it to `staged` on a strong long-context model unless the domains need independent thinking.
+
+**The fake-edge test** (the cheap half of partitioning): for each step ask *does this step
+actually need the previous step's output?* No edge → no wait → it can run concurrently. Pair it
+with the file-overlap check (`prompt-triage-assessor.md`), which answers the isolation half; a
+plan with no edge-free pair is a chain — sequential, and that's fine.
+
+**Vocabulary**: users now say "graph" for what this skill calls `parallel` (independent nodes) and
+`workflow` (script-held fan-out, verify, merge) — route the word, don't invent a strategy for it.
+Caution when a user brings graph-engineering material: the topic has already produced at least one
+fabricated study, so any citation needs a primary source.
+
 ## Step 3 — resolve and record
 
 1. State the pick in one line: `strategy=X because <signals>`. Apply user dimension overrides.

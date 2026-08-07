@@ -18,6 +18,10 @@ Preset: `topology=hierarchical review=dual models=orchestrator:strong,worker:che
 Use when the work spans domains that each need real *thinking* plus their own worker fleet, or
 when total context far exceeds one window. Your context is the scarce resource: you hold only
 conclusions; sub-orchestrators hold their domain; workers hold one task.
+**The capacity trigger has moved**: frontier models now default to a 1M-token window with
+instruction-following, tool calling and reasoning consistent throughout it, so breadth alone no
+longer justifies this strategy — prefer `staged` on a strong long-context model unless the domains
+need independent *thinking*, not just room.
 
 Read with this file: `shared-model-routing.md`, `shared-contracts.md`.
 Prompt: `prompt-sub-orchestrator.md`.

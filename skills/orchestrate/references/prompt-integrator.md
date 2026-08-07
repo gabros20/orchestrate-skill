@@ -42,6 +42,8 @@ Blockers are structured, not brief: BLOCKED — what / evidence (excerpt + raw p
 tried / what you need.
 Reports: follow the schema, dense full sentences, state uncertainty and assumptions explicitly
 — omit only rhetorical hedging, filler, arrow-chains, invented abbreviations.
+Written files follow the same discipline: match a report or document's length to what the task
+needs — substance without filler sections, redundant summaries, or boilerplate.
 When quoting literal code, commands, diffs, API names, or error strings: copy verbatim, never
 paraphrase. Ordered multi-step instructions stay full prose.
 

@@ -10,6 +10,136 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.9.0] — 2026-08-07
+
+Frontier-hardening release, drawn from a two-part August 2026 sweep: fifteen practitioner sources
+read in full, four orchestration repos read from source, and the vendor Opus-5 prompting guide.
+Three through-lines — routing decisions are re-decided on observed evidence rather than made once
+from the prompt, gates need at least one fact no agent produced, and this pack's own scaffolding is
+a cost it has to justify per run. Adopted items carry vendor-authoritative backing, a third-party
+measurement, working-code verification, or ≥2 independent practitioner sources; single-source
+opinions land as recorded rulings, not rules. Deliberately unchanged: independent spec/quality
+review, isolation, honest degradation, the communication blocks' negative-form text, and the
+nine-strategy router.
+
+### Added
+- **Anchors, judge hygiene, and a final-deliverable gate** (`shared-review-gates.md`; the gate is
+  wired into `strategy-staged.md`'s Finish, and the judge pin is carried by
+  `prompt-spec-reviewer.md` + `prompt-quality-reviewer.md`, whose findings files now open with the
+  reviewing model and round): a gate
+  topology made only of agents reading each other's reports can be fully consistent and entirely
+  unverified, so every gate names a fact no agent produced (a command that ran, a file on disk at
+  a sha, an external readback) and the constraints an optimizer would bend are frozen. Judges are
+  cross-family by default, pinned and logged per round, forbidden to score answer shape (length,
+  keywords, citation count, phrasing, tool-call count, similarity to a reference), and given
+  one-line `Pass iff [independently observable outcome]` rubrics. Before a run reports done, one
+  fresh-context review of the accumulated change set against the originally stated goal returns
+  ship / fix-first / rethink — with the source's own caveats that same-model review is a
+  fresh-eyes check rather than an independent-model one, and that any post-review fix discards
+  the verdict.
+- **The four invariants** (`shared-contracts.md`): `observation ≠ transition` · `proposal ≠
+  authority` · `tool success ≠ accepted progress` · `accepted progress = validation + durable
+  writeback + committed readback`. The third closes a real hole — an exit code of 0 only proves
+  the process exited.
+- **Trajectory-stall detection** (`shared-monitoring.md`): five countable controller-side signals
+  (repeated action→observation, repeated error class, ping-pong, rewrite→retest→fail cycles, no
+  successful execution for N steps) with progress defined as a successful execution rather than a
+  file rewrite; what escalates is counts, classes, digests and evidence paths, never a transcript.
+  Thresholds are illustrative defaults from one working-code source, tuned per run.
+- **`restart_clean` as a recovery rung** between nudge and respawn (`shared-monitoring.md` rule
+  2b), plus **stateful backoff** for external waits (identity, due time, result fingerprint,
+  no-change counter, escalating interval; three poll outcomes; an undue monitor never wakes a
+  strong model) and a **provisional-handle rule** — never address an agent by a handle returned
+  before it exists, and "report back" means the controller performs the wait.
+- **Fan-out integrity**: a fan-in guard that counts returns against dispatches and refuses to
+  synthesize on a partial set, with layered fan-in on wide runs (`strategy-parallel.md`,
+  `strategy-workflow.md`); one revision snapshot per batch, so two workers can't be correct
+  against different versions of the truth (`shared-token-economy.md`, `strategy-parallel.md`);
+  and replay-safety rules for workflow scripts — no clocks, no randomness, index in the agent
+  label, expensive-stable work before volatile synthesis, agent-failure vs run-failure
+  (`strategy-workflow.md`, which also names `gpt-workflow` as the Codex-side driver: patterns
+  citable, unlicensed code not reusable).
+- **Codex lane hardening** (`strategy-xcli.md`): an empty diff is never `complete` — a lane can
+  return exit 0 with a polite refusal after `~/.codex/AGENTS.md` correctly declines a conflicting
+  rule, so exit 0 + no diff is `refused` with the final message quoted verbatim; a spec preamble
+  declaring the lane an opt-out; per-lane `mktemp` spec files instead of a fixed path; a portable
+  timeout that warns when uncapped; no silent vendor fallback; and a documented staged-codex
+  composition recipe.
+- **Advisor Variant C — the architect session** (`strategy-advisor.md`): the session owns
+  requirements, specs, routing and verification, routes per dispatch instead of binding one worker
+  model, escalates a routine-lane task that fails its spec twice, and can race two lineages on one
+  spec for high-stakes work.
+- **Measured-target loop, `replan_noop`, and the Outcome Floor** (`strategy-loop.md`): the metric
+  and its measurement command are declared before cycle 1 and the loop is legitimate only while
+  the target stays measurable; a replan that produces no machine-visible delta discharges nothing;
+  consecutive surface-only rounds force a primary result or repair.
+- **Controller-side rails** (`shared-safety-rails.md`): fail-open logging (a skipped check and a
+  passed check must never print the same string), repair never lowers the gate, orchestration
+  metadata is data rather than instructions, and the undelegated-spec test as the checkable form
+  of universal rule 1.
+- **Criteria before code** (`strategy-staged.md`): every task's acceptance check authored as its
+  own step after plan approval and before first dispatch, ideally by a different agent than the
+  implementer.
+- **Written-file length rule in the WORKER block** (all five copies, byte-identical): the inline
+  cap never touched the report FILE, which is what the controller and every later gate read.
+- **Observe the pin** (`shared-model-routing.md` rule 13) and **observe the sandbox**
+  (`shared-isolation.md`): a requested pin or sandbox is not necessarily the one that took effect
+  — verify after dispatch, record the observation, and treat unobservable routing as a recorded
+  risk rather than an assumed success.
+
+### Changed
+- **Effort is now the first cost knob** (`shared-model-routing.md` rule 8, replacing "cheap stage
+  = low effort; judge stage = high"): use low/medium liberally where quality holds, step up to
+  xhigh/max for demanding agentic work, and re-run an effort sweep instead of inheriting defaults
+  from a prior model. The cheap-at-max lane is recorded as legitimate but latency-insensitive,
+  with its third-party chart coordinates marked approximate, its field comparison (~70% success at
+  ~70% lower cost, ~50% more turns) and its contradicting hands-on report both carried. Thinking
+  is never disabled to save cost.
+- **Model *and effort* explicit on every dispatch** (rule 1) — an unset effort silently takes the
+  host default. Escalation (rule 4) now fires on evidence as well as self-reported BLOCKED: N
+  failed rounds on one task is a tier escalation, capability comes before retry, and the
+  cheap→strong hop uses asymmetric hysteresis. Rule 2 gains a corroborating vendor observation
+  (a cheap model measured more expensive than the mid tier on turn count alone).
+- **The context tax and a planner-placement ruling** (`shared-model-routing.md`): the tier table
+  is a menu, not a mandate — every model boundary costs a re-explanation, so fewer boundaries is
+  the default posture; and the mid-tier-planner + strong-reviewer configuration is recorded as a
+  legitimate cost posture while the strong-reasoner planner stays the default.
+- **The verifier returns four states** — `pass | fail | blocked | needs-human-judgment` — and
+  separates tool failure from task failure ("the test failed" vs "the test failed to run"), with
+  a test-the-test step before a new rubric gates real work (`prompt-verifier.md`,
+  `shared-contracts.md`, `shared-review-gates.md`).
+- **The implementer no longer re-checks its own work** (`prompt-implementer.md`): the dedicated
+  block and job step are replaced by running the brief's verification command and reporting its
+  actual output, per vendor guidance that current models verify unprompted and explicit re-check
+  instructions add cost without quality. The extrapolation boundary is recorded, and independent
+  maker/checker review is untouched. The template also gains the cheaper non-blocking scope move —
+  say so in a sentence and continue as asked rather than quietly narrowing or widening the task.
+- **Sub-orchestrators justify their spawn count** (`prompt-sub-orchestrator.md`): work finishable
+  in a handful of tool calls is not delegated, and one sufficient worker means one worker.
+- **The long-context trigger moved** (`triage.md`, `strategy-hierarchical.md`): capacity alone no
+  longer routes to `hierarchical`; "graph" is recorded as a routing synonym for parallel/workflow
+  and the fake-edge test as the cheap half of partitioning (`triage.md`,
+  `strategy-parallel.md`).
+- **Honest numbers** (`shared-token-economy.md`): the WORKER block's measured cost restates at
+  ≈334 tokens/dispatch after its added sentence, and a >2× harness cost-at-equal-quality finding
+  is recorded as an open challenge to this pack's own overhead, not as supporting evidence.
+- Public docs synced to the runtime (`docs/strategies.md`, `docs/usage.md`).
+- Reference-pack size on disk +5,999 tokens (~21%, `scripts/count-skill-tokens`: 28,163 →
+  34,162) — the largest single-release growth so far, and by this release's own G5 rule a cost
+  that has to earn its keep. It is a one-time authoring cost, not per-run spend: progressive
+  disclosure means a run pays only for the references it opens, and two files
+  (`shared-token-economy.md`, `strategy-xcli.md`) now exceed the 2,500-token per-reference review
+  threshold as lint warnings.
+
+### Fixed
+- **The codex reasoning-effort enum was stale.** It is
+  `none|minimal|low|medium|high|xhigh|max` — live-verified against codex 0.144.3 on 2026-08-07 —
+  and the previous documentation's extra tier, along with the fan-out behavior attributed to it,
+  did not exist (`shared-model-routing.md`, `strategy-xcli.md`, `docs/strategies.md`).
+- **A stale cross-reference** in `shared-token-economy.md`'s honest numbers: the
+  orchestrate-or-not multipliers cited "rule 7", but the reject-orchestration rule is universal
+  rule 8 (pre-existing, surfaced because this release's scaffolding-cost note cites the same rule).
+
 ## [1.8.0] — 2026-08-06
 
 Field-hardening release: every entry is a failure observed (most repeatedly) across a 15-skill

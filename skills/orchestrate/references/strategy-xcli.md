@@ -17,6 +17,8 @@ Produces:
 ## Contents
 
 - Codex (`codex exec`) — the most script-friendly
+- Lane hardening (empty diff, spec files, timeout, no silent fallback)
+- Staged-codex recipe
 - Grok (`grok -p`)
 - Claude Code as a subprocess (for symmetry / cross-account)
 - Cursor (`cursor-agent`)
@@ -62,13 +64,40 @@ cat "$OUT"; git -C /path/to/repo status --short   # read result; inspect what it
   `gpt-5.6-terra` (balanced — standard worker/reviewer), `gpt-5.6-luna` (cheap — mechanical
   worker); `gpt-5.5`/`gpt-5.4[-mini]` remain available. Re-verify before pinning: model lists
   drift (`codex exec -m <slug>` errors loudly on an unknown slug).
-- Reasoning effort: `-c model_reasoning_effort=low|medium|high|xhigh|max|ultra` (medium default).
-  `ultra` fans out Codex-side subagents — nested orchestration that multiplies spend like any
-  fan-out; use only when you'd have approved a fleet anyway.
+- Reasoning effort: `-c model_reasoning_effort=none|minimal|low|medium|high|xhigh|max` (medium
+  default; enum live-verified against codex 0.144.3 on 2026-08-07 — **there is no `ultra`**, an
+  unknown value errors loudly). Effort is the first cost knob (`shared-model-routing.md` rule 8).
 - Approvals: `-a untrusted|on-request|never`; network inside sandbox:
   `-c sandbox_workspace_write.network_access=true`. NEVER `--dangerously-bypass-approvals-and-sandbox`.
 - Follow-up same session: `codex exec resume --last "…" </dev/null` (cwd-scoped).
 - Monitor/session store: `$CODEX_HOME` (default `~/.codex`). Codex-as-MCP: `codex mcp-server`.
+
+## Lane hardening (observed on a live Codex lane; generalizes to every subprocess engine)
+
+- **An empty diff is never `complete`.** `codex exec` loads the user's `~/.codex/AGENTS.md` on
+  every invocation, so a rule written for one project governs every lane on the machine; asked to
+  violate it, codex correctly declines rather than silently substituting — and the run returns
+  **exit 0, an empty diff, and a polite refusal in the final message**. If the exit code is 0 and
+  `git diff` shows nothing changed, the status is `refused`: quote the final message verbatim,
+  never record it as done (observed live 2026-08-04).
+- **Declare the opt-out in the spec preamble** — state that this lane is an explicit opt-out of
+  global AGENTS.md orchestration/model rules for this invocation. Belt-and-braces; it is not a
+  substitute for the empty-diff check.
+- **One spec file per lane, via `mktemp`** (`mktemp -t codex-spec.XXXXXX`) — never a fixed path
+  (parallel lanes on one path corrupt each other), never inline shell quoting.
+- **Portable timeout**: `T=$(command -v gtimeout || command -v timeout || true)` — macOS has no
+  `timeout` without coreutils; when `$T` is empty, WARN that the lane is running uncapped rather
+  than silently dropping the cap.
+- **No silent vendor fallback.** A cross-vendor lane that quietly becomes a same-vendor lane
+  defeats the reason it was chosen — fail loudly and say which engine was unavailable
+  (`shared-hosts.md`: degrade, and say so).
+
+## Staged-codex recipe (`strategy=staged engine=codex`)
+
+Per task, choose model AND effort by complexity (mechanical → cheap tier at high effort; judgment
+→ strong tier) · brief written to its own spec file · empty-diff check on every return, before the
+task reaches a review gate · reviews stay on the controller's engine, since cross-model review is
+the point.
 
 ## Grok (`grok -p`)
 
@@ -160,7 +189,7 @@ cd /path/to/repo && kimi -p "Full task: goal, constraints, files to touch, defin
 - No programmatic quota check headless (`/usage` is TUI-only, rejected in `-p` mode) — don't
   dispatch a fleet assuming quota headroom.
 - Kimi workers carry their OWN subagents (`Agent`/`AgentSwarm`) — nested orchestration multiplies
-  spend like codex `ultra`; instruct workers not to swarm unless intended.
+  spend like any unbudgeted fan-out; instruct workers not to swarm unless intended.
 - Poisoned-session landmine: malformed tool-call JSON can wedge a session into permanent HTTP 400
   loops with no self-recovery — kill and restart as a NEW session, never resume a wedged run
   (legacy-tracker provenance; re-verify before trusting it as fixed).
@@ -184,6 +213,10 @@ cd /path/to/repo && kimi -p "Full task: goal, constraints, files to touch, defin
 5. Rate limit hit → report to the user; never retry-loop against a subscription quota.
 6. Auth is the user's: `codex login` / grok cookie / `claude` login / `kimi login`. Never read or copy
    credential files.
+7. **Prefer a native in-host subagent when the host can pin the model you want.** A shelled-out
+   CLI forfeits the host's tool loop and permission enforcement: its output is text you must
+   re-trust, not a subagent running under your rails. A subprocess lane earns its place only when
+   it buys something the host cannot — a model, a quota, or a primitive the host lacks.
 
 ## Division-of-labor heuristic
 

@@ -34,19 +34,28 @@ write this code; do not read its rationale — judge behavior only.
 - Capture BOTH a screenshot and a short video/recording of the exercised path into evidence/
   (gitignored). Name them <task>-<round>.
 - Check the console/logs for new errors while exercising.
-- Do not fix anything. Do not weaken the criteria. If you cannot exercise the path at all,
-  report broken with the blocker as "observed".
+- Do not fix anything. Do not weaken the criteria.
+- Four states, not two: `pass` · `fail` (recoverable — attach the evidence) · `blocked` (you
+  could not obtain the information needed to judge) · `needs-human-judgment` (the criteria need a
+  call you cannot make). If you cannot exercise the path at all, that is `blocked`, not `fail`.
+- Distinguish tool failure from task failure — "the test failed" and "the test failed to run" are
+  different problems with different recoveries; say which in `observed`.
 
 No preamble, no narration: return only your schema. Quote literals verbatim; state
 uncertainty explicitly.
 
 ## Report (strictly this shape)
-TASK: works | broken
+TASK: pass | fail | blocked | needs-human-judgment
 expected: <one line>
-observed: <one line>
+observed: <one line — for a failure, say whether the task failed or the tool failed to run>
 evidence: <paths>
 ```
 
-Controller: broken → fix subagent → dispatch a FRESH verifier; cap ~3 rounds then escalate to the
-human. Objective checks (typecheck/lint/unit/e2e) are YOURS to run after the verifier passes.
-PRs embed the screenshot inline and link the video.
+**Test the test before you trust it.** Hand a new rubric or verifier two fabricated results — one
+clearly correct, one plausible but wrong. If either is graded wrong, the rubric is broken, not the
+agent. Fix the rubric before it gates real work.
+
+Controller: `fail` → fix subagent → dispatch a FRESH verifier; cap ~3 rounds then escalate to the
+human. `blocked` → supply the missing access/information and re-dispatch. `needs-human-judgment`
+→ yours to decide; never auto-pass it. Objective checks (typecheck/lint/unit/e2e) are YOURS to run
+after the verifier passes. PRs embed the screenshot inline and link the video.

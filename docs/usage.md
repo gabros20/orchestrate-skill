@@ -218,7 +218,7 @@ One line is appended per gated unit, **only after the gate passes**:
 ```
 Task 3: complete (commits a1b2c3d..e4f5a6b, review clean)
 Card api: merged (gate: contract tests green)
-Cycle 7: shipped PR #142 (verifier: works, evidence/run7.png)
+Cycle 7: shipped PR #142 (verifier: pass, evidence/run7.png)
 ```
 
 On any restart or context compaction, `cat .orchestrate/progress.md` plus `git log` are the source
@@ -254,8 +254,8 @@ itself is gone (e.g. a `git clean -fdx`), reconstruct state from `git log` alone
 Everything else follows from those two: task-class signals set the floor (1–2 files with a complete
 spec → cheap worker; multi-file integration → standard worker; design judgment or whole-branch
 review → most capable); escalating a `BLOCKED` task always means a model change one tier up, never
-a same-model re-dispatch; the maker and the checker are always separate model instances — self-review
-never replaces review; and, per Anthropic's published numbers, an executor+advisor split reaches
+a same-model re-dispatch; the maker and the checker are always separate model instances — a worker
+checking its own work never replaces review; and, per Anthropic's published numbers, an executor+advisor split reaches
 ~92% of the strong model's quality at ~63% of the cost with the advisor consulted about once per
 task — reach for that shape under budget pressure rather than downgrading the whole run.
 

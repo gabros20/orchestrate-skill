@@ -60,6 +60,8 @@ Blockers are structured, not brief: BLOCKED — what / evidence (excerpt + raw p
 tried / what you need.
 Reports: follow the schema, dense full sentences, state uncertainty and assumptions explicitly
 — omit only rhetorical hedging, filler, arrow-chains, invented abbreviations.
+Written files follow the same discipline: match a report or document's length to what the task
+needs — substance without filler sections, redundant summaries, or boilerplate.
 When quoting literal code, commands, diffs, API names, or error strings: copy verbatim, never
 paraphrase. Ordered multi-step instructions stay full prose.
 ```
@@ -80,6 +82,10 @@ triage is the controller's job. Findings go to the findings FILE (path in your i
 return = verdict + counts by severity + file path. Your repo access is read-only; the findings
 file under .orchestrate/ is your one write.
 ```
+
+"Report EVERY finding" is load-bearing and now vendor-confirmed: a reviewer told to be
+conservative follows that instruction literally and reports less, so ask for everything and
+filter in a separate pass. Never simplify this line away.
 
 ### MINIMAL line — advisor, triage assessor, verifier, planner-debate
 
@@ -121,10 +127,13 @@ A quality brief contains, in order:
    run-wide; `scripts/brief-check` in multi-brief mode fails two briefs claiming the same
    `write:` path (a double-assigned deliverable is a clobber waiting for a less careful worker).
    **Pin with `@ <sha>`** whenever more than one writer is active or the run uses worktrees — a
-   branch name is not a pin. Inline content only when it is *semantically complete, stable, and
-   cheaper than rediscovery* (an interface, invariants, a constraint table — verbatim); on high
-   fan-out, inline the one canonical payload every worker needs rather than making N workers
-   rediscover it.
+   branch name is not a pin. **One snapshot per fan-out batch**: every worker in a batch pins the
+   same `@ <sha>` AND the same revision of the shared records it reads (`decisions.md`, the plan,
+   the inventory). Changing shared state mid-batch is a re-dispatch decision, never a silent
+   update — two workers each correct against a different version of the truth raise no error on
+   their own. Inline content only when it is *semantically complete, stable, and cheaper than
+   rediscovery* (an interface, invariants, a constraint table — verbatim); on high fan-out, inline
+   the one canonical payload every worker needs rather than making N workers rediscover it.
    Every worker/reviewer brief also includes
    `read: .orchestrate/toolbox.md — orientation recipes`. When `.orchestrate/field-guide.md`
    exists, briefs RELEVANT to it also include `read: .orchestrate/field-guide.md` — no file →
@@ -209,12 +218,20 @@ before big runs.
 
 ## Honest numbers
 
-The blocks' own cost (measured, words×1.33): WORKER ≈ 300 tokens/dispatch, REVIEWER ≈ 140,
+The blocks' own cost (measured, words×1.33): WORKER ≈ 334 tokens/dispatch, REVIEWER ≈ 140,
 MINIMAL ≈ 19 — vs the hundreds-to-thousands of narration tokens per worker turn they remove,
 and the controller-context bloat every verbose return would re-cost on every later turn.
 Expect **10–25% session-level savings** from output discipline — not the 65–75% output-only
 headlines. The only trustworthy measure is an A/B on the provider's billing/usage page.
-Multipliers for right-sizing *whether* to orchestrate (rule 7): single tool-using agent ≈ 4× a
-chat interaction; multi-agent ≈ 15×. Watchlist (not exposed to this skill today): server-side
-tool-result clearing (~48% peak-context in Anthropic's cookbook A/B) and Task Budgets
-(self-paced token ceilings) — adopt when the runtime surfaces them.
+Multipliers for right-sizing *whether* to orchestrate (universal rule 8): single tool-using agent
+≈ 4× a chat interaction; multi-agent ≈ 15×.
+**The scaffolding is itself a cost — recorded as an open challenge to this pack, not as support.**
+A third-party benchmark on a multi-million-line internal codebase, quoted by an interested vendor
+and not read directly here: with the same model at the same thinking effort run through different
+harnesses, the cost per task *"differed significantly (more than 2x in some cases), while quality
+remained the same"*, and the minimal harness sent *"about 3x less context per turn"*. Every
+block, brief and reference this skill ships must earn its keep per run; universal rule 8's
+reject-orchestration branch is the answer when it doesn't.
+Watchlist (not exposed to this skill today): server-side tool-result clearing (~48% peak-context
+in Anthropic's cookbook A/B) and Task Budgets (self-paced token ceilings) — adopt when the runtime
+surfaces them.

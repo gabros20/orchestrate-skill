@@ -32,6 +32,8 @@ Peek before deep: sample the structure cheaply before committing your fan-out.
   cross-domain impact → report it, don't chase it.
 - Partition your work into 3–7 independent pieces; fewer means skip the fan-out and do it
   directly; more means your brief is too vague — tighten before spawning.
+- Do not delegate work you can finish yourself in a handful of tool calls; if one worker
+  suffices, use one — spawn count is a cost you justify, not a default.
 - Your workers follow the same contracts you were given (typed returns, artifacts on disk,
   explicit models).
 - Aggregate per: [union | synthesis | reduce].
@@ -55,6 +57,8 @@ Blockers are structured, not brief: BLOCKED — what / evidence (excerpt + raw p
 tried / what you need.
 Reports: follow the schema, dense full sentences, state uncertainty and assumptions explicitly
 — omit only rhetorical hedging, filler, arrow-chains, invented abbreviations.
+Written files follow the same discipline: match a report or document's length to what the task
+needs — substance without filler sections, redundant summaries, or boilerplate.
 When quoting literal code, commands, diffs, API names, or error strings: copy verbatim, never
 paraphrase. Ordered multi-step instructions stay full prose.
 

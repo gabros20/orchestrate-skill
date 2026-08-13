@@ -31,7 +31,7 @@ slash-command clients, or the host's equivalent. Documentation uses `/orchestrat
 <plan-file | task description>
   [strategy=auto|staged|parallel|hierarchical|team|workflow|loop|advisor|adversarial|xcli]
   [review=dual|spec|quality|panel:N|consensus:N|off]
-  [engine=claude|codex|grok|cursor|agy|opencode|hermes|kimi|mixed]
+  [engine=claude|codex|grok|cursor|agy|opencode|hermes|kimi|pi|mixed]
   [models=orchestrator:<tier>,worker:<tier>,advisor:<tier>,reviewer:<tier>]
   [effort=<level | role:level map>]
   [isolation=worktree|branch|off]
@@ -105,7 +105,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | `topology` | solo · staged · parallel · hierarchical · team · workflow · loop | selected strategy |
 | `planning` | none · plan-first · interview · adversarial | plan-first |
 | `review` | off · spec · quality · dual · panel:N · consensus:N | dual |
-| `engine` | claude · codex · grok · cursor · agy · opencode · hermes · kimi · mixed | host-appropriate |
+| `engine` | claude · codex · grok · cursor · agy · opencode · hermes · kimi · pi · mixed | host-appropriate |
 | `models` | advisor · orchestrator · reasoner · worker · reviewer · peer tier map | model routing |
 | `effort` | per-host reasoning levels (e.g. low · medium · high · xhigh · max) | pinned per dispatch where the surface supports it; else session effort, recorded |
 | `isolation` | none · worktree · branch | worktree for multiple writers |

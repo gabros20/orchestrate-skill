@@ -21,7 +21,7 @@ Produces:
 - Rules (all engines)
 - Division-of-labor heuristic
 
-Preset: `engine=codex|grok|cursor|agy|opencode|hermes|kimi|mixed` — usually a dimension on another
+Preset: `engine=codex|grok|cursor|agy|opencode|hermes|kimi|pi|mixed` — usually a dimension on another
 strategy rather than a standalone topology (e.g. `staged engine=codex`, `adversarial
 counter=codex`). Why: genuinely different capabilities (different model lineages for
 cross-validation; separate subscription quotas; codex's sandbox), at the price of serialization
@@ -90,5 +90,8 @@ Intelligence Index 4/189 as of 2026-07-20, behind Fable 5/GPT-5.6 Sol, ahead of 
 frontier-class independent lineage, the fourth vote in cross-lineage panels, and the pick for
 1M-context long-horizon/large-context work · Cursor/agy/opencode/Hermes = alternate workers when
 quotas, sandboxing, or lineage diversity matter (agy = Gemini lineage, the third vote in a
-cross-lineage panel). Cross-validation: send the same review to two engines, dedup findings, keep
+cross-lineage panel) · Pi = provider-agnostic carrier with NO lineage of its own — the lineage is
+whatever model it pins, so it adds no panel vote; reach for it when it carries a model or
+subscription quota no other lane offers, and contain it (no sandbox, no approvals —
+`shared-engines.md`). Cross-validation: send the same review to two engines, dedup findings, keep
 the union (conflicting severity → higher).

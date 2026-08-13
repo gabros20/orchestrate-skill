@@ -7,7 +7,7 @@ documentation and evaluation assets outside the runtime context.
 
 - `git`
 - An Agent Skills-compatible coding client
-- Optional external worker CLIs only when using `engine=codex|grok|cursor|agy|opencode|hermes|kimi`
+- Optional external worker CLIs only when using `engine=codex|grok|cursor|agy|opencode|hermes|kimi|pi`
 
 The runtime detects the active client at kickoff. Read
 [host adapters](../skills/orchestrate/references/shared-hosts.md) when a primitive or invocation

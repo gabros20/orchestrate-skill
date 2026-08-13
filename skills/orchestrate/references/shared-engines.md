@@ -24,6 +24,7 @@ Produces:
 - opencode (`opencode run`)
 - Hermes (`hermes -z`)
 - Kimi (`kimi -p`)
+- Pi (`pi -p`)
 
 This is the catalog behind `strategy-xcli.md` — that file holds the rules, lane hardening, and
 division of labor; this one holds the per-engine facts, which grow with every engine and drift
@@ -160,3 +161,40 @@ cd /path/to/repo && kimi -p "Full task: goal, constraints, files to touch, defin
 - Legacy Python `MoonshotAI/kimi-cli` is a DIFFERENT tool (verified 2026-07-20 against live
   0.28.0) — its flags (`--print`, `--input-format`, `--quiet`, `--final-message-only`) are absent
   from kimi-code 0.28.0; never cite them.
+
+## Pi (`pi -p`)
+
+```bash
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent   # install; auth: interactive /login or provider env key
+pi --version                                  # preflight; run `pi --help` before first scripting — facts below are docs-verified only
+cd /path/to/repo && pi -p -nc --no-session \
+  --model <provider>/<model> --thinking high \
+  @brief.md "Execute this brief: goal, constraints, files to touch, definition of done." \
+  </dev/null > "$(mktemp)" 2>&1        # no cwd flag — cd first; piped stdin becomes message content, so close it
+git status --short                            # inspect what it actually changed
+```
+- **Provider-agnostic carrier — it brings NO lineage of its own.** `--model <provider/id>` (plus a
+  `:thinking` shorthand like `sonnet:high`), `--provider`, `--list-models`; auth is the user's via
+  `/login` OAuth (Claude Pro/Max, ChatGPT Plus/Pro, Copilot) or a provider API-key env var. The
+  lineage and tier are whatever model it pins — a Pi lane never counts as an extra vote in a
+  cross-lineage panel. Its value: reaching a model or **subscription quota** no other lane offers.
+- Effort is a first-class flag: `--thinking off|minimal|low|medium|high|xhigh|max` — model AND
+  effort pin on one command line (`shared-model-routing.md` rule 1 satisfied natively).
+- Structured events: `--mode json` emits JSONL (first line = session header; the final
+  authoritative message arrives in `message_end`, `agent_end` closes) — e.g.
+  `pi --mode json "task" 2>/dev/null | jq -c 'select(.type == "message_end")'`. A JSON-RPC
+  stdin/stdout surface exists via `--mode rpc`.
+- **No sandbox and no approval prompts AT ALL** — built-in tools (`read`/`bash`/`edit`/`write`/…)
+  run with the pi process's full user permissions, and headless modes (`-p`, `--mode json/rpc`)
+  bypass even the project-trust prompt. Worktree + diff review is the MINIMUM containment; the
+  vendor's own guidance for untrusted work is a container/VM with only the files and credentials
+  the task needs.
+- Loads `AGENTS.md`/`CLAUDE.md` by default — the codex AGENTS.md-refusal gotcha applies. For a
+  hermetic lane pass `-nc` (`--no-context-files`) and `--no-extensions`; project-local resources
+  are gated by `defaultProjectTrust` in `~/.pi/agent/settings.json` (`-a`/`-na` per-run override).
+- Sessions: `~/.pi/agent/sessions/` (cwd-organized) — resume `-c` (most recent) or
+  `--session <path|id>`, branch with `--fork`; `--no-session` keeps fleet one-shots ephemeral.
+- Intentionally minimal: no built-in MCP, subagents, or background bash (extensions can add them) —
+  a Pi worker is a true leaf; unlike Kimi it will not swarm on its own.
+- Docs-verified 2026-08-13 against pi.dev/docs/latest — no live install checked; verify the flag
+  surface with `pi --help` before scripting against it.

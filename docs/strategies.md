@@ -308,7 +308,7 @@ single strong-model plan review would already catch.
 
 ## xcli
 
-`engine=codex|grok|cursor|agy|opencode|hermes|kimi|mixed` — usually layered as a dimension on another
+`engine=codex|grok|cursor|agy|opencode|hermes|kimi|pi|mixed` — usually layered as a dimension on another
 strategy rather than run standalone (e.g. `strategy=staged engine=codex`, `strategy=adversarial
 counter=codex`).
 
@@ -372,6 +372,18 @@ drift). In the runtime skill the per-engine catalog lives in `references/shared-
   tool call can wedge a session into a permanent HTTP-400 loop — kill and restart as a new session,
   never resume a wedged run. `</dev/null` defensively (stdin behavior undocumented). CLI flag
   surface live-verified against kimi-code 0.28.0 (2026-07-20).
+- **Pi** (`pi -p "task" --model <provider/id> --thinking off|minimal|low|medium|high|xhigh|max`) —
+  a provider-agnostic carrier (Earendil's minimal coding agent, npm
+  `@earendil-works/pi-coding-agent`): it brings **no lineage of its own** — the lineage is whatever
+  model it pins via `--model` (a `:thinking` shorthand like `sonnet:high` also works), riding OAuth
+  subscriptions (Claude Pro/Max, ChatGPT Plus/Pro, Copilot) or provider API keys. Model AND effort
+  pin on one command line. JSONL events via `--mode json` (final message in `message_end`); no
+  `--cwd` flag — `cd` first. **No sandbox and no approval prompts at all**, and headless mode
+  bypasses even the project-trust gate — worktree + diff review is the minimum containment,
+  a container for anything untrusted. Loads `AGENTS.md`/`CLAUDE.md` by default (`-nc` for a
+  hermetic lane); `--no-session` keeps fleet one-shots ephemeral. Intentionally ships no MCP,
+  subagents, or background bash — a true leaf worker that won't swarm. Docs-verified against
+  pi.dev/docs/latest (2026-08-13); run `pi --help` before scripting.
 
 **Failure handling**: review the diff yourself (or via your normal review gate) before accepting —
 external engines don't inherit your review discipline. A rate limit hit gets reported to the user,
@@ -383,5 +395,7 @@ review, Codex (GPT lineage) for heavy implementation and an honest peer counter,
 second opinion or search-adjacent tasks, Cursor/agy/opencode/Hermes/Kimi as alternate workers when
 quotas, sandboxing, or lineage diversity matter (agy = Gemini lineage — the third vote in a
 cross-lineage panel; Kimi = Moonshot lineage — the fourth vote, and the pick for 1M-context
-long-horizon work). For cross-validation, send the same review to two engines,
+long-horizon work), and Pi as a provider-agnostic carrier — no lineage of its own, no extra panel
+vote; its value is reaching a model or subscription quota no other lane offers. For
+cross-validation, send the same review to two engines,
 dedup the findings, and keep the union (conflicting severity → the higher one wins).

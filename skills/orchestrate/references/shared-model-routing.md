@@ -91,7 +91,8 @@ end, never renumber.
 8. **Effort is the FIRST cost knob; model tier is the second.** Flags: Claude `--effort low..max`,
    codex `-c model_reasoning_effort=none|minimal|low|medium|high|xhigh|max` (medium default; enum
    live-verified 2026-08-07, `shared-engines.md`), grok-4.5 API `reasoning_effort=low|medium|high`
-   (high default; no CLI flag as of grok CLI 0.2.106); kimi's is in rule 9.
+   (high default; no CLI flag as of grok CLI 0.2.106), pi `--thinking
+   off|minimal|low|medium|high|xhigh|max` (docs-verified 2026-08-13); kimi's is in rule 9.
    Use low/medium liberally wherever quality holds; step up to xhigh/max for demanding agentic
    work — and re-run an effort sweep for the model you are actually dispatching instead of
    inheriting defaults tuned on a prior one. **The cheap-at-max lane is real and
@@ -118,8 +119,10 @@ end, never renumber.
    flag) ≈ reasoner/advisor/peer · `kimi-for-coding` ≈ balanced worker/reviewer (256k ctx) ·
    `kimi-for-coding-highspeed` ≈ latency-critical worker (6× speed at 3× quota — budget-relevant,
    not a cheap tier; no cheap tier exists). Switching model or effort mid-session invalidates
-   Kimi's prompt cache — pin both per session. Model lists drift — re-verify slugs before pinning
-   (`shared-engines.md`).
+   Kimi's prompt cache — pin both per session. Pi (docs-verified 2026-08-13) has NO model list of
+   its own — it is a provider-agnostic carrier; the tier is whatever `--model <provider/id>` pins,
+   so map it from the pinned provider's row above. Model lists drift — re-verify slugs before
+   pinning (`shared-engines.md`).
 10. Sensitivity to emphasized/literal wording varies by model — re-tune dispatch templates per
     model at a recorded boundary, never mid-run (cache hygiene, `shared-token-economy.md`).
 11. **Hybrid preferred when the brief is transcription-grade**: planner spend converts

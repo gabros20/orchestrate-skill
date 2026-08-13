@@ -10,6 +10,30 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.12.0] — 2026-08-13
+
+### Added
+- **Pi as a ninth external engine** (`engine=pi`, new Pi block in `shared-engines.md`). Earendil's
+  minimal, provider-agnostic coding agent (npm `@earendil-works/pi-coding-agent`) joins the
+  catalog: `pi -p` one-shots with `@file` brief attachment, `--mode json` JSONL events (final
+  message in `message_end`) and a `--mode rpc` surface, sessions under `~/.pi/agent/sessions/`
+  with `--no-session` for ephemeral fleet lanes. Model AND effort pin on one command line
+  (`--model <provider/id>`, `--thinking off|minimal|low|medium|high|xhigh|max`) — routing rule 1
+  satisfied natively; the effort enum joins rule 8's flag list and rule 9 records Pi as a
+  **carrier with no model list of its own** (tier = the pinned provider's model, no extra vote in
+  a cross-lineage panel; its value is reaching a model or subscription quota — Claude Pro/Max,
+  ChatGPT Plus/Pro, Copilot OAuth — no other lane offers). Containment posture recorded honestly:
+  **no sandbox, no approval prompts at all**, headless bypasses even the project-trust gate —
+  worktree + diff review is the minimum, a container for untrusted work (the vendor's own
+  guidance); loads `AGENTS.md`/`CLAUDE.md` by default, so the codex AGENTS.md-refusal gotcha
+  applies (`-nc` + `--no-extensions` for hermetic lanes). No built-in MCP/subagents/background
+  bash — a true leaf worker that won't swarm. Docs-verified against pi.dev/docs/latest
+  (2026-08-13, no local install); `pi --help` before scripting, per the standing catalog rule.
+- `engine=pi` wired through every enumeration surface: SKILL.md grammar + dimensions table,
+  `strategy-xcli.md` preset + division-of-labor, `docs/usage.md` (grammar, argument table,
+  dimensions table, `### engine` prose), `docs/strategies.md` (xcli enum, per-engine bullet,
+  composition overrides), `docs/installation.md`, site dimensions table + grammar + `llms.txt`.
+
 ## [1.11.0] — 2026-08-07
 
 ### Added

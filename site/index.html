@@ -414,7 +414,7 @@
     <tr><th>knob</th><th>what it controls</th><th>default</th></tr>
     <tr><td class="dim">strategy</td><td>the run shape — one of the nine below</td><td><code>auto</code> → triage picks</td></tr>
     <tr><td class="dim">review</td><td>which gates run on each result</td><td><code>dual</code> — spec, then quality</td></tr>
-    <tr><td class="dim">engine</td><td>who executes — <code>claude</code>, <code>codex</code>, <code>grok</code>, <code>cursor</code>, <code>agy</code>, <code>opencode</code>, <code>hermes</code>, <code>kimi</code>, or <code>mixed</code></td><td><code>claude</code></td></tr>
+    <tr><td class="dim">engine</td><td>who executes — <code>claude</code>, <code>codex</code>, <code>grok</code>, <code>cursor</code>, <code>agy</code>, <code>opencode</code>, <code>hermes</code>, <code>kimi</code>, <code>pi</code>, or <code>mixed</code></td><td><code>claude</code></td></tr>
     <tr><td class="dim">models</td><td>which model tier does which job</td><td>tier map (appendix)</td></tr>
     <tr><td class="dim">effort</td><td>reasoning level per role — the first cost knob, model tier is the second</td><td>pinned per dispatch where the surface allows</td></tr>
     <tr><td class="dim">isolation</td><td>whether workers get their own git worktree</td><td><code>worktree</code> when &gt;1 writer</td></tr>
@@ -429,7 +429,7 @@
       <div class="gram">/orchestrate <span class="g-file">[plan-file | task description]</span>
     <span class="g-dim">strategy=</span><span class="g-strat">auto|staged|parallel|hierarchical|team|workflow|loop|advisor|adversarial|xcli</span>
     <span class="g-dim">review=</span><span class="g-val">dual|spec|quality|panel:N|consensus:N|off</span>
-    <span class="g-dim">engine=</span><span class="g-val">claude|codex|grok|cursor|agy|opencode|hermes|kimi|mixed</span>
+    <span class="g-dim">engine=</span><span class="g-val">claude|codex|grok|cursor|agy|opencode|hermes|kimi|pi|mixed</span>
     <span class="g-dim">models=</span><span class="g-val">orchestrator:opus,worker:sonnet,advisor:strongest,…</span>
     <span class="g-dim">effort=</span><span class="g-val">low|medium|high|xhigh|max</span> | <span class="g-val">worker:low,reviewer:high,…</span>
     <span class="g-dim">isolation=</span><span class="g-val">worktree|branch|off</span>   <span class="g-dim">workers=</span><span class="g-val">N</span>

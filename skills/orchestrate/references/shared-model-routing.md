@@ -137,7 +137,8 @@ end, never renumber.
     inherit the parent model, Hermes accepts a per-task model then silently ignores it, and there is
     no documented per-dispatch pin on Kimi. On those hosts, tier separation routes
     through xcli engines (one process per tier, `strategy-xcli.md`) or collapses to one model +
-    effort knobs — record which in run.md (`shared-hosts.md`).
+    effort knobs — record which in run.md (`shared-hosts.md`). Pi as host has no subagents at all —
+    every dispatch IS an xcli process, so every pin is explicit by construction.
 13. **A pin you requested is not a pin you got — observe it.** Claude Code silently falls back to
     the session model when a pinned model isn't available on the account (resolution order:
     `CLAUDE_CODE_SUBAGENT_MODEL` env → per-invocation `model` → agent frontmatter → session

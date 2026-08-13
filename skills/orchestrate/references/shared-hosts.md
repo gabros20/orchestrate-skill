@@ -34,7 +34,8 @@ degrade honestly where a binding is missing. Strategy files stay written in Clau
 **Facts drift.** The matrix below was researched 2026-07-14 against vendor docs. Before relying
 on a binding you haven't used this session, verify it (`<cli> --help`, probe your own toolset) —
 same rule as xcli flags. Kimi added 2026-07-20 — CLI flags live-probed against 0.28.0; host
-primitives from vendor docs.
+primitives from vendor docs. Pi added 2026-08-13 — docs-verified only (pi.dev/docs/latest), no
+live probe yet.
 
 ## Detect your host (zero tool calls — look at your own toolset)
 
@@ -48,24 +49,25 @@ primitives from vendor docs.
 | `.cursor/agents` subagents, `--worktree` sessions | **Cursor CLI** |
 | `/goal`, `/loop`, `/fork` slash commands + auto-worktree subagents | **Grok Build** |
 | `AgentSwarm` + `FetchURL` tools, `/swarm` slash command | **Kimi Code CLI** |
+| only `read`/`bash`/`edit`/`write`/`grep`/`find`/`ls` + skills as `/skill:<name>` commands | **Pi** — the thinnest host: no subagent, ask-user, or background primitive; everything multi-agent lands on ladder step 2 |
 
 Record the resolved host in `.orchestrate/run.md` next to the dimensions. If detection is
 ambiguous, ask the user — a wrong host assumption mis-binds every dispatch after it.
 
 ## Capability matrix
 
-| Primitive | Claude Code | Codex | Cursor | Antigravity | opencode | Grok Build | Hermes | Kimi Code CLI |
-|---|---|---|---|---|---|---|---|---|
-| DISPATCH (spawn subagent) | ✅ Agent tool, depth 5 | ✅ agents TOML, 6 threads, depth 1 | ✅ agent files, depth 1 | ✅ `invoke_subagent`, depth 10 | ⚠️ synchronous only | ✅ up to 8, auto-worktree | ⚠️ `delegate_task`, 3, flat | ✅ `Agent` tool, built-ins coder/explore/plan, nesting ≥1; custom defs undocumented |
-| …with per-dispatch model pin | ✅ | ✅ `model` + effort in TOML | ✅ `model:` frontmatter | ❌ inherits parent | ✅ agent file `model:` | ❌ unconfirmed | ❌ accepted, silently ignored | ❌ undocumented |
-| PARALLEL (N at once) | ✅ | ✅ (≤6) | ✅ + background | ✅ async by default | ❌ in-session | ✅ (≤8) | ⚠️ (≤3) | ✅ `AgentSwarm`/`/swarm`, cap via `KIMI_CODE_AGENT_SWARM_MAX_CONCURRENCY` (no doc'd limit) |
-| MESSAGE (inter-agent) | ✅ SendMessage / teams | ❌ | ❌ | ✅ `send_message` any-to-any | ❌ | ❌ | ❌ | ❌ |
-| ASK_USER (structured) | ✅ AskUserQuestion | ⚠️ TUI-only | ⚠️ broken in `-p`; ACP only | ✅ `ask_question` | ✅ `question` tool | ⚠️ free-form via `/plan` | ⚠️ `clarify`, 120s timeout | ✅ `AskUserQuestion` (never asks in auto/`-p`) |
-| WORKTREE helper | ✅ isolation/EnterWorktree | ❌ plain git | ✅ `--worktree` | ✅ per-subagent option | ❌ plain git | ✅ automatic | ❌ plain git | ❌ plain git (`/fork` = session branch, not filesystem) |
-| BACKGROUND shell tasks | ✅ | ❌ nohup+poll | ✅ | ✅ `/tasks` | ⚠️ | ✅ | ⚠️ | ✅ native (Ctrl+B, `/tasks`, auto-returning subagents) |
-| LOOP (native re-feed) | ✅ Stop hook | ❌ | ❌ | ✅ Stop `decision:"continue"` + `/schedule` | ❌ | ✅ `/goal`, `/loop` | ❌ | ✅ `/goal` + blockable Stop hook + Cron tools |
-| Workflow-script engine | ✅ Workflow tool | ❌ | ❌ | ❌ (teamwork = paid preview) | ❌ (external SDK) | ❌ | ❌ | ❌ |
-| Headless worker mode | ✅ `claude -p` | ✅ `codex exec` | ✅ `cursor-agent -p` | ✅ `agy -p` (flags thin) | ✅ `opencode run` | ✅ `grok -p` | ✅ `hermes -z` | ✅ `kimi -p` |
+| Primitive | Claude Code | Codex | Cursor | Antigravity | opencode | Grok Build | Hermes | Kimi Code CLI | Pi |
+|---|---|---|---|---|---|---|---|---|---|
+| DISPATCH (spawn subagent) | ✅ Agent tool, depth 5 | ✅ agents TOML, 6 threads, depth 1 | ✅ agent files, depth 1 | ✅ `invoke_subagent`, depth 10 | ⚠️ synchronous only | ✅ up to 8, auto-worktree | ⚠️ `delegate_task`, 3, flat | ✅ `Agent` tool, built-ins coder/explore/plan, nesting ≥1; custom defs undocumented | ❌ none built in |
+| …with per-dispatch model pin | ✅ | ✅ `model` + effort in TOML | ✅ `model:` frontmatter | ❌ inherits parent | ✅ agent file `model:` | ❌ unconfirmed | ❌ accepted, silently ignored | ❌ undocumented | ✅ per xcli process |
+| PARALLEL (N at once) | ✅ | ✅ (≤6) | ✅ + background | ✅ async by default | ❌ in-session | ✅ (≤8) | ⚠️ (≤3) | ✅ `AgentSwarm`/`/swarm`, cap via `KIMI_CODE_AGENT_SWARM_MAX_CONCURRENCY` (no doc'd limit) | ❌ xcli processes only |
+| MESSAGE (inter-agent) | ✅ SendMessage / teams | ❌ | ❌ | ✅ `send_message` any-to-any | ❌ | ❌ | ❌ | ❌ | ❌ |
+| ASK_USER (structured) | ✅ AskUserQuestion | ⚠️ TUI-only | ⚠️ broken in `-p`; ACP only | ✅ `ask_question` | ✅ `question` tool | ⚠️ free-form via `/plan` | ⚠️ `clarify`, 120s timeout | ✅ `AskUserQuestion` (never asks in auto/`-p`) | ⚠️ free-form chat only |
+| WORKTREE helper | ✅ isolation/EnterWorktree | ❌ plain git | ✅ `--worktree` | ✅ per-subagent option | ❌ plain git | ✅ automatic | ❌ plain git | ❌ plain git (`/fork` = session branch, not filesystem) | ❌ plain git |
+| BACKGROUND shell tasks | ✅ | ❌ nohup+poll | ✅ | ✅ `/tasks` | ⚠️ | ✅ | ⚠️ | ✅ native (Ctrl+B, `/tasks`, auto-returning subagents) | ❌ nohup+poll |
+| LOOP (native re-feed) | ✅ Stop hook | ❌ | ❌ | ✅ Stop `decision:"continue"` + `/schedule` | ❌ | ✅ `/goal`, `/loop` | ❌ | ✅ `/goal` + blockable Stop hook + Cron tools | ❌ external driver (`--mode rpc` possible) |
+| Workflow-script engine | ✅ Workflow tool | ❌ | ❌ | ❌ (teamwork = paid preview) | ❌ (external SDK) | ❌ | ❌ | ❌ | ❌ |
+| Headless worker mode | ✅ `claude -p` | ✅ `codex exec` | ✅ `cursor-agent -p` | ✅ `agy -p` (flags thin) | ✅ `opencode run` | ✅ `grok -p` | ✅ `hermes -z` | ✅ `kimi -p` | ✅ `pi -p` / `--mode json` |
 
 ## The degradation ladder (apply in order, state the step you landed on)
 
@@ -85,6 +87,9 @@ out loud ("team unavailable on codex → hierarchical with file handoff").
 - Portable everywhere (natively or via ladder step 2): `staged` · `parallel` · `hierarchical` ·
   `advisor` · `adversarial` · `xcli` · `loop`.
   - opencode/Hermes parallel: N headless processes (or `opencode serve` + SDK), not in-session.
+  - Pi as controller: EVERY multi-agent primitive is ladder step 2 by construction — Pi ships no
+    subagents at all, so dispatch/parallel/pin all mean "an xcli process in a worktree". The
+    upside: pinning is fully explicit per process, nothing can be inherited by accident.
   - Loop outside Claude/Antigravity/Grok/Kimi: external driver — `while :; do <cli> -p "$(cat
     prompt.md)" …; check_stop && break; done`, state in files + git per `strategy-loop.md`.
   - Kimi loop: native `/goal <objective>` state machine (active/complete/blocked/paused);
@@ -107,7 +112,9 @@ proceeds on best judgment; blocked inside leaf subagents) · Cursor: interactive
 `-p` mode the question is auto-answered "skipped by user", so NEVER put a human gate inside a
 headless Cursor worker · Grok: no structured primitive; ask free-form in an interactive session ·
 Kimi `AskUserQuestion` (structured; suppressed in auto mode and always in `-p` — NEVER put a human
-gate inside a headless Kimi worker).
+gate inside a headless Kimi worker) · Pi: no structured primitive — ask free-form in an interactive
+session; headless (`-p`/`--mode json`/`--mode rpc`) cannot ask at all, so human gates never go
+inside a headless Pi run.
 Universal fallback: stop and ask in plain conversation — a gate that can't render is still a gate.
 
 ## WORKTREE binding (canonical, works everywhere)
@@ -127,6 +134,7 @@ Grok subagents auto-worktree · Antigravity per-subagent worktree option.
 | Codex | `$CODEX_HOME` (default `~/.codex`) — sessions/rollouts/logs |
 | Grok Build | `~/.grok/sessions` |
 | Kimi Code CLI | `~/.kimi-code` (`KIMI_CODE_HOME`) — `sessions/<workDirKey>/<sessionId>/` with `state.json` + `agents/<id>/wire.jsonl` per subagent · `session_index.jsonl` · `kimi export <id>` for ZIP capture |
+| Pi | `~/.pi/agent/sessions/` (cwd-organized; `--session-dir` relocates) · `/session` shows file/id/tokens · `/export` → HTML/JSONL |
 | Cursor / Antigravity / opencode / Hermes | stores vary and drift — don't script against them; capture each run's `--json`/stream output to `.orchestrate/raw/` and read THAT |
 
 ## Per-host quirks that bite
@@ -158,11 +166,21 @@ Grok subagents auto-worktree · Antigravity per-subagent worktree option.
   `~/.agents/skills/` (user), NOT `.claude/skills/`, auto-trigger on description; conventions
   file is AGENTS.md (`/init`); model/effort switch invalidates prompt cache — pin per session;
   `/import-from-cc-codex` imports Claude Code/Codex config.
+- **Pi**: NO sandbox and NO approval prompts — built-in tools run with the pi process's full user
+  permissions, and headless modes bypass even the project-trust gate; containment is external only
+  (worktree + diff review minimum, container for untrusted work). Loads `AGENTS.md`/`CLAUDE.md` by
+  default; project-local resources gate on `defaultProjectTrust` (`~/.pi/agent/settings.json`).
+  Skills read from `~/.pi/agent/skills/` + `~/.agents/skills/` (global) and `.pi/skills/` +
+  `.agents/skills/` (project, after trust); `"enableSkillCommands"` toggles the `/skill:<name>`
+  form. No MCP/subagents/background bash natively — extensions can add them, but never assume one
+  is present. Docs-verified 2026-08-13; probe `pi --help` before scripting.
 
 ## Invocation names per host
 
 Slash `/orchestrate`: Claude Code, Cursor, Antigravity CLI (skills auto-register as commands),
 Hermes, Grok. Tool-call: opencode (`skill` tool). Codex: skills surface by name/description —
 "use the orchestrate skill". Kimi: auto-triggers on description; manual `/skill:orchestrate` or
-bare `/orchestrate` when unreserved; `Skill` tool. Natural-language activation works on every
+bare `/orchestrate` when unreserved; `Skill` tool. Pi: `/skill:orchestrate` explicit form, plus
+description auto-trigger (skill descriptions sit in the system prompt; the agent `read`s SKILL.md
+on match — Agent Skills progressive disclosure). Natural-language activation works on every
 host that auto-triggers on description (all except Hermes).

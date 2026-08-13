@@ -42,6 +42,7 @@ The installer accepts one target and transactionally replaces only the installed
 | `grok` | `~/.grok/skills/orchestrate` |
 | `hermes` | `~/.hermes/skills/orchestrate` |
 | `kimi` | `~/.kimi-code/skills/orchestrate` + `~/.agents/skills/orchestrate` (Kimi does not read `~/.claude/skills/`) |
+| `pi` | `~/.pi/agent/skills/orchestrate` + `~/.agents/skills/orchestrate` (Pi auto-discovers both; skills register as `/skill:orchestrate`) |
 | `all` | Claude, Codex, and cross-agent standard directories |
 
 Repository-only docs, evals, release metadata, and site assets are not installed.

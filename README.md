@@ -31,7 +31,7 @@ context.
 | **loop** | Work repeats until a verifiable goal or scheduled condition is met |
 | **advisor** | Expensive reasoning should be separated from cheaper execution |
 | **adversarial** | A high-stakes plan needs independent challenge before execution |
-| **xcli** | External coding CLIs act as workers, peers, or second opinions |
+| **xcli** | External coding CLIs (Codex, Grok, Cursor, agy, opencode, Hermes, Kimi, Pi) act as workers, peers, or second opinions |
 
 Strategies are presets over `topology`, `planning`, `review`, `engine`, `models`, `isolation`,
 `trigger`, and `budget`. Explicit dimension overrides win over the selected preset.
@@ -63,6 +63,7 @@ cd orchestrate-skill
 | `grok` | `~/.grok/skills/orchestrate` |
 | `hermes` | `~/.hermes/skills/orchestrate` |
 | `kimi` | `~/.kimi-code/skills/orchestrate` + `~/.agents/skills/orchestrate` |
+| `pi` | `~/.pi/agent/skills/orchestrate` + `~/.agents/skills/orchestrate` |
 | `all` | Claude, Codex, and the cross-agent path |
 
 The installer stages a complete runtime copy before replacement and restores the prior
@@ -107,6 +108,7 @@ then an external CLI, then a named solo degradation.
 | Grok Build | Parallel, auto-worktree | Host-dependent | Skills load at session start |
 | Hermes | Small flat pool | Host-dependent | Explicit activation may be required |
 | Kimi Code CLI | `Agent`/`AgentSwarm`, built-in coder/explore/plan | Host-dependent | `-p` auto-approves every action — worktree + diff review only |
+| Pi | None — xcli processes only | Per xcli process | Thinnest host: no sandbox or approvals; docs-verified, no live probe |
 
 The runtime [host adapter](skills/orchestrate/references/shared-hosts.md) instructs the controller to
 verify current tools and CLI flags rather than trust a static matrix. Kimi bindings: flag surface

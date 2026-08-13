@@ -15,7 +15,7 @@ gates, and an honest budget range — and gates on the user's approval (confirm=
 never the print). Claude Code is the reference
 host; the skill is plain Agent Skills format (agentskills.io) with a host-adapter layer
 (references/shared-hosts.md), so it runs on Codex, Cursor, Antigravity, opencode, Grok Build,
-Hermes, and Kimi Code CLI too — detecting its host at kickoff and degrading honestly where a
+Hermes, Kimi Code CLI, and Pi too — detecting its host at kickoff and degrading honestly where a
 primitive is missing.
 
 ## Install

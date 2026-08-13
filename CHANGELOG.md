@@ -10,6 +10,25 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.13.0] — 2026-08-13
+
+### Added
+- **Pi as a supported host** (`./install.sh pi`, new column + rows across `shared-hosts.md`). Pi
+  implements the Agent Skills standard — auto-discovery from `~/.pi/agent/skills/` and
+  `~/.agents/skills/` (global) plus `.pi/skills/`/`.agents/skills/` (project, trust-gated),
+  `/skill:orchestrate` explicit form, description auto-trigger with progressive disclosure. As a
+  controller it is the **thinnest host**: no subagents, no structured ask-user, no background
+  shell, no native loop — every multi-agent primitive lands on degradation-ladder step 2 (xcli
+  processes in worktrees), which also makes every model pin explicit by construction (noted in
+  routing rule 12). Detection row (bare `read`/`bash`/`edit`/`write`/`grep`/`find`/`ls` toolset +
+  `/skill:` commands), capability-matrix column, ASK_USER binding (free-form interactive only —
+  headless cannot ask), state paths (`~/.pi/agent/sessions/`, `/export`), and a quirks entry (no
+  sandbox/approvals, AGENTS.md/CLAUDE.md loaded by default, `defaultProjectTrust`) added.
+  Installer target `pi` ships to both discovery paths; README/installation/site host tables and
+  `llms.txt` updated. Docs-verified 2026-08-13 (pi.dev/docs/latest), no live probe yet.
+- README's xcli strategy row now names the engine list (Codex, Grok, Cursor, agy, opencode,
+  Hermes, Kimi, Pi).
+
 ## [1.12.0] — 2026-08-13
 
 ### Added

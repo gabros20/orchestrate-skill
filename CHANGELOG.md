@@ -10,6 +10,13 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.13.1] — 2026-09-10
+
+### Site & visual guide
+- Start-here install block now shows both install paths — `npx skills add` and the
+  clone + `./install.sh <target>` route — matching `README.md` and `docs/installation.md`.
+  Target list carries all eleven installer arguments, including `kimi` and `pi`.
+
 ## [1.13.0] — 2026-08-13
 
 ### Added
@@ -610,9 +617,18 @@ external gpt-5.6-sol advisor): `docs/designs/v1.1.0-token-optimization.md`.
   file-based handoffs (`.orchestrate/` workspace), model routing, safety rails, saved aliases.
 - `skills/orchestrate/` skill tree (SKILL.md router + references + prompts + scripts + config.yaml).
 - Docs (`docs/`), visual guide (`site/` → orchestrate-skill.vercel.app), skills.sh-standard
-  install (`install.sh`, `npx skills add gabros20/orchestrate`).
+  install (`install.sh`, `npx skills add gabros20/orchestrate-skill`).
 
-[Unreleased]: https://github.com/gabros20/orchestrate-skill/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/gabros20/orchestrate-skill/compare/v1.13.1...HEAD
+[1.13.1]: https://github.com/gabros20/orchestrate-skill/compare/v1.13.0...v1.13.1
+[1.13.0]: https://github.com/gabros20/orchestrate-skill/compare/v1.12.0...v1.13.0
+[1.12.0]: https://github.com/gabros20/orchestrate-skill/compare/v1.11.0...v1.12.0
+[1.11.0]: https://github.com/gabros20/orchestrate-skill/compare/v1.10.0...v1.11.0
+[1.10.0]: https://github.com/gabros20/orchestrate-skill/compare/v1.9.0...v1.10.0
+[1.9.0]: https://github.com/gabros20/orchestrate-skill/compare/v1.8.0...v1.9.0
+[1.8.0]: https://github.com/gabros20/orchestrate-skill/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/gabros20/orchestrate-skill/compare/v1.6.0...v1.7.0
+[1.6.0]: https://github.com/gabros20/orchestrate-skill/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/gabros20/orchestrate-skill/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/gabros20/orchestrate-skill/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/gabros20/orchestrate-skill/compare/v1.3.0...v1.3.1

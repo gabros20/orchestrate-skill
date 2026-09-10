@@ -581,6 +581,10 @@ accepted progress = validation + durable writeback + committed readback</div>
   <div class="term"><span class="c"># install</span>
 npx skills add gabros20/orchestrate-skill -g
 
+<span class="c"># or: clone + installer (per-host targets)</span>
+git clone https://github.com/gabros20/orchestrate-skill.git &amp;&amp; cd orchestrate-skill
+./install.sh claude   <span class="c"># or: codex | agents | cursor | antigravity | opencode | grok | hermes | kimi | pi | all</span>
+
 <span class="c"># run</span>
 <span class="p">$orchestrate</span> docs/feature-plan.md
 <span class="p">$orchestrate</span> "keep fixing until the suite passes" strategy=loop trigger=goal:"pytest green"</div>

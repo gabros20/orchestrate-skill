@@ -32,7 +32,9 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, 
   header with goal · run · models (drift flagged `!`) · budget used/cap (agents from dispatches,
   cycles from the ledger, tokens from returns) · plan · rails · decisions, then todo / in progress
   (`> agent · model · elapsed`, `! stale` after 10 min without an artifact delta) / review (`spec
-  ok r1 · quality fail r1`) / done / blocked; `board plan` renders the flight plan in the format
+  ok r1 · quality fail r1`) / done / blocked, `e` toggles an expanded view with each card's
+  lineage (agents · model · window · status · tokens, gates, files, decisions, last note);
+  `board plan` renders the flight plan in the format
   contract, deterministic per strategy; `board agents` roster; `board log` timeline; `board
   check` reconciliation (dispatched-never-returned, stale, report-without-review, ledger lines
   naming missing commits/artifacts, skipped tasks, model drift, budget overrun; exit 1); `board

@@ -756,7 +756,78 @@ def header_rows(st: State, W: int, now: float) -> list[Row]:
     return rows
 
 
-def build_rows(st: State, width: int) -> list[Row]:
+def card_details(t: Task, st: State, now: float) -> list[tuple[str, Row]]:
+    """Expanded view: the card's lineage — agents, gates, files, last note."""
+    out: list[tuple[str, Row]] = []
+    for s in [x for x in st.stints if x.task == t.id]:
+        model = s.model or "-"
+        segs: Row = [(s.agent, BOLD), (f" · {s.role} · ", DIM), (model, "")]
+        if s.observed and s.observed != s.model:
+            segs.append((f" (observed {s.observed} !)", fg(WARN)))
+        if s.engine and s.engine != "claude":
+            segs.append((f" · {s.engine}", DIM))
+        window = f"{hhmm(s.started)} → {hhmm(s.returned) if s.returned else '…'}"
+        segs.append((f" · {window} · {fmt_dur((s.returned or now) - s.started)}", DIM))
+        if s.status:
+            colour = fg(OK) if s.status in ("DONE", "OK") else fg(BAD) if s.status in ("BLOCKED", "FAIL") else fg(WARN)
+            segs += [(" · ", DIM), (s.status.lower().replace("_", " "), colour)]
+        elif not s.returned:
+            segs += [(" · ", DIM), ("running", fg(OK))]
+        if s.tokens:
+            segs.append((f" · {fmt_tokens(s.tokens)}", DIM))
+        if s.nudges:
+            segs.append((f" · nudged x{s.nudges}", fg(WARN)))
+        if s.escalated_to:
+            segs.append((f" · escalated -> {s.escalated_to}", fg(WARN)))
+        out.append(("agent", segs))
+    if t.gates:
+        segs = []
+        for k, v in t.gates.items():
+            if segs:
+                segs.append((" · ", DIM))
+            mark, _, rnd = v.partition(" ")
+            colour = fg(OK) if mark == "ok" else fg(BAD) if mark == "fail" else fg(WARN) if mark == "warn" else DIM
+            segs += [(f"{k} ", DIM), (mark, colour), (f" {rnd}" if rnd else "", DIM)]
+        out.append(("gates", segs))
+    files = ([t.report] if t.report else []) + t.findings
+    if files:
+        out.append(("files", [(" · ".join(files), DIM)]))
+    decs = [d for d in st.run.decisions if d.get("task") == t.id]
+    if decs:
+        out.append(("decisions", [(" · ".join(f"{d['id']} {d['msg']}" for d in decs), DIM)]))
+    if t.note and t.state != "blocked":
+        out.append(("last", [(t.note.replace("\n", " "), DIM)]))
+    if t.last_activity:
+        out.append(("activity", [(f"{hhmm(t.last_activity)} · {fmt_dur(now - t.last_activity)} ago", DIM)]))
+    return out
+
+
+def wrap_segs(segs: Row, width: int) -> list[Row]:
+    """Wrap styled segments at ' · ' boundaries into lines no wider than `width`."""
+    pieces: Row = []
+    for text, sgr in segs:
+        parts = re.split(r"( · )", text)
+        pieces += [(part, sgr) for part in parts if part]
+    lines: list[Row] = []
+    cur: Row = []
+    used = 0
+    for text, sgr in pieces:
+        w = dw(text)
+        if cur and used + w > width:
+            if cur[-1][0] == " · ":
+                cur.pop()
+            lines.append(cur)
+            cur, used = [], 0
+            if text == " · ":
+                continue
+        cur.append((clip(text, width) if w > width else text, sgr))
+        used += min(w, width)
+    if cur:
+        lines.append(cur)
+    return lines or [[]]
+
+
+def build_rows(st: State, width: int, expanded: bool = False) -> list[Row]:
     now = time.time()
     W = max(40, width) - 2 * MARGIN          # usable width
     inner = W - 6                            # inside a box: "│  " … "  │"
@@ -792,6 +863,16 @@ def build_rows(st: State, width: int) -> list[Row]:
                     metasegs = [(clip(metatxt, avail), metasegs[0][1] if metasegs else DIM)]
                 rows.append([(m + "│  ", c), (" " * dw(head), "")] + metasegs +
                             [(" " * (avail - dw(row_text(metasegs))), ""), ("  │", c)])
+            if expanded:
+                details = card_details(t, st, now)
+                lab = 10
+                for label, segs in details:
+                    avail = inner - dw(head) - lab
+                    for i, line in enumerate(wrap_segs(segs, avail)):
+                        rows.append([(m + "│  ", c), (" " * dw(head), ""), (pad(label if i == 0 else "", lab), DIM)] + line +
+                                    [(" " * (avail - dw(row_text(line))), ""), ("  │", c)])
+                if details and t is not cards[-1]:
+                    rows.append([(m + "│  ", c), (" " * inner, ""), ("  │", c)])
         rows.append([(m + "╰" + "─" * (W - 2) + "╯", c)])
         rows.append([])
 
@@ -838,6 +919,7 @@ def cmd_watch(ws: Path) -> None:
     try:
         tty.setcbreak(fd)
         offset, last_sig, rows, tick = 0, None, [], 0
+        expanded = False
         cols, lines = term_size()
         while True:
             if resized["flag"]:
@@ -847,7 +929,7 @@ def cmd_watch(ws: Path) -> None:
             sig = signature(ws)
             tick += 1
             if sig != last_sig or tick % 4 == 0:  # on change, plus every ~2s for the timers
-                rows = build_rows(load(ws), cols)
+                rows = build_rows(load(ws), cols, expanded)
                 last_sig = sig
             body = max(1, lines - 1)
             offset = max(0, min(offset, max(0, len(rows) - body)))
@@ -857,7 +939,8 @@ def cmd_watch(ws: Path) -> None:
             for _ in range(body - min(body, len(rows) - offset)):
                 frame.append("\033[K\n")
             below = len(rows) - offset - body
-            hint = "q quit  ·  j/k scroll  ·  r refresh" + (f"  ·  +{below} below" if below > 0 else "")
+            hint = ("q quit  ·  j/k scroll  ·  " + ("e contract" if expanded else "e expand") + "  ·  r refresh" +
+                    (f"  ·  +{below} below" if below > 0 else ""))
             frame.append(DIM + " " * max(0, cols - dw(hint) - MARGIN) + hint + RESET + "\033[K")
             out.write("".join(frame))
             out.flush()
@@ -878,6 +961,8 @@ def cmd_watch(ws: Path) -> None:
                     offset = 0
                 elif key == "r":
                     last_sig = None
+                elif key in ("e", "x", "\t"):
+                    expanded, last_sig = not expanded, None
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         out.write("\033[?25h\033[?1049l")
@@ -1208,7 +1293,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("watch")
-    sub.add_parser("show").add_argument("--no-color", action="store_true")
+    p = sub.add_parser("show"); p.add_argument("--no-color", action="store_true")
+    p.add_argument("-x", "--expanded", action="store_true", help="show each card's agents, gates, files, last note")
     sub.add_parser("path")
     sub.add_parser("agents")
     sub.add_parser("check")
@@ -1257,7 +1343,7 @@ def main(argv: list[str]) -> int:
         if sys.stdout.isatty():
             cmd_watch(ws)
             return 0
-        cmd, args.no_color = "show", True
+        cmd, args.no_color, args.expanded = "show", True, False
     if cmd == "watch":
         cmd_watch(ws)
     elif cmd == "show":
@@ -1266,7 +1352,7 @@ def main(argv: list[str]) -> int:
         except (OSError, ValueError):
             width = 100
         color = sys.stdout.isatty() and not args.no_color and not os.environ.get("NO_COLOR")
-        print("\n".join(row_render(r, color) for r in build_rows(load(ws), width)))
+        print("\n".join(row_render(r, color) for r in build_rows(load(ws), width, args.expanded)))
     elif cmd == "path":
         print(journal_path(ws))
     elif cmd == "agents":
@@ -1417,6 +1503,8 @@ def selftest() -> int:
         st = load(ws)
         assert st.run.finish == "fail" and any("non-terminal" in f for f in check(st))
         assert "RUN COMPLETE" in run("show", "--no-color")
+        wide = run("show", "--no-color", "--expanded")
+        assert "agent     task1-impl" in wide and "escalated -> opus" in wide and "files     task-1-report.md" in wide, wide
         # legacy name migration
         (ws / JOURNAL).rename(ws / LEGACY_JOURNAL)
         assert load(ws).tasks["1"].state == "done" and (ws / JOURNAL).exists() and not (ws / LEGACY_JOURNAL).exists()

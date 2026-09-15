@@ -303,8 +303,8 @@ gate is the transition), only the controller writes the lines above.
 
 | Command | What it shows |
 |---|---|
-| `board` | live vertical kanban in a pane **you** open (a new Ghostty/iTerm/tmux split inherits the cwd; any directory inside the repo or a worktree works). Header: goal · run dims · models with drift (`worker sonnet (observed haiku !)`) · budget `agents 7/13 · tokens 235k/150k-400k` · plan outcome · rails · decisions. Columns: todo · in progress (`> agent · model · elapsed`, `! stale` after 10 min without an artifact delta) · review (`spec ok r1 · quality fail r1`) · done · blocked. `q` quit · `j/k` scroll · `r` refresh. |
-| `board show` | the same, one-shot — cheap for the controller to glance at |
+| `board` | live vertical kanban in a pane **you** open (a new Ghostty/iTerm/tmux split inherits the cwd; any directory inside the repo or a worktree works). Header: goal · run dims · models with drift (`worker sonnet (observed haiku !)`) · budget `agents 7/13 · tokens 235k/150k-400k` · plan outcome · rails · decisions. Columns: todo · in progress (`> agent · model · elapsed`, `! stale` after 10 min without an artifact delta) · review (`spec ok r1 · quality fail r1`) · done · blocked. `q` quit · `j/k` scroll · `e` expand/contract (each card's agents with model/window/status/tokens, gates, files, decisions, last note) · `r` refresh. |
+| `board show [-x]` | the same, one-shot (`-x` expanded) — cheap for the controller to glance at |
 | `board plan` | the flight plan in the format contract, deterministic per strategy |
 | `board agents` | roster: agent · role · task · model requested→observed · engine · window · duration · status · tokens · nudged/escalated |
 | `board log` | human timeline (`--json` for raw lines) |

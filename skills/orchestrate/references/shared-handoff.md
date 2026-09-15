@@ -55,6 +55,8 @@ measured worst failure mode of compression.
 ## In this skill
 
 - The ledger (`progress.md`) already carries per-task state — the handoff adds the WHY layer and
-  cross-task context the ledger doesn't hold.
+  cross-task context the ledger doesn't hold. `board resume` GENERATES the state layer in this
+  template's order (goal, state per task, decisions, pointers, open work) from the journal and
+  the disk — start from it, add the WHY and the traps, then probe-test.
 - Sub-orchestrators and long loop runs should write a handoff at budget exhaustion as part of
   stopping cleanly (`shared-safety-rails.md`).

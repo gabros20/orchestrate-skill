@@ -16,6 +16,7 @@ Produces:
 
 ## Contents
 
+- The board (any host)
 - In-session (Claude Code)
 - Background sessions · Session transcripts · Hooks
 - Trajectory stalls — detecting the worker that hasn't noticed
@@ -23,6 +24,20 @@ Produces:
 - Rules
 
 Match the surface to the mechanism; don't poll what notifies you.
+
+## The board (any host)
+
+`scripts/board` renders the journal + `.orchestrate/` as a live kanban in a pane the USER opens
+(`board`; zero-install copy at `.orchestrate/board`). It re-renders on artifact deltas, shows
+agent · model · elapsed per in-progress card, and flags `! stale` when a card's deliverables have
+not changed for 10 min — rule 3b made visible. It observes; it never transitions. Keep it honest
+by journaling every dispatch AND return (`board dispatch N --agent <real id>`, `board return N
+--agent --status`) — a card nobody dispatched is a card nobody is watching, and a dispatch with no
+return is exactly the silence rule 3 is about. Recovery actions are journaled too (`board nudge`,
+`board escalate N --to MODEL --why`), so the roster (`board agents`) shows who was nudged or
+escalated. Controller side: `board show` is the cheapest liveness glance; run `board check` at
+every liveness check and before any recovery action — it lists dispatched-never-returned, stale,
+report-without-review, model drift and budget overrun, and exits 1 while any remain.
 
 ## In-session (Claude Code)
 

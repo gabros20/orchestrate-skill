@@ -144,7 +144,8 @@ end, never renumber.
     `CLAUDE_CODE_SUBAGENT_MODEL` env → per-invocation `model` → agent frontmatter → session
     model), and Codex TOML role pins can be unobservable at runtime. After dispatch, verify the
     model that actually ran — runtime/spawn metadata first, else the model's self-report in the
-    report header, else host logs — and record the observation in `run.md` beside the requested
-    pin. Unobservable routing is a **recorded risk**, not an assumed success; it does not stop the
+    report header, else host logs — and record the observation beside the requested pin
+    (`board return N --agent A --observed-model M` writes it into `run.md`'s Resolved block and
+    the board flags the drift). Unobservable routing is a **recorded risk**, not an assumed success; it does not stop the
     lane (`shared-hosts.md`'s degrade-and-say-so still governs), but a run whose tier separation
     was never observed cannot claim it.

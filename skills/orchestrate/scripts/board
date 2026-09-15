@@ -1,0 +1,1436 @@
+#!/usr/bin/env python3
+"""board — the journal and its views: flight plan, live kanban, roster, checks, resume packet.
+
+Everything is derived from `.orchestrate/` — briefs, reports, review findings, the ledger — plus
+ONE append-only stream, `.orchestrate/journal.jsonl`, that carries the facts the disk cannot:
+what was resolved at kickoff, who was dispatched on what, what came back, which gates ran, what
+was decided. Newest fact wins; a ledger line is final. The board is a VIEW, never a second
+record: transitions are the controller's to record (observation ≠ transition); workers may only
+`note`. Stdlib only. Resolves the workspace through the main worktree, so it works from any pane
+whose cwd is anywhere inside the repo or one of its worktrees.
+
+  board                        live kanban in this pane (q quit · j/k scroll · r refresh)
+  board show | agents | log    one-shot kanban · agent roster · human timeline (--json raw)
+  board plan                   render the flight plan from the record (--why "<triage pick>")
+  board check                  reconcile journal vs disk; exit 1 on findings
+  board resume                 the handoff's state layer, ready to paste
+  board path                   print the journal file
+
+  board init PLAN --strategy S [--review R --engine E --host H --models r=t,.. --effort X
+                  --isolation I --trigger T --workers N --budget agents=9,tokens=.. --confirm
+                  --alias A --goal "..."]        queue every '# Task N'; write run.md Resolved
+  board plan approved|changed|skipped [--msg]    record the flight-plan gate outcome
+  board dispatch N --agent A [--role R --model M --engine E --effort X --worktree W --reset-gates]
+  board return N --agent A --status DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED
+                  [--commits a..b --report PATH --observed-model M --tokens 84k --msg]
+  board review N --kind spec|quality|.. [--round K --agent A --model M]
+  board nudge N --agent A · board escalate N --agent A --to MODEL --why ".."
+  board decide ID "msg" [--owner O --task N]     also appends decisions.md
+  board rail "msg"                               degradation / single-flight owner, one line
+  board blocked N --msg ".." · board done N · board note N "msg" [--agent A]
+  board finish --gate pass|fail [--evidence PATH --msg]
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import unicodedata
+from pathlib import Path
+
+COLUMNS = ["todo", "in_progress", "review", "done", "blocked"]
+LABELS = {c: c.upper().replace("_", " ") for c in COLUMNS}
+STALE_AFTER = 10 * 60  # seconds without an artifact delta before an in-progress card is flagged
+JOURNAL = "journal.jsonl"
+LEGACY_JOURNAL = "board.jsonl"
+DIMS = ("strategy", "review", "engine", "host", "models", "effort", "isolation", "trigger",
+        "workers", "budget", "confirm", "alias", "goal")
+TIER_DEFAULT = {"orchestrator": "opus-class", "worker": "sonnet-class", "reviewer": "sonnet-class",
+                "advisor": "strongest", "reasoner": "opus-class", "peer": "codex/grok"}
+STATUSES = ("DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED")
+
+
+# --- workspace -----------------------------------------------------------------------
+
+def workspace() -> Path:
+    env = os.environ.get("ORCHESTRATE_WS")
+    if env:
+        return Path(env)
+    try:
+        common = subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True,
+                                text=True, check=True).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        sys.exit("board: not inside a git repository")
+    common_path = Path(common)
+    if not common_path.is_absolute():
+        common_path = Path.cwd() / common_path
+    return common_path.resolve().parent / ".orchestrate"
+
+
+def journal_path(ws: Path) -> Path:
+    path = ws / JOURNAL
+    legacy = ws / LEGACY_JOURNAL
+    if not path.exists() and legacy.exists():  # v1.14 pre-release name
+        legacy.rename(path)
+    return path
+
+
+def now_iso() -> str:
+    return dt.datetime.now().isoformat(timespec="milliseconds")
+
+
+def append_event(ws: Path, **fields: object) -> dict:
+    ws.mkdir(parents=True, exist_ok=True)
+    gi = ws / ".gitignore"
+    if not gi.exists():
+        gi.write_text("*\n")
+    payload = {"ts": now_iso(), **{k: v for k, v in fields.items() if v not in (None, "", [], {})}}
+    with journal_path(ws).open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    return payload
+
+
+def read_events(ws: Path) -> list[dict]:
+    if not ws.exists():
+        return []
+    path = journal_path(ws)
+    if not path.exists():
+        return []
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+# --- derivation ----------------------------------------------------------------------
+
+class Task:
+    def __init__(self, tid: str):
+        self.id = tid
+        self.title = ""
+        self.candidates: list[tuple[float, int, str, str]] = []  # (ts, seq, state, detail) — later seq wins ties
+        self.agent = self.model = self.engine = ""
+        self.since = 0.0
+        self.last_activity = 0.0
+        self.gate_entries: list[tuple[float, str, str]] = []  # (ts, kind, "ok r1" / "fail r2" / ".. r1")
+        self.gate_reset = 0.0  # a fix-wave re-dispatch starts a fresh review cycle
+        self.note = ""
+        self.final = ""
+        self.final_note = ""
+        self.dispatched = False
+        self.returned = False
+        self.report = ""
+        self.findings: list[str] = []
+
+    @property
+    def gates(self) -> dict[str, str]:
+        out: dict[str, tuple[float, str]] = {}
+        for ts, kind, text in self.gate_entries:
+            if ts >= self.gate_reset and (kind not in out or ts >= out[kind][0]):
+                out[kind] = (ts, text)
+        return {k: v[1] for k, v in out.items()}
+
+    @property
+    def state(self) -> str:
+        if self.final:
+            return self.final
+        if not self.candidates:
+            return "todo"
+        return max(self.candidates, key=lambda c: (c[0], c[1]))[2]
+
+    @property
+    def detail(self) -> str:
+        if self.candidates:
+            return max(self.candidates, key=lambda c: (c[0], c[1]))[3]
+        return ""
+
+    def touch(self, ts: float) -> None:
+        self.last_activity = max(self.last_activity, ts)
+
+
+class Stint:
+    """One dispatched agent, from dispatch to return."""
+
+    def __init__(self, ev: dict, ts: float):
+        self.agent = str(ev.get("agent", ""))
+        self.task = str(ev.get("task", ""))
+        self.role = str(ev.get("role") or "implementer")
+        self.model = str(ev.get("model", ""))
+        self.engine = str(ev.get("engine", ""))
+        self.effort = str(ev.get("effort", ""))
+        self.worktree = str(ev.get("worktree", ""))
+        self.started = ts
+        self.returned = 0.0
+        self.status = ""
+        self.observed = ""
+        self.tokens = 0
+        self.commits = ""
+        self.report = ""
+        self.nudges = 0
+        self.escalated_to = ""
+
+
+class Run:
+    def __init__(self) -> None:
+        self.dims: dict[str, object] = {}
+        self.kickoff = 0.0
+        self.plan = ""          # approved / changed / skipped
+        self.plan_ts = 0.0
+        self.plan_msg = ""
+        self.rails: list[str] = []
+        self.observed: dict[str, str] = {}   # role -> observed model (last)
+        self.decisions: list[dict] = []
+        self.finish = ""        # pass / fail
+        self.finish_evidence = ""
+        self.finish_ts = 0.0
+        self.tokens = 0
+        self.dispatches = 0
+        self.cycles = 0
+
+    @property
+    def models(self) -> dict[str, str]:
+        raw = self.dims.get("models") or {}
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    @property
+    def budget(self) -> dict[str, str]:
+        raw = self.dims.get("budget") or {}
+        return dict(raw) if isinstance(raw, dict) else {}
+
+
+class State:
+    def __init__(self, ws: Path):
+        self.ws = ws
+        self.tasks: dict[str, Task] = {}
+        self.stints: list[Stint] = []
+        self.run = Run()
+        self.events: list[dict] = []
+        self.meta: dict[str, str] = {}
+
+    def task(self, tid: str) -> Task:
+        return self.tasks.setdefault(str(tid), Task(str(tid)))
+
+    def ordered(self) -> list[Task]:
+        return sorted(self.tasks.values(), key=lambda t: natural_key(t.id))
+
+    def open_stint(self, agent: str, task: str) -> Stint | None:
+        for s in reversed(self.stints):
+            if s.agent == agent and (not task or s.task == task) and not s.returned:
+                return s
+        return None
+
+
+def parse_ts(value: object) -> float:
+    try:
+        return dt.datetime.fromisoformat(str(value)).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def parse_tokens(value: object) -> int:
+    if value is None:
+        return 0
+    s = str(value).strip().lower().replace(",", "")
+    m = re.match(r"^(\d+(?:\.\d+)?)\s*([km]?)$", s)
+    if not m:
+        return 0
+    n = float(m.group(1))
+    return int(n * {"": 1, "k": 1_000, "m": 1_000_000}[m.group(2)])
+
+
+def fmt_tokens(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}m"
+    if n >= 1_000:
+        return f"{n // 1_000}k"
+    return str(n)
+
+
+def parse_kv(value: str | None) -> dict[str, str]:
+    """'worker=sonnet,reviewer=opus' or 'worker:sonnet reviewer:opus' -> dict."""
+    out: dict[str, str] = {}
+    if not value:
+        return out
+    for part in re.split(r"[,\s]+", value.strip()):
+        if not part:
+            continue
+        k, sep, v = re.split(r"([=:])", part, maxsplit=1) if re.search(r"[=:]", part) else (part, "", "")
+        out[k.strip()] = v.strip() if sep else ""
+    return out
+
+
+def role_tier(role: str) -> str:
+    """Dispatch role -> model tier (the `models=` vocabulary)."""
+    r = role.lower()
+    if r in ("implementer", "integrator", "executor", "worker", "fix", "fixer") or "worker" in r or "implement" in r:
+        return "worker"
+    if "review" in r or "verif" in r or "judge" in r:
+        return "reviewer"
+    if "advis" in r:
+        return "advisor"
+    if "plan" in r or "reason" in r or "architect" in r:
+        return "reasoner"
+    if "orchestr" in r or "lead" in r:
+        return "orchestrator"
+    if "peer" in r or "counter" in r:
+        return "peer"
+    return r
+
+
+def natural_key(tid: str):
+    return (0, int(tid)) if tid.isdigit() else (1, tid)
+
+
+def title_from(path: Path) -> str:
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            m = re.match(r"^#+\s*(?:Task\s+\S+\s*[:—-]\s*)?(.+)$", line)
+            return (m.group(1) if m else line).strip()[:80]
+    except OSError:
+        pass
+    return ""
+
+
+def report_status(path: Path) -> tuple[str, str]:
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:2000]
+    except OSError:
+        return "", ""
+    m = re.search(r"\b(DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|DONE)\b[ \t]*[—:-]?[ \t]*([^\n]*)", head)
+    return (m.group(1), m.group(2).strip()) if m else ("", "")
+
+
+def review_verdict(path: Path) -> str:
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:1500]
+    except OSError:
+        return ".."
+    for mark, token in (("✅", "ok"), ("❌", "fail"), ("⚠", "warn")):
+        if mark in head:
+            return token
+    if re.search(r"\b(pass|clean|approved)\b", head, re.I):
+        return "ok"
+    return "fail" if re.search(r"\b(fail|reject|blocking)\w*", head, re.I) else ".."
+
+
+def load(ws: Path) -> State:
+    st = State(ws)
+    get = st.task
+
+    # 1. disk facts
+    if ws.exists():
+        for p in ws.glob("task-*-brief.md"):
+            m = re.match(r"task-(.+)-brief\.md$", p.name)
+            if not m:
+                continue
+            t = get(m.group(1))
+            t.title = t.title or title_from(p)
+            t.candidates.append((p.stat().st_mtime, 0, "todo", "brief ready"))
+            t.touch(p.stat().st_mtime)
+        for p in ws.glob("card-*.md"):
+            m = re.match(r"card-(.+)\.md$", p.name)
+            if not m:
+                continue
+            t = get(m.group(1))
+            t.title = t.title or title_from(p)
+            t.candidates.append((p.stat().st_mtime, 0, "todo", "card ready"))
+            t.touch(p.stat().st_mtime)
+        for p in ws.glob("task-*-report.md"):
+            m = re.match(r"task-(.+)-report\.md$", p.name)
+            if not m:
+                continue
+            t = get(m.group(1))
+            ts = p.stat().st_mtime
+            status, reason = report_status(p)
+            t.report = p.name
+            if status in ("BLOCKED", "NEEDS_CONTEXT"):
+                t.candidates.append((ts, 0, "blocked", reason or status.lower().replace("_", " ")))
+            else:
+                t.candidates.append((ts, 0, "review", "report landed" + (" · concerns" if status == "DONE_WITH_CONCERNS" else "")))
+            t.touch(ts)
+        for p in sorted(ws.glob("review-task*-r*.md")):
+            m = re.match(r"review-task(.+?)-(.+)-r(\d+)\.md$", p.name)
+            if not m:
+                continue
+            t = get(m.group(1))
+            ts = p.stat().st_mtime
+            t.candidates.append((ts, 0, "review", "findings filed"))
+            t.gate_entries.append((ts, m.group(2), f"{review_verdict(p)} r{m.group(3)}"))
+            t.findings.append(p.name)
+            t.touch(ts)
+        ledger = ws / "progress.md"
+        if ledger.exists():
+            for line in ledger.read_text(encoding="utf-8", errors="replace").splitlines():
+                m = re.match(r"^\s*(?:Task|Card)\s+(\S+?):\s*(complete|merged|done|shipped)\b\s*(.*)$", line, re.I)
+                if m:
+                    t = get(m.group(1))
+                    t.final = "done"
+                    t.final_note = m.group(3).strip(" ()") or m.group(2)
+                elif re.match(r"^\s*Cycle\s+\d+\s*:", line, re.I):
+                    st.run.cycles += 1
+        raw = ws / "raw"
+        if raw.exists():
+            for p in raw.iterdir():
+                m = re.search(r"task[-_ ]?(\d+)", p.name)
+                if m and m.group(1) in st.tasks:
+                    st.tasks[m.group(1)].touch(p.stat().st_mtime)
+        dec = ws / "decisions.md"
+        if dec.exists():
+            for line in dec.read_text(encoding="utf-8", errors="replace").splitlines():
+                m = re.match(r"^\s*[-*]?\s*(D-?\d+|[A-Z]+-\d+)\s*[:—-]\s*(.+)$", line)
+                if m:
+                    st.run.decisions.append({"id": m.group(1), "msg": m.group(2).strip(), "src": "file"})
+
+    # 2. journal (newest fact wins; ledger stays final)
+    st.events = read_events(ws)
+    run = st.run
+    for seq, ev in enumerate(st.events, start=1):
+        ts = parse_ts(ev.get("ts"))
+        kind = ev.get("ev", "")
+        if kind == "run":
+            run.dims = {k: ev[k] for k in DIMS if k in ev}
+            run.kickoff = run.kickoff or ts
+            continue
+        if kind == "plan":
+            run.plan, run.plan_ts, run.plan_msg = str(ev.get("outcome", "")), ts, str(ev.get("msg", ""))
+            continue
+        if kind == "rail":
+            run.rails.append(str(ev.get("msg", "")))
+            continue
+        if kind == "decide":
+            run.decisions = [d for d in run.decisions if d["id"] != ev.get("id")]
+            run.decisions.append({"id": str(ev.get("id", "")), "msg": str(ev.get("msg", "")),
+                                  "owner": str(ev.get("owner", "")), "task": str(ev.get("task", "")), "src": "journal"})
+            continue
+        if kind == "finish":
+            run.finish, run.finish_evidence, run.finish_ts = str(ev.get("gate", "")), str(ev.get("evidence", "")), ts
+            continue
+        tid = ev.get("task")
+        if tid is None:
+            continue
+        t = get(str(tid))
+        if ev.get("title"):
+            t.title = str(ev["title"])[:80]
+        if kind == "todo":
+            t.candidates.append((ts, seq, "todo", ev.get("msg", "queued")))
+        elif kind == "dispatch":
+            t.candidates.append((ts, seq, "in_progress", ev.get("msg", "")))
+            t.agent, t.model, t.engine = ev.get("agent", ""), ev.get("model", ""), ev.get("engine", "")
+            t.since, t.dispatched, t.returned = ts, True, False
+            if ev.get("reset_gates"):
+                t.gate_reset = max(t.gate_reset, ts)
+            run.dispatches += 1
+            st.stints.append(Stint(ev, ts))
+        elif kind == "return":
+            status = str(ev.get("status", "DONE"))
+            if status in ("BLOCKED", "NEEDS_CONTEXT"):
+                t.candidates.append((ts, seq, "blocked", ev.get("msg", "") or status.lower().replace("_", " ")))
+            else:
+                t.candidates.append((ts, seq, "review", "returned" + (" · concerns" if status == "DONE_WITH_CONCERNS" else "")))
+            t.returned = True
+            t.report = str(ev.get("report") or t.report)
+            s = st.open_stint(str(ev.get("agent", "")), str(tid))
+            if s:
+                s.returned, s.status = ts, status
+                s.observed = str(ev.get("observed_model", ""))
+                s.tokens = parse_tokens(ev.get("tokens"))
+                s.commits, s.report = str(ev.get("commits", "")), str(ev.get("report", ""))
+                if s.observed:
+                    run.observed[role_tier(s.role)] = s.observed
+                run.tokens += s.tokens
+        elif kind == "review":
+            t.candidates.append((ts, seq, "review", ev.get("msg", "")))
+            rnd = ev.get("round")
+            t.gate_entries.append((ts, str(ev.get("kind", "review")), f".. r{rnd}" if rnd else ".."))
+            if ev.get("agent"):
+                t.agent, t.model, t.engine = ev.get("agent", ""), ev.get("model", ""), ev.get("engine", "")
+                t.since = ts
+                rev = dict(ev, role=ev.get("role") or f"{ev.get('kind', 'review')} reviewer")
+                st.stints.append(Stint(rev, ts))
+        elif kind == "nudge":
+            s = st.open_stint(str(ev.get("agent", "")), str(tid))
+            if s:
+                s.nudges += 1
+        elif kind == "escalate":
+            s = st.open_stint(str(ev.get("agent", "")), str(tid))
+            if s:
+                s.escalated_to = str(ev.get("to", ""))
+            t.note = f"escalate -> {ev.get('to', '?')}: {ev.get('why', '')}".strip(": ")
+        elif kind == "done":
+            t.candidates.append((ts, seq, "done", ev.get("msg", "")))
+        elif kind == "blocked":
+            t.candidates.append((ts, seq, "blocked", ev.get("msg", "")))
+        if ev.get("msg") and kind != "escalate":
+            t.note = str(ev["msg"])
+        t.touch(ts)
+
+    # 3. review stints close when their findings file lands
+    for s in st.stints:
+        if not s.returned and s.role.endswith("reviewer"):
+            kind = s.role.split()[0]
+            t = st.tasks.get(s.task)
+            for ts_, k, text in (t.gate_entries if t else []):
+                if k == kind and ts_ > s.started and not text.startswith(".."):
+                    s.returned, s.status = ts_, text.split()[0].upper()
+                    break
+
+    st.meta = run_meta(ws, run)
+    return st
+
+
+def run_meta(ws: Path, run: Run) -> dict:
+    meta: dict[str, str] = {}
+    runmd = ws / "run.md"
+    if runmd.exists() and not run.dims:  # runs kicked off without `board init` flags: loose parse
+        text = runmd.read_text(encoding="utf-8", errors="replace")[:6000]
+        for key in ("strategy", "host", "engine", "review", "isolation"):
+            tail = r"(?: [A-Za-z0-9]+)?" if key == "host" else ""
+            m = re.search(rf"\b{key}\s*[=:]\s*`?([A-Za-z0-9:._/-]+{tail})", text, re.I)
+            if m:
+                meta[key] = m.group(1).strip("`")
+    for key in ("strategy", "host", "engine", "review", "isolation", "trigger", "alias"):
+        if run.dims.get(key):
+            meta[key] = str(run.dims[key])
+    if run.kickoff:
+        meta["started"] = str(run.kickoff)
+    elif runmd.exists():
+        meta["started"] = str(runmd.stat().st_ctime)
+    try:
+        meta["branch"] = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True,
+                                        text=True).stdout.strip()
+    except FileNotFoundError:
+        pass
+    meta["repo"] = ws.parent.name
+    return meta
+
+
+# --- run.md Resolved block -------------------------------------------------------------
+
+OPEN, CLOSE = "<!-- board:resolved -->", "<!-- /board:resolved -->"
+
+
+def resolved_block(st: State) -> str:
+    run = st.run
+    d = run.dims
+
+    def kv(*keys: str) -> str:
+        return " · ".join(f"{k}: {d.get(k) or '-'}" for k in keys)
+
+    models = " ".join(f"{k}={v}" for k, v in run.models.items()) or "-"
+    effort = d.get("effort")
+    effort = " ".join(f"{k}={v}" for k, v in effort.items()) if isinstance(effort, dict) else (effort or "-")
+    budget = " ".join(f"{k}={v}" for k, v in run.budget.items()) or "-"
+    lines = ["## Resolved", f"goal: {d.get('goal') or '-'}", kv("strategy", "review", "engine", "host"),
+             f"models: {models} · effort: {effort}", kv("isolation", "trigger", "workers", "confirm", "alias"),
+             f"budget: {budget}"]
+    if run.plan:
+        when = dt.datetime.fromtimestamp(run.plan_ts).isoformat(timespec="minutes") if run.plan_ts else ""
+        lines.append(f"plan: {run.plan} {when}" + (f" ({run.plan_msg})" if run.plan_msg else ""))
+    else:
+        lines.append("plan: pending")
+    if run.observed:
+        lines.append("observed: " + " ".join(
+            f"{role}={obs}" + (f" (requested {run.models[role]})" if run.models.get(role) and run.models[role] != obs else "")
+            for role, obs in run.observed.items()))
+    for rail in run.rails:
+        lines.append(f"rails: {rail}")
+    if run.finish:
+        lines.append(f"finish: final gate {run.finish}" + (f" · evidence {run.finish_evidence}" if run.finish_evidence else ""))
+    if run.kickoff:
+        lines.append("kickoff: " + dt.datetime.fromtimestamp(run.kickoff).isoformat(timespec="seconds"))
+    return "\n".join(lines)
+
+
+def write_resolved(ws: Path) -> None:
+    st = load(ws)
+    if not st.run.dims:
+        return
+    block = f"{OPEN}\n{resolved_block(st)}\n{CLOSE}\n"
+    runmd = ws / "run.md"
+    text = runmd.read_text(encoding="utf-8") if runmd.exists() else ""
+    if OPEN in text and CLOSE in text:
+        pre, rest = text.split(OPEN, 1)
+        _, post = rest.split(CLOSE, 1)
+        text = pre + block.rstrip("\n") + post
+    else:
+        text = block + ("\n" + text if text else "")
+    runmd.write_text(text, encoding="utf-8")
+
+
+# --- rendering (raw ANSI, truecolor, stdlib only) ---------------------------------------
+
+RGB = {"todo": (229, 72, 77), "in_progress": (62, 142, 247), "review": (245, 165, 36),
+       "done": (48, 164, 108), "blocked": (180, 85, 232)}
+OK, WARN, BAD = (48, 164, 108), (245, 165, 36), (229, 72, 77)
+MARGIN = 2  # left/right page margin
+
+
+def fg(rgb: tuple[int, int, int]) -> str:
+    return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
+
+
+BOLD, DIM, RESET = "\033[1m", "\033[2m", "\033[0m"
+Row = list  # list[tuple[str, str]] — (text, sgr) segments; sgr "" = terminal default
+
+
+def cw(ch: str) -> int:
+    if unicodedata.combining(ch) or ch in ("‍", "️"):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+
+
+def dw(text: str) -> int:
+    return sum(cw(c) for c in text)
+
+
+def clip(text: str, width: int) -> str:
+    if dw(text) <= width:
+        return text
+    out, used = [], 0
+    for ch in text:
+        w = cw(ch)
+        if used + w > width - 1:
+            break
+        out.append(ch)
+        used += w
+    return "".join(out) + "~"
+
+
+def pad(text: str, width: int) -> str:
+    return text + " " * max(0, width - dw(text))
+
+
+def fmt_dur(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m{seconds % 60:02d}s"
+    return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}m"
+
+
+def hhmm(ts: float) -> str:
+    return dt.datetime.fromtimestamp(ts).strftime("%H:%M") if ts else ""
+
+
+def card_meta(t: Task, now: float) -> Row:
+    """Right-hand side of a card as styled segments."""
+    st = t.state
+    who = " · ".join(x for x in (t.agent, t.model, t.engine if t.engine and t.engine != "claude" else "") if x)
+    if st == "in_progress":
+        idle = now - t.last_activity if t.last_activity else 0
+        stale = idle > STALE_AFTER
+        tail = " · ".join(p for p in (who or "dispatched", fmt_dur(now - t.since) if t.since else "") if p)
+        if stale:
+            return [("! ", fg(WARN) + BOLD), (tail, DIM), (f" · stale {fmt_dur(idle)}", fg(WARN))]
+        return [("> ", fg(OK) + BOLD), (tail, DIM)]
+    if st == "review":
+        segs: Row = []
+        for k, v in t.gates.items():
+            if segs:
+                segs.append((" · ", DIM))
+            mark, _, rnd = v.partition(" ")
+            colour = fg(OK) if mark == "ok" else fg(BAD) if mark == "fail" else fg(WARN) if mark == "warn" else DIM
+            segs += [(f"{k} ", DIM), (mark, colour), (f" {rnd}" if rnd else "", DIM)]
+        if not segs:
+            segs = [(t.detail or "awaiting review", DIM)]
+        if who and any(v.startswith("..") for v in t.gates.values()):
+            segs.append((f" · {who}", DIM))
+        return segs
+    if st == "done":
+        return [(t.final_note or t.note or t.detail or "complete", DIM)]
+    if st == "blocked":
+        return [((t.note or t.detail or "blocked").replace("\n", " "), fg(RGB["blocked"]))]
+    return [(t.detail or "", DIM)]
+
+
+def row_text(row: Row) -> str:
+    return "".join(t for t, _ in row)
+
+
+def row_render(row: Row, color: bool) -> str:
+    if not color:
+        return row_text(row)
+    return "".join((sgr + t + RESET) if sgr else t for t, sgr in row)
+
+
+def header_rows(st: State, W: int, now: float) -> list[Row]:
+    run, meta, m = st.run, st.meta, " " * MARGIN
+    rows: list[Row] = [[]]
+    counts = {c: 0 for c in COLUMNS}
+    for t in st.tasks.values():
+        counts[t.state] += 1
+    elapsed = fmt_dur(now - float(meta["started"])) if meta.get("started") else ""
+    right = f"{counts['done']}/{len(st.tasks)} done" + (f"  ·  {elapsed}" if elapsed else "")
+    where = meta.get("repo", "") + (f" @ {meta['branch']}" if meta.get("branch") else "")
+    left = "ORCHESTRATE"
+    gap = W - dw(left) - 3 - dw(where) - dw(right)
+    rows.append([(m + left, BOLD), ("   " + clip(where, max(0, W - dw(left) - 3 - dw(right) - 2)), ""),
+                 (" " * max(2, gap), ""), (right, BOLD)])
+    if run.finish:
+        colour = fg(OK) if run.finish == "pass" else fg(BAD)
+        rows.append([(m + "RUN COMPLETE", colour + BOLD), (f"  ·  final gate {run.finish}", colour),
+                     (f"  ·  {run.finish_evidence}" if run.finish_evidence else "", DIM)])
+    lab = 11  # label column
+
+    def line(label: str, segs: Row) -> None:
+        rows.append([(m + pad(label, lab), DIM)] + segs)
+
+    d = run.dims
+    if d.get("goal"):
+        line("goal", [(clip(str(d["goal"]), W - lab), "")])
+    ctx = "  ·  ".join(x for x in (
+        meta.get("strategy", ""),
+        f"review {meta['review']}" if meta.get("review") else "",
+        f"engine {meta['engine']}" if meta.get("engine") else "",
+        f"isolation {meta['isolation']}" if meta.get("isolation") else "",
+        f"trigger {meta['trigger']}" if meta.get("trigger") and meta["trigger"] != "once" else "",
+        f"host {meta['host']}" if meta.get("host") else "") if x)
+    if ctx:
+        line("run", [(clip(ctx, W - lab), DIM)])
+    if run.models:
+        segs: Row = []
+        for role, tier in run.models.items():
+            if segs:
+                segs.append(("  ·  ", DIM))
+            segs += [(f"{role} ", DIM), (tier, "")]
+            obs = run.observed.get(role)
+            if obs and obs != tier:
+                segs += [(f" (observed {obs} !)", fg(WARN))]
+        eff = d.get("effort")
+        if eff:
+            eff_s = " ".join(f"{k}={v}" for k, v in eff.items()) if isinstance(eff, dict) else str(eff)
+            segs += [(f"  @ {eff_s}", DIM)]
+        line("models", segs)
+    b = run.budget
+    if b or st.stints or run.tokens:
+        parts: Row = []
+
+        def used(label: str, n: int | str, cap: str | None) -> None:
+            if parts:
+                parts.append(("  ·  ", DIM))
+            over = cap and str(cap).isdigit() and isinstance(n, int) and n > int(cap)
+            parts.append((f"{label} ", DIM))
+            parts.append((f"{n}" + (f"/{cap}" if cap else ""), fg(WARN) if over else ""))
+
+        used("agents", len(st.stints), b.get("agents"))
+        if b.get("cycles") or run.cycles:
+            used("cycles", run.cycles, b.get("cycles"))
+        if b.get("tokens") or run.tokens:
+            used("tokens", fmt_tokens(run.tokens) if run.tokens else "0", b.get("tokens"))
+        line("budget", parts)
+    if run.plan or d.get("alias") or d.get("confirm"):
+        segs = []
+        if run.plan:
+            colour = fg(OK) if run.plan == "approved" else fg(WARN)
+            segs += [(run.plan, colour), (f" {hhmm(run.plan_ts)}", DIM)]
+        if d.get("alias"):
+            segs += [("  ·  alias ", DIM), (str(d["alias"]), "")]
+        if d.get("confirm"):
+            segs += [(f"  ·  confirm {d['confirm']}", DIM)]
+        line("plan", segs)
+    for rail in run.rails:
+        line("rails", [(clip(rail, W - lab), fg(WARN))])
+    if run.decisions:
+        last = run.decisions[-1]
+        line("decisions", [(f"{len(run.decisions)}", ""), (f"  ·  latest {last['id']} ", DIM), (clip(last["msg"], W - lab - 20), "")])
+    rows.append([])
+    return rows
+
+
+def build_rows(st: State, width: int) -> list[Row]:
+    now = time.time()
+    W = max(40, width) - 2 * MARGIN          # usable width
+    inner = W - 6                            # inside a box: "│  " … "  │"
+    m = " " * MARGIN
+    rows = header_rows(st, W, now)
+    ordered = st.ordered()
+    idw = max([len(t.id) for t in ordered] + [1])
+    for col in COLUMNS:
+        cards = [t for t in ordered if t.state == col]
+        if col == "blocked" and not cards:
+            continue
+        c = fg(RGB[col])
+        title = f" {LABELS[col]} "
+        count = f" {len(cards)} "
+        fill = W - 2 - dw(title) - 1 - dw(count) - 1
+        rows.append([(m + "╭─", c), (title, c + BOLD), ("─" * max(1, fill), c), (count, c + BOLD), ("─╮", c)])
+        if not cards:
+            rows.append([(m + "│  ", c), (pad("  -", inner), DIM), ("  │", c)])
+        for t in cards:
+            metasegs = card_meta(t, now)
+            metatxt = row_text(metasegs)
+            head = f"{t.id.rjust(idw)}  "
+            ttl = t.title or "(untitled)"
+            if not metatxt:
+                rows.append([(m + "│  ", c), (head, BOLD), (pad(clip(ttl, inner - dw(head)), inner - dw(head)), ""), ("  │", c)])
+            elif dw(head) + dw(ttl) + 4 + dw(metatxt) <= inner:
+                space = inner - dw(head) - dw(ttl) - dw(metatxt)
+                rows.append([(m + "│  ", c), (head, BOLD), (ttl, ""), (" " * space, "")] + metasegs + [("  │", c)])
+            else:  # narrow: meta on its own line beneath the title
+                rows.append([(m + "│  ", c), (head, BOLD), (pad(clip(ttl, inner - dw(head)), inner - dw(head)), ""), ("  │", c)])
+                avail = inner - dw(head)
+                if dw(metatxt) > avail:
+                    metasegs = [(clip(metatxt, avail), metasegs[0][1] if metasegs else DIM)]
+                rows.append([(m + "│  ", c), (" " * dw(head), "")] + metasegs +
+                            [(" " * (avail - dw(row_text(metasegs))), ""), ("  │", c)])
+        rows.append([(m + "╰" + "─" * (W - 2) + "╯", c)])
+        rows.append([])
+
+    last = next((e for e in reversed(st.events) if e.get("msg") and e.get("ev") in ("note", "return", "escalate", "blocked", "dispatch")), None)
+    if last:
+        ts = str(last.get("ts", ""))[11:16]
+        who = last.get("agent") or f"task {last.get('task')}"
+        rows.append([(m + ts + "  ", DIM), (f"{who}", BOLD + DIM), (clip(f": {last['msg']}", W - dw(ts) - dw(who) - 2), DIM)])
+    return rows
+
+
+def signature(ws: Path) -> tuple:
+    if not ws.exists():
+        return ()
+    sig = []
+    for p in sorted(ws.rglob("*")):
+        try:
+            s = p.stat()
+            sig.append((p.name, s.st_mtime_ns, s.st_size))
+        except OSError:
+            continue
+    return tuple(sig)
+
+
+def term_size() -> tuple[int, int]:
+    size = shutil.get_terminal_size((100, 30))
+    return size.columns, size.lines
+
+
+def cmd_watch(ws: Path) -> None:
+    import select
+    import termios
+    import tty
+
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        sys.exit("board: watch needs a terminal (use `board show` when piping)")
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    resized = {"flag": True}
+    signal.signal(signal.SIGWINCH, lambda *_: resized.__setitem__("flag", True))
+    out = sys.stdout
+    out.write("\033[?1049h\033[?25l")  # alt screen, hide cursor
+    out.flush()
+    try:
+        tty.setcbreak(fd)
+        offset, last_sig, rows, tick = 0, None, [], 0
+        cols, lines = term_size()
+        while True:
+            if resized["flag"]:
+                cols, lines = term_size()
+                resized["flag"] = False
+                last_sig = None
+            sig = signature(ws)
+            tick += 1
+            if sig != last_sig or tick % 4 == 0:  # on change, plus every ~2s for the timers
+                rows = build_rows(load(ws), cols)
+                last_sig = sig
+            body = max(1, lines - 1)
+            offset = max(0, min(offset, max(0, len(rows) - body)))
+            frame = ["\033[H"]
+            for row in rows[offset: offset + body]:
+                frame.append(row_render(row, True) + "\033[K\n")
+            for _ in range(body - min(body, len(rows) - offset)):
+                frame.append("\033[K\n")
+            below = len(rows) - offset - body
+            hint = "q quit  ·  j/k scroll  ·  r refresh" + (f"  ·  +{below} below" if below > 0 else "")
+            frame.append(DIM + " " * max(0, cols - dw(hint) - MARGIN) + hint + RESET + "\033[K")
+            out.write("".join(frame))
+            out.flush()
+            r, _, _ = select.select([fd], [], [], 0.5)
+            if not r:
+                continue
+            buf = os.read(fd, 64).decode("utf-8", "ignore")
+            for key in re.findall(r"\x1b\[[A-Za-z]|.", buf):  # arrow sequences or single keys
+                if key in ("q", "\x03"):
+                    return
+                if key in ("j", "\x1b[B"):
+                    offset += 1
+                elif key in ("k", "\x1b[A"):
+                    offset -= 1
+                elif key == "G":
+                    offset = len(rows)
+                elif key == "g":
+                    offset = 0
+                elif key == "r":
+                    last_sig = None
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        out.write("\033[?25h\033[?1049l")
+        out.flush()
+
+
+# --- flight plan --------------------------------------------------------------------------
+
+def gate_names(review: str) -> list[str]:
+    review = (review or "dual").lower()
+    if review == "off":
+        return []
+    if review in ("dual", ""):
+        return ["spec", "quality"]
+    m = re.match(r"(panel|consensus):(\d+)", review)
+    if m:
+        return [f"{m.group(1)} lens {i + 1}" for i in range(int(m.group(2)))]
+    return [review]
+
+
+def render_plan(st: State, why: str = "") -> str:
+    run, d = st.run, st.run.dims
+    if not d:
+        return "board: no `run` record yet — `board init PLAN --strategy ...` first"
+    strategy = str(d.get("strategy") or "staged")
+    models = run.models
+    eff = d.get("effort")
+    eff_map = eff if isinstance(eff, dict) else {}
+    eff_default = "" if isinstance(eff, dict) else (str(eff) if eff else "")
+
+    def tier(role: str) -> str:
+        return models.get(role) or TIER_DEFAULT.get(role, "session model")
+
+    def at(role: str) -> str:
+        e = eff_map.get(role) or eff_default
+        return f" @ {e}" if e else ""
+
+    engine = str(d.get("engine") or "claude")
+    iso = str(d.get("isolation") or ("worktree" if strategy == "parallel" else "shared tree"))
+    tasks = st.ordered()
+    n = len(tasks)
+    gates = gate_names(str(d.get("review") or "dual"))
+    agents = 0
+    lines: list[str] = []
+    lines.append(f"strategy={strategy}" + (f" — {why}" if why else ""))
+    lines.append(f"goal: {d.get('goal') or '(not recorded)'}")
+    lines.append("")
+    lines.append(f"controller · orchestrator {tier('orchestrator')}{at('orchestrator')} · {st.meta.get('host', 'host?')}")
+    worker_line = f"{tier('worker')}{at('worker')}" + (f" · engine {engine}" if engine != "claude" else "")
+
+    def gate_lines(prefix: str) -> None:
+        nonlocal agents
+        for i, g in enumerate(gates):
+            last = i == len(gates) - 1
+            lines.append(f"{prefix}{'└─' if last else '├─'} {g} reviewer · {tier('reviewer')}{at('reviewer')}")
+            agents += 1
+
+    if strategy in ("staged", "xcli", "advisor"):
+        if strategy == "advisor":
+            lines.append(f"├─ advisor lane · {tier('advisor')} · consults only, out of the hot path")
+            agents += 1
+        lines.append(f"├─ ×{n} tasks ({strategy}), the repeating unit:")
+        lines.append(f"│  ├─ implementer · task N · {worker_line} · {iso}")
+        agents += n
+        gate_lines("│  │  ")
+        agents += len(gates) * max(0, n - 1)  # gates repeat per task
+        lines.append(f"│  └─ fix wave (same contract) → re-review, cap 2–3 rounds per gate")
+    elif strategy == "parallel":
+        cap = int(d.get("workers") or 0) or n
+        for i, t in enumerate(tasks[:cap]):
+            lines.append(f"├─ worker · card {t.id} {t.title} · {worker_line} · worktree wt-{t.id}")
+            agents += 1
+        if n > cap:
+            lines.append(f"├─ … {n - cap} more cards queued behind workers={cap}")
+        for g in gates:
+            lines.append(f"│  └─ {g} reviewer per card · {tier('reviewer')}{at('reviewer')}")
+        agents += len(gates) * n
+        lines.append(f"├─ integrator · {tier('orchestrator')} · merge gates decide readiness")
+        agents += 1
+    elif strategy == "loop":
+        cycles = run.budget.get("cycles") or "?"
+        lines.append(f"├─ ×≤{cycles} cycles · trigger {d.get('trigger') or 'goal'}:")
+        lines.append(f"│  ├─ executor · {worker_line} · {iso}")
+        lines.append(f"│  ├─ verifier · {tier('reviewer')}{at('reviewer')} · fresh per round")
+        lines.append(f"│  └─ evolve pass every N cycles · {tier('orchestrator')}")
+        agents += 3
+    elif strategy == "hierarchical":
+        for t in tasks:
+            lines.append(f"├─ sub-orchestrator · {t.title or t.id} · {tier('orchestrator')}{at('orchestrator')}")
+            lines.append(f"│  ├─ workers ×? · {worker_line}")
+            agents += 2
+        gate_lines("│  ")
+    elif strategy == "team":
+        lines.append(f"├─ lead · {tier('orchestrator')}")
+        for t in tasks:
+            lines.append(f"├─ teammate · {t.title or t.id} · {worker_line} · shared context, messages")
+            agents += 1
+        gate_lines("│  ")
+    elif strategy == "adversarial":
+        lines.append(f"├─ planner A · {tier('reasoner')} vs counter-planner B · {tier('peer')} · round cap 2")
+        lines.append(f"├─ synthesis · {tier('orchestrator')} → hardened plan")
+        agents += 3
+        lines.append(f"├─ then ×{n} tasks staged: implementer · {worker_line}")
+        agents += n
+        gate_lines("│  ")
+    elif strategy == "workflow":
+        lines.append(f"├─ pilot slice · task {tasks[0].id if tasks else '?'} · {worker_line}")
+        lines.append(f"├─ phases ×{n} · find/verify workers per phase · {worker_line}")
+        agents += n + 1
+        gate_lines("│  ")
+    else:
+        for role, t_ in models.items():
+            lines.append(f"├─ {role} · {t_}{at(role)}")
+            agents += 1
+    lines.append(f"└─ final-deliverable gate · {models.get('reasoner') or models.get('orchestrator') or 'strongest'} · fresh context, judges the goal verbatim")
+    agents += 1
+    lines.append("")
+    gate_txt = " → ".join(gates) if gates else "off"
+    lines.append(f"gates   {gate_txt} per unit · final gate once · fan-in: {n} dispatches → {n} returns expected")
+    rails = [f"branch {st.meta.get('branch', '?')}", f"isolation {iso}", f"confirm {d.get('confirm') or 'on'}"] + run.rails
+    lines.append("rails   " + " · ".join(rails))
+    b = run.budget
+    tok = b.get("tokens")
+    lines.append(f"budget  ~{agents} agents" + (f" (cap {b['agents']})" if b.get("agents") else "") +
+                 (f" · tokens {tok}" if tok else " · tokens: state a range, never a precision you don't have"))
+    lines.append("board   open a pane and run  board  (or .orchestrate/board)")
+    lines.append("tweak   [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget")
+    return "\n".join(lines)
+
+
+# --- roster · timeline · check · resume ------------------------------------------------------
+
+def table(headers: list[str], rows: list[list[str]]) -> str:
+    widths = [max(dw(h), *(dw(r[i]) for r in rows)) if rows else dw(h) for i, h in enumerate(headers)]
+    fmt = lambda r: "  ".join(pad(c, widths[i]) for i, c in enumerate(r)).rstrip()
+    return "\n".join([fmt(headers), fmt(["─" * w for w in widths])] + [fmt(r) for r in rows])
+
+
+def render_agents(st: State) -> str:
+    if not st.stints:
+        return "board: no agents dispatched yet"
+    now = time.time()
+    rows = []
+    for s in st.stints:
+        model = s.model or "-"
+        if s.observed and s.observed != s.model:
+            model = f"{s.model or '?'} -> {s.observed} !"
+        end = hhmm(s.returned) if s.returned else "…"
+        dur = fmt_dur((s.returned or now) - s.started)
+        status = s.status or ("running" if not s.returned else "")
+        extra = " · ".join(x for x in (f"nudged x{s.nudges}" if s.nudges else "", f"escalated -> {s.escalated_to}" if s.escalated_to else "") if x)
+        rows.append([s.agent, s.role, s.task, model, s.engine or "-", f"{hhmm(s.started)} → {end}", dur, status,
+                     fmt_tokens(s.tokens) if s.tokens else "-", extra])
+    return table(["agent", "role", "task", "model", "engine", "window", "dur", "status", "tokens", ""], rows)
+
+
+def render_log(events: list[dict]) -> str:
+    out = []
+    for ev in events:
+        kind = str(ev.get("ev", ""))
+        ts = str(ev.get("ts", ""))[11:19]
+        task = str(ev.get("task", ""))
+        agent = str(ev.get("agent", ""))
+        skip = {"ts", "ev", "task", "agent", "title"}
+        detail = " ".join(f"{k}={v}" if k not in ("msg", "why", "goal") else str(v)
+                          for k, v in ev.items() if k not in skip and v not in ("", None, False))
+        if kind in ("todo", "title"):
+            detail = str(ev.get("title", ""))
+        out.append(f"{ts}  {pad(kind, 9)} {pad(task, 4)} {pad(agent, 16)} {detail}".rstrip())
+    return "\n".join(out) if out else "board: journal is empty"
+
+
+def commit_exists(ref: str) -> bool:
+    try:
+        return subprocess.run(["git", "cat-file", "-e", f"{ref}^{{commit}}"], capture_output=True).returncode == 0
+    except FileNotFoundError:
+        return True
+
+
+def check(st: State) -> list[str]:
+    findings: list[str] = []
+    now = time.time()
+    ws = st.ws
+    for t in st.ordered():
+        s = t.state
+        if s == "in_progress" and t.last_activity and now - t.last_activity > STALE_AFTER:
+            findings.append(f"task {t.id}: in progress, no artifact delta for {fmt_dur(now - t.last_activity)} — disk check, then ONE nudge")
+        if t.dispatched and not t.returned and s != "in_progress" and s != "done":
+            findings.append(f"task {t.id}: dispatched, never returned (state {s}) — silence is not success")
+        if t.report and s == "review" and not t.gates and now - t.last_activity > STALE_AFTER:
+            findings.append(f"task {t.id}: report landed {fmt_dur(now - t.last_activity)} ago, no review dispatched")
+        if s == "done":
+            for rng in re.findall(r"\b([0-9a-f]{7,40})\.\.([0-9a-f]{7,40})\b", t.final_note):
+                for ref in rng:
+                    if not commit_exists(ref):
+                        findings.append(f"task {t.id}: ledger names commit {ref} that git cannot find")
+            for p in re.findall(r"(?:evidence|report|raw)/\S+", t.final_note):
+                if not (ws / p).exists() and not Path(p).exists():
+                    findings.append(f"task {t.id}: ledger names artifact {p} that nobody can ls")
+        if s == "blocked" and not (t.note or t.detail):
+            findings.append(f"task {t.id}: blocked without owner + next action — that is abandoned, not blocked")
+    done_ids = [t.id for t in st.ordered() if t.state == "done"]
+    if done_ids:
+        last_done = max(natural_key(i) for i in done_ids)
+        for t in st.ordered():
+            if t.state == "todo" and not t.dispatched and natural_key(t.id) < last_done and t.id.isdigit():
+                findings.append(f"task {t.id}: never dispatched while later tasks are done — skipped or mis-ordered?")
+    for role, obs in st.run.observed.items():
+        req = st.run.models.get(role)
+        if req and req != obs:
+            findings.append(f"model drift: {role} requested {req}, observed {obs} — record the posture or re-pin")
+    cap = st.run.budget.get("agents")
+    if cap and str(cap).isdigit() and len(st.stints) > int(cap):
+        findings.append(f"budget: {len(st.stints)} agents dispatched against a cap of {cap}")
+    if st.run.finish:
+        open_ = [t.id for t in st.ordered() if t.state != "done"]
+        if open_:
+            findings.append(f"finish recorded with non-terminal tasks: {', '.join(open_)}")
+    return findings
+
+
+def render_resume(st: State) -> str:
+    now = time.time()
+    run, d = st.run, st.run.dims
+    L: list[str] = []
+    L.append(f"# RESUME · {st.meta.get('repo', '')} @ {st.meta.get('branch', '?')}")
+    L.append("## Goal")
+    L.append(str(d.get("goal") or "(not recorded — read run.md)"))
+    L.append("## Current state")
+    ctx = " · ".join(x for x in (d.get("strategy", ""), f"review {d['review']}" if d.get("review") else "",
+                                  f"plan {run.plan}" if run.plan else "plan pending",
+                                  f"final gate {run.finish}" if run.finish else "") if x)
+    L.append(ctx)
+    for col in ("done", "in_progress", "review", "blocked", "todo"):
+        cards = [t for t in st.ordered() if t.state == col]
+        if not cards:
+            continue
+        L.append(f"- {LABELS[col].lower()} ({len(cards)}):")
+        for t in cards:
+            extra = ""
+            if col == "in_progress":
+                extra = f" — {t.agent or 'dispatched'}{' · ' + t.model if t.model else ''} · {fmt_dur(now - t.since)}"
+                if t.last_activity and now - t.last_activity > STALE_AFTER:
+                    extra += f" · STALE {fmt_dur(now - t.last_activity)}"
+            elif col == "review":
+                extra = " — " + (" · ".join(f"{k} {v}" for k, v in t.gates.items()) or "awaiting review")
+            elif col == "blocked":
+                extra = f" — {t.note or t.detail}"
+            elif col == "done":
+                extra = f" — {t.final_note}"
+            L.append(f"  - task {t.id} {t.title}{extra}")
+    if run.decisions:
+        L.append("## Key decisions")
+        for dec in run.decisions[-8:]:
+            owner = f" ({dec['owner']})" if dec.get("owner") else ""
+            L.append(f"- {dec['id']}{owner}: {dec['msg']}")
+    L.append("## Files & pointers")
+    L.append(f"- ledger: .orchestrate/progress.md · journal: .orchestrate/{JOURNAL} · run: .orchestrate/run.md")
+    for t in st.ordered():
+        ptrs = [f".orchestrate/{t.report}" if t.report and not t.report.startswith(".") else t.report] if t.report else []
+        ptrs += [f".orchestrate/{f}" for f in t.findings]
+        if ptrs:
+            L.append(f"- task {t.id}: " + " · ".join(ptrs))
+    L.append("## Open work (in order)")
+    nxt = [t for t in st.ordered() if t.state in ("blocked", "review", "in_progress", "todo")]
+    if not nxt:
+        L.append("- none — every task is terminal" + ("; final gate pending" if not run.finish else ""))
+    for t in nxt:
+        L.append(f"- task {t.id} {t.title}: {t.state.replace('_', ' ')}" +
+                 (f" — {t.note or t.detail}" if t.state == "blocked" else ""))
+    L.append("## Handoff rule")
+    L.append("State above is generated; add the WHY — decisions' reasons, traps & dead ends — then probe-test it "
+             "(shared-handoff.md). Trust the ledger + git log over any summary, this one included.")
+    return "\n".join(L)
+
+
+# --- commands ------------------------------------------------------------------------
+
+def cmd_init(ws: Path, args: argparse.Namespace) -> None:
+    dims: dict[str, object] = {}
+    for key in DIMS:
+        val = getattr(args, key, None)
+        if val in (None, ""):
+            continue
+        if key in ("models", "budget"):
+            dims[key] = parse_kv(val)
+        elif key == "effort" and re.search(r"[=:]", val):
+            dims[key] = parse_kv(val)
+        else:
+            dims[key] = val
+    if dims:
+        append_event(ws, ev="run", **dims)
+    st = load(ws)
+    added = 0
+    if args.plan:
+        text = Path(args.plan).read_text(encoding="utf-8", errors="replace")
+        fence = False
+        for line in text.splitlines():
+            if line.startswith("```"):
+                fence = not fence
+                continue
+            if fence:
+                continue
+            m = re.match(r"^#+\s+Task\s+(\S+?)\s*(?:[:—–-]\s*(.+))?$", line)
+            if m:
+                tid, title = m.group(1), (m.group(2) or "").strip()
+                if tid not in st.tasks:
+                    append_event(ws, task=tid, ev="todo", title=title)
+                    added += 1
+                elif title and not st.tasks[tid].title:
+                    append_event(ws, task=tid, ev="title", title=title)
+    else:
+        seen = {str(e.get("task")) for e in st.events if e.get("task") is not None}
+        for t in st.tasks.values():
+            if t.id not in seen:
+                append_event(ws, task=t.id, ev="todo", title=t.title)
+                added += 1
+    write_resolved(ws)
+    print(f"board: {added} task(s) queued -> {journal_path(ws)}")
+    if dims:
+        print("board: run.md Resolved block written; next: `board plan` → gate → `board plan approved`")
+    print("board: open a pane and run  board  (or .orchestrate/board) to watch")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(prog="board", add_help=True, description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
+    sub = ap.add_subparsers(dest="cmd")
+    sub.add_parser("watch")
+    sub.add_parser("show").add_argument("--no-color", action="store_true")
+    sub.add_parser("path")
+    sub.add_parser("agents")
+    sub.add_parser("check")
+    sub.add_parser("resume")
+    p = sub.add_parser("log"); p.add_argument("-n", type=int, default=40); p.add_argument("--json", action="store_true")
+    p = sub.add_parser("init"); p.add_argument("plan", nargs="?")
+    for key in DIMS:
+        p.add_argument(f"--{key}")
+    p = sub.add_parser("plan"); p.add_argument("outcome", nargs="?", choices=["approved", "changed", "skipped"])
+    p.add_argument("--msg"); p.add_argument("--why")
+    p = sub.add_parser("todo"); p.add_argument("task"); p.add_argument("title", nargs="?")
+    for name in ("dispatch", "return", "review", "done", "blocked", "note", "nudge", "escalate"):
+        p = sub.add_parser(name)
+        p.add_argument("task")
+        if name == "note":
+            p.add_argument("msg")
+        else:
+            p.add_argument("--msg")
+        p.add_argument("--agent")
+        p.add_argument("--model")
+        p.add_argument("--engine")
+        if name == "dispatch":
+            p.add_argument("--role"); p.add_argument("--effort"); p.add_argument("--worktree")
+            p.add_argument("--reset-gates", action="store_true", help="fresh review cycle (fix wave)")
+        if name == "return":
+            p.add_argument("--status", choices=STATUSES, default="DONE")
+            p.add_argument("--commits"); p.add_argument("--report"); p.add_argument("--observed-model"); p.add_argument("--tokens")
+        if name == "review":
+            p.add_argument("--kind", default="review"); p.add_argument("--round", type=int)
+        if name == "escalate":
+            p.add_argument("--to", required=True); p.add_argument("--why", required=True)
+    p = sub.add_parser("decide"); p.add_argument("id"); p.add_argument("msg"); p.add_argument("--owner"); p.add_argument("--task")
+    p = sub.add_parser("rail"); p.add_argument("msg")
+    p = sub.add_parser("finish"); p.add_argument("--gate", choices=["pass", "fail"], required=True)
+    p.add_argument("--evidence"); p.add_argument("--msg")
+    return ap
+
+
+def main(argv: list[str]) -> int:
+    args = build_parser().parse_args(argv)
+    if args.selftest:
+        return selftest()
+    ws = workspace()
+    cmd = args.cmd
+    if cmd is None:
+        if sys.stdout.isatty():
+            cmd_watch(ws)
+            return 0
+        cmd, args.no_color = "show", True
+    if cmd == "watch":
+        cmd_watch(ws)
+    elif cmd == "show":
+        try:
+            width = int(os.environ.get("BOARD_WIDTH") or os.get_terminal_size().columns)
+        except (OSError, ValueError):
+            width = 100
+        color = sys.stdout.isatty() and not args.no_color and not os.environ.get("NO_COLOR")
+        print("\n".join(row_render(r, color) for r in build_rows(load(ws), width)))
+    elif cmd == "path":
+        print(journal_path(ws))
+    elif cmd == "agents":
+        print(render_agents(load(ws)))
+    elif cmd == "log":
+        evs = read_events(ws)[-args.n:]
+        print("\n".join(json.dumps(e, ensure_ascii=False) for e in evs) if args.json else render_log(evs))
+    elif cmd == "check":
+        findings = check(load(ws))
+        for f in findings:
+            print(f"check: {f}")
+        print("board: check OK — journal and disk agree" if not findings else f"board: {len(findings)} finding(s)")
+        return 1 if findings else 0
+    elif cmd == "resume":
+        print(render_resume(load(ws)))
+    elif cmd == "init":
+        cmd_init(ws, args)
+    elif cmd == "plan":
+        if args.outcome:
+            append_event(ws, ev="plan", outcome=args.outcome, msg=args.msg)
+            write_resolved(ws)
+            print(f"board: flight plan {args.outcome}")
+        else:
+            print(render_plan(load(ws), args.why or ""))
+    elif cmd == "todo":
+        append_event(ws, task=args.task, ev="todo", title=args.title)
+    elif cmd == "dispatch":
+        if not args.agent:
+            sys.exit("board: dispatch needs --agent (the real post-spawn identity, never a provisional handle)")
+        append_event(ws, task=args.task, ev="dispatch", agent=args.agent, role=args.role, model=args.model,
+                     engine=args.engine, effort=args.effort, worktree=args.worktree, msg=args.msg,
+                     reset_gates=True if args.reset_gates else None)
+    elif cmd == "return":
+        if not args.agent:
+            sys.exit("board: return needs --agent")
+        append_event(ws, task=args.task, ev="return", agent=args.agent, status=args.status, commits=args.commits,
+                     report=args.report, observed_model=args.observed_model, tokens=args.tokens, msg=args.msg)
+        if args.observed_model:
+            write_resolved(ws)
+    elif cmd == "review":
+        append_event(ws, task=args.task, ev="review", kind=args.kind, round=args.round, agent=args.agent,
+                     model=args.model, engine=args.engine, msg=args.msg)
+    elif cmd == "nudge":
+        append_event(ws, task=args.task, ev="nudge", agent=args.agent, msg=args.msg)
+    elif cmd == "escalate":
+        append_event(ws, task=args.task, ev="escalate", agent=args.agent, to=args.to, why=args.why)
+    elif cmd in ("done", "blocked"):
+        if cmd == "blocked" and not args.msg:
+            sys.exit("board: blocked needs --msg (owner + next action, or it's abandoned, not blocked)")
+        append_event(ws, task=args.task, ev=cmd, msg=args.msg, agent=args.agent)
+    elif cmd == "note":
+        append_event(ws, task=args.task, ev="note", msg=args.msg, agent=args.agent)
+    elif cmd == "decide":
+        append_event(ws, ev="decide", id=args.id, msg=args.msg, owner=args.owner, task=args.task)
+        ws.mkdir(parents=True, exist_ok=True)
+        with (ws / "decisions.md").open("a", encoding="utf-8") as fh:
+            fh.write(f"- {args.id} — {args.msg}" + (f" (owner: {args.owner})" if args.owner else "") +
+                     (f" [task {args.task}]" if args.task else "") + "\n")
+    elif cmd == "rail":
+        append_event(ws, ev="rail", msg=args.msg)
+        write_resolved(ws)
+    elif cmd == "finish":
+        append_event(ws, ev="finish", gate=args.gate, evidence=args.evidence, msg=args.msg)
+        write_resolved(ws)
+    return 0
+
+
+# --- selftest (temp repo replay; run by scripts/check-sync) --------------------------------
+
+def selftest() -> int:
+    import contextlib
+    import io
+
+    def run(*argv: str) -> str:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            try:
+                main(list(argv))
+            except SystemExit as exc:
+                if exc.code not in (0, None):
+                    raise AssertionError(f"{argv}: exit {exc.code}")
+        return buf.getvalue()
+
+    cwd = os.getcwd()
+    env_ws = os.environ.pop("ORCHESTRATE_WS", None)
+    tmp = tempfile.mkdtemp(prefix="board-selftest-")
+    try:
+        os.chdir(tmp)
+        subprocess.run(["git", "init", "-q", "-b", "main"], check=True)
+        subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "base"], check=True)
+        base = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
+        Path("plan.md").write_text("# P\n## Task 1: Scaffold\n## Task 2: Auth\n```\n## Task 9: fenced\n```\n## Task 3: Docs\n")
+        ws = Path(tmp) / ".orchestrate"
+        run("init", "plan.md", "--strategy", "staged", "--review", "dual", "--host", "Claude Code",
+            "--models", "worker=sonnet,reviewer=opus", "--budget", "agents=6", "--goal", "Ship the thing")
+        st = load(ws)
+        assert [t.id for t in st.ordered()] == ["1", "2", "3"], "plan headings → todo (fence ignored)"
+        assert all(t.state == "todo" for t in st.tasks.values())
+        assert "goal: Ship the thing" in (ws / "run.md").read_text() and OPEN in (ws / "run.md").read_text()
+        plan = run("plan", "--why", "independent tasks")
+        assert "strategy=staged — independent tasks" in plan and "spec reviewer" in plan and "tweak" in plan
+        run("plan", "approved")
+        assert "plan: approved" in (ws / "run.md").read_text()
+        run("dispatch", "1", "--agent", "task1-impl", "--model", "sonnet")
+        assert load(ws).tasks["1"].state == "in_progress", "same-second dispatch must beat todo"
+        run("note", "1", "tests green", "--agent", "task1-impl")
+        run("return", "1", "--agent", "task1-impl", "--status", "DONE", "--commits", f"{base}..{base}",
+            "--report", "task-1-report.md", "--observed-model", "haiku", "--tokens", "84k")
+        st = load(ws)
+        assert st.tasks["1"].state == "review" and st.run.tokens == 84000 and st.run.observed["worker"] == "haiku"
+        assert "observed: worker=haiku (requested sonnet)" in (ws / "run.md").read_text()
+        run("review", "1", "--kind", "spec", "--round", "1", "--agent", "task1-spec", "--model", "opus")
+        (ws / "review-task1-spec-r1.md").write_text("✅ clean\n")
+        run("review", "1", "--kind", "quality", "--round", "1", "--agent", "task1-qual")
+        (ws / "review-task1-quality-r1.md").write_text("❌ 2 important\n")
+        g = load(ws).tasks["1"].gates
+        assert g["spec"].startswith("ok") and g["quality"].startswith("fail"), g
+        run("dispatch", "1", "--agent", "task1-fix", "--model", "sonnet", "--reset-gates", "--msg", "fix wave")
+        st = load(ws)
+        assert st.tasks["1"].state == "in_progress" and st.tasks["1"].gates == {}, "fix wave resets gates"
+        run("return", "1", "--agent", "task1-fix", "--status", "DONE")
+        run("review", "1", "--kind", "quality", "--round", "2")
+        (ws / "review-task1-quality-r2.md").write_text("✅ clean r2\n")
+        assert load(ws).tasks["1"].gates == {"quality": "ok r2"}
+        (ws / "progress.md").write_text(f"Task 1: complete (commits {base}..{base}, review clean)\n")
+        run("dispatch", "2", "--agent", "task2-impl", "--model", "sonnet", "--engine", "codex")
+        run("escalate", "2", "--agent", "task2-impl", "--to", "opus", "--why", "same error x3")
+        run("return", "2", "--agent", "task2-impl", "--status", "BLOCKED", "--msg", "owner: controller · needs D-01")
+        run("decide", "D-01", "cookie auth, not header", "--owner", "controller", "--task", "2")
+        run("rail", "single-flight: npm publish -> task2-impl")
+        st = load(ws)
+        assert st.tasks["1"].state == "done" and st.tasks["2"].state == "blocked" and st.tasks["3"].state == "todo"
+        assert st.run.decisions[-1]["id"] == "D-01" and "D-01" in (ws / "decisions.md").read_text()
+        assert st.run.dispatches == 3 and any(s.escalated_to == "opus" for s in st.stints)
+        roster = run("agents")
+        assert "task1-impl" in roster and "sonnet -> haiku !" in roster and "spec reviewer" in roster
+        show = run("show", "--no-color")
+        for needle in ("goal       Ship the thing", "agents 5/6", "worker sonnet (observed haiku !)", "approved", "rails",
+                       "D-01", "1  Scaffold", "2  Auth", "single-flight"):
+            assert needle in show, f"show lacks {needle!r}"
+        log = run("log")
+        assert "dispatch" in log and "escalate" in log and "return" in log
+        findings = check(load(ws))
+        assert any("drift" in f for f in findings), findings
+        res = run("resume")
+        assert "## Goal" in res and "task 2 Auth" in res and "D-01" in res and "Open work" in res
+        run("finish", "--gate", "fail", "--evidence", "raw/final.md", "--msg", "task 2 open")
+        st = load(ws)
+        assert st.run.finish == "fail" and any("non-terminal" in f for f in check(st))
+        assert "RUN COMPLETE" in run("show", "--no-color")
+        # legacy name migration
+        (ws / JOURNAL).rename(ws / LEGACY_JOURNAL)
+        assert load(ws).tasks["1"].state == "done" and (ws / JOURNAL).exists() and not (ws / LEGACY_JOURNAL).exists()
+        print("board: selftest OK")
+        return 0
+    finally:
+        os.chdir(cwd)
+        if env_ws is not None:
+            os.environ["ORCHESTRATE_WS"] = env_ws
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        sys.exit(130)

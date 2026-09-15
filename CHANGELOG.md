@@ -10,6 +10,47 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.14.0] — 2026-09-15
+
+### Added
+- **The journal — `.orchestrate/journal.jsonl`, the run's spine.** One append-only line per fact
+  the disk cannot show, written by the CONTROLLER at steps it already performs: `board init PLAN
+  --strategy … --goal` (the `run` record + every task queued), `board plan approved|changed|
+  skipped`, `board dispatch N --agent --model [--role --engine --worktree]`, `board return N
+  --agent --status … [--commits --report --observed-model --tokens]`, `board review N --kind
+  --round`, `board nudge` / `board escalate --to --why`, `board decide ID "…"` (also appends
+  `decisions.md`), `board rail "…"`, `board finish --gate pass|fail`. Workers get one optional
+  heartbeat, `board note`. Per the invariants (observation ≠ transition) only the controller
+  records transitions; the ledger stays final.
+- **`run.md` gains a generated `## Resolved` block** (`<!-- board:resolved -->` markers) —
+  goal, dimensions, models with requested→observed drift, budget, plan outcome, rails, kickoff —
+  written by `board init` and kept current by `plan`/`return`/`rail`; controller prose below it.
+  The flight-plan rule "run.md rendered, never a second source" is now literally true.
+- **`scripts/board` — every view is derived from the journal + disk, CLI-agnostic, stdlib-only
+  python3 (raw-ANSI truecolor painter, no curses):** `board` live kanban in a pane the USER opens
+  (zero-install copy at `.orchestrate/board`, `install.sh` also puts `board` on `~/.local/bin`) —
+  header with goal · run · models (drift flagged `!`) · budget used/cap (agents from dispatches,
+  cycles from the ledger, tokens from returns) · plan · rails · decisions, then todo / in progress
+  (`> agent · model · elapsed`, `! stale` after 10 min without an artifact delta) / review (`spec
+  ok r1 · quality fail r1`) / done / blocked; `board plan` renders the flight plan in the format
+  contract, deterministic per strategy; `board agents` roster; `board log` timeline; `board
+  check` reconciliation (dispatched-never-returned, stale, report-without-review, ledger lines
+  naming missing commits/artifacts, skipped tasks, model drift, budget overrun; exit 1); `board
+  resume` generates the handoff's state layer in `shared-handoff.md` order.
+- `board --selftest` replays a staged run in a temp repo and asserts every derivation; wired into
+  `scripts/check-sync` together with two new replicated-invariant lines (`board init`, `board
+  return`). Core workflow steps 3/5/6/8, `shared-contracts.md` ("The journal"), `shared-flight-
+  plan.md`, `shared-monitoring.md`, `shared-handoff.md`, `shared-model-routing.md` rule 13 and
+  `strategy-staged.md` wired; traversal eval `board-watch`; `docs/usage.md` "The journal".
+
+### Deliberately not done
+- No `board open`: Ghostty on macOS exposes no split IPC (`+new-window` is Linux/D-Bus only;
+  community tools fake keystrokes via Accessibility). The user owns the pane; the skill owns the
+  record. A new split inherits the cwd everywhere that matters, and the script resolves the
+  workspace through the main worktree.
+- No hooks, daemon or TUI framework — the journal is written with bash by the controller, so
+  Codex, Grok, opencode and Pi get exactly the same trace.
+
 ## [1.13.1] — 2026-09-10
 
 ### Site & visual guide

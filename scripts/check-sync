@@ -23,8 +23,11 @@ python3 -m py_compile "$root/scripts/lint-skill" "$root/scripts/count-skill-toke
 while IFS= read -r -d '' script; do
   if head -1 "$script" | grep -qE '^#!/usr/bin/env bash|^#!/bin/bash'; then
     bash -n "$script"
+  elif head -1 "$script" | grep -qE '^#!/usr/bin/env python3'; then
+    python3 -m py_compile "$script"
   fi
 done < <(find "$skill/scripts" -type f -print0)
+"$skill/scripts/board" --selftest || exit 1   # journal + views replay in a temp repo
 
 fail=0
 err() { echo "check-sync: FAIL: $1" >&2; fail=1; }
@@ -83,6 +86,8 @@ re-dispatch unchanged|references/shared-contracts.md,references/strategy-staged.
 spawn a duplicate|SKILL.md,references/shared-safety-rails.md,references/strategy-parallel.md
 ~80% of multi-agent quality|references/shared-token-economy.md,references/shared-model-routing.md,references/strategy-hierarchical.md
 eward-hacking|references/shared-safety-rails.md,references/strategy-loop.md
+board init|SKILL.md,references/shared-contracts.md,references/strategy-staged.md,references/shared-flight-plan.md
+board return|references/shared-contracts.md,references/strategy-staged.md,references/shared-monitoring.md,references/shared-model-routing.md
 '
 while IFS='|' read -r pattern homes; do
   [ -n "$pattern" ] || continue

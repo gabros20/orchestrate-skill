@@ -147,7 +147,9 @@ A quality brief contains, in order:
    or a rubric file handed to a verifier — code-shaped specs beat prose descriptions of the same
    thing (vendor guidance).
 5. **Verification** — the command(s)/check(s) that prove done.
-6. **Report contract** — schema, cap, file path to write it.
+6. **Report contract** — schema, cap, file path to write it. Optionally one heartbeat line:
+   `board note N "<msg>"` on milestones (tests green, committing) — a note, never a status; the
+   controller alone moves cards (`shared-contracts.md`).
 7. **Stop conditions** — when to return BLOCKED / NEEDS_CONTEXT instead of guessing, and which
    decision classes REQUIRE escalation (security, data, public API).
 

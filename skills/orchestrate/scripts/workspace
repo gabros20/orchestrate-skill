@@ -7,5 +7,8 @@ root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "not a git repo" >
 ws="$root/.orchestrate"
 mkdir -p "$ws"
 [ -f "$ws/.gitignore" ] || printf '*\n' > "$ws/.gitignore"
+here="$(cd "$(dirname "$0")" && pwd)"
+# Zero-install board: a copy the user can run from any pane as .orchestrate/board (refreshed when the skill updates).
+if [ ! -f "$ws/board" ] || [ "$here/board" -nt "$ws/board" ]; then cp "$here/board" "$ws/board" && chmod +x "$ws/board"; fi
 "$(cd "$(dirname "$0")" && pwd)/toolbox" >/dev/null 2>&1 || true   # orientation recipes (idempotent)
 printf '%s\n' "$ws"

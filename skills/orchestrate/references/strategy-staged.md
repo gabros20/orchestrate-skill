@@ -39,7 +39,8 @@ Prompts: `prompt-implementer.md`, `prompt-spec-reviewer.md`, `prompt-quality-rev
 3. Read `.orchestrate/progress.md` if it exists (resume): tasks with a `complete` line are DONE —
    resume at the first task without one. Trust the ledger + `git log` over recollection; the most
    expensive observed failure mode is re-dispatching completed task sequences after compaction.
-4. Write `.orchestrate/run.md` with resolved dimensions.
+4. `board init PLAN --strategy staged --review … --models … --goal "…"` — writes the resolved
+   dimensions into `.orchestrate/run.md` (Resolved block) and queues every task; prose below.
 5. **Criteria before code** (multi-task plans): author every task's acceptance check as its own
    step — after plan approval, before the first dispatch — ideally by a different agent than the
    one that will implement it. A verification line written by the same reasoning that wrote the
@@ -61,7 +62,9 @@ brief → dispatch implementer → (questions? answer, re-dispatch) → implemen
    history.
 2. **Record BASE** (`git rev-parse HEAD`) before the implementer starts.
 3. Implementer returns **<15 lines**: Status · commits · one-line test summary · concerns · report
-   path. Full detail goes in the report file, not chat.
+   path. Full detail goes in the report file, not chat. Journal it: `board return N --agent A
+   --status <Status> --commits <base7>..<head7> --report task-N-report.md [--observed-model]`
+   (the dispatch was journaled at step 1: `board dispatch N --agent A --model M`).
 4. **Status protocol** (`shared-contracts.md`): `DONE` → review. `DONE_WITH_CONCERNS` → read the
    report; correctness/scope concerns are addressed before review, observations are noted.
    `NEEDS_CONTEXT` → supply it, re-dispatch same model. `BLOCKED` → the ladder: context problem →

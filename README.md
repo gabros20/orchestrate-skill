@@ -134,7 +134,7 @@ live-verified against v0.28.0; end-to-end smoke run pending.
 skills/orchestrate/SKILL.md       activation, routing, workflow, and completion
 skills/orchestrate/config.yaml    saved strategy/dimension aliases
 skills/orchestrate/references/    31 flat strategy, shared, and prompt references
-skills/orchestrate/scripts/       workspace, brief, review-package, and toolbox helpers
+skills/orchestrate/scripts/       workspace, brief, review-package, toolbox, and board helpers
 ```
 
 All references are directly linked from `SKILL.md`; no required route depends on directory

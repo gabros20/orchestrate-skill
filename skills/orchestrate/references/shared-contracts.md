@@ -79,10 +79,12 @@ Reviewer "read-only" means the REPO; `.orchestrate/` is the one place a reviewer
 
 ## Workspace files (`.orchestrate/`, via `scripts/workspace`)
 
-- `run.md` — written at kickoff, appended as facts land. It carries: the task + the ORIGINALLY
-  stated goal verbatim (the final-deliverable gate judges against it) · resolved dimensions +
-  budget · host + landed bindings and named degradations (`shared-hosts.md`) · requested AND
-  observed model/effort per role (`shared-model-routing.md` rule 13) · single-flight owners of
+- `run.md` — written at kickoff, appended as facts land. Its `## Resolved` block is GENERATED
+  by `board init` (and kept current by `board plan`/`return`/`rail`) — never hand-edit it; prose
+  goes below. It carries: the task + the ORIGINALLY stated goal verbatim (the final-deliverable
+  gate judges against it) · resolved dimensions + budget · host + landed bindings and named
+  degradations (`shared-hosts.md`, `board rail`) · requested AND observed model/effort per role
+  (`shared-model-routing.md` rule 13, `board return --observed-model`) · single-flight owners of
   shared rate-limited resources (`shared-safety-rails.md`) · deliberately chosen cost postures
   (e.g. mid-tier planner) · the flight-plan outcome (approved / changed / skipped and why,
   `shared-flight-plan.md`) · timestamp
@@ -104,6 +106,8 @@ Reviewer "read-only" means the REPO; `.orchestrate/` is the one place a reviewer
 - `review-task<N>-<kind>-r<round>.md` — reviewer findings files
 - `raw/` — full command/tool output, redirected at execution time (`shared-token-economy.md`)
 - `toolbox.md` — this repo's probed orientation recipes (`scripts/toolbox`; read, don't re-probe)
+- `journal.jsonl` + `board` — the run's append-only journal and a runnable copy of
+  `scripts/board` (the journal section below)
 - `progress.md` — THE LEDGER (below)
 - `loop-<name>.md` — loop contracts
 
@@ -127,6 +131,27 @@ turn into a permanent check, you will meet again.
 Resume rule: on any restart/compaction, `cat progress.md` + `git log` are the truth; recollection
 is not. The single most expensive observed failure is re-dispatching completed work. `git clean
 -fdx` destroys the workspace → reconstruct from `git log`.
+
+## The journal (`journal.jsonl`, via `scripts/board`)
+
+The run's spine: one append-only line per fact the disk cannot show, written by the CONTROLLER
+at the step it already performs — `board init PLAN --strategy … --goal` (kickoff: `run` record,
+every task queued, `run.md` Resolved block) · `board plan approved|changed|skipped` (the gate
+outcome) · `board dispatch N --agent <real id> --model M [--role R --engine E --worktree W]`
+(`--reset-gates` on a fix wave) · `board return N --agent A --status DONE|DONE_WITH_CONCERNS|
+NEEDS_CONTEXT|BLOCKED [--commits --report --observed-model --tokens]` (the typed return, rule
+13's observation) · `board review N --kind spec|quality --round K` per gate · `board nudge` /
+`board escalate N --to MODEL --why` (recovery, `shared-monitoring.md`) · `board decide ID "…"`
+(also appends `decisions.md`) · `board rail "…"` (degradations, single-flight owners) · `board
+finish --gate pass|fail --evidence PATH`. Every view is derived from it plus the files above —
+briefs → todo, reports and findings → review, ledger → done (final, always wins): the kanban the
+user watches from their own pane (`board`), the flight plan (`board plan`), the roster (`board
+agents`), the timeline (`board log`), the reconciliation (`board check` — dispatched-never-
+returned, ledger lines naming missing artifacts, model drift, budget overrun; exit 1) and the
+handoff's state layer (`board resume`). **The journal never outranks the ledger**, and it obeys
+the invariants: a worker saying "done" is a proposal, so **only the controller records
+transitions**; workers get one optional line — `board note N "<msg>"` — a heartbeat, never a
+status. The user opens and closes the pane; the skill only keeps the record.
 
 ## Task cards (parallel/team writers)
 

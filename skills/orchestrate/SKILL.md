@@ -138,23 +138,31 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 
 1. Inspect the task, plan, repository state, host capabilities, and stop condition.
 2. Resolve strategy, dimensions, roles, models, budget, isolation, review, and degradation.
-3. Initialize `.orchestrate/` with [workspace](scripts/workspace); record the resolved run.
+3. Initialize `.orchestrate/` with [workspace](scripts/workspace); record the resolved run with
+   [board](scripts/board) — `board init PLAN --strategy … --goal "…"` writes the `## Resolved`
+   block of `run.md` and queues every planned task; prose (the why) goes below the block.
 4. Create task briefs with [task-brief](scripts/task-brief) and validate them with
    [brief-check](scripts/brief-check).
-5. Render the flight plan from the resolved record and gate on the user's approval
-   ([flight plan](references/shared-flight-plan.md)); apply any tweaks by re-resolving that
-   dimension and re-asking.
-6. Dispatch only ready work. Monitor without duplicating agents and integrate through the selected
-   strategy's owner.
+5. Render the flight plan from the resolved record (`board plan --why "…"`) and gate on the
+   user's approval ([flight plan](references/shared-flight-plan.md)); apply any tweaks by
+   re-resolving that dimension and re-asking; record the outcome (`board plan approved`).
+6. Dispatch only ready work — journal each dispatch and each return (`board dispatch N --agent
+   --model`, `board return N --agent --status`). Monitor without duplicating agents and
+   integrate through the selected strategy's owner.
 7. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
    and send failures back to the correct worker or owner.
-8. Append durable progress and finish or hand off only when the stop condition is verified.
+8. Append durable progress (the ledger moves the card to done); `board check` must be clean and
+   `board finish --gate pass|fail` recorded before you finish or hand off (`board resume` is the
+   handoff's state layer). Finish only when the stop condition is verified.
 
 Use [toolbox](scripts/toolbox) to inventory available tools once and reuse the recorded result.
+The journal (`.orchestrate/journal.jsonl`) is the run's spine and the board is a view over it,
+never a second record: transitions are the controller's to record, workers may only `board
+note`; the user watches from a pane of their own (`board`).
 
 ## Artifact contract
 
-Every run owns `.orchestrate/run.md`, `progress.md`, task briefs, worker reports, review findings,
+Every run owns `.orchestrate/run.md`, `journal.jsonl`, `progress.md`, task briefs, worker reports, review findings,
 and any raw evidence required to reproduce a gate. Record resolved dimensions, exact role/model
 assignments, budgets, branch/worktree ownership, decisions, failures, and the verified stop
 condition.

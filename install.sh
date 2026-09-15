@@ -52,4 +52,18 @@ case "$target" in
   *) echo "usage: ./install.sh [claude|codex|agents|cursor|antigravity|opencode|grok|hermes|kimi|pi|all]" >&2; exit 1 ;;
 esac
 
+# `board` — the live kanban the user runs in a pane of their own. Installed on PATH when
+# ~/.local/bin is there; otherwise every run also carries a copy at .orchestrate/board.
+bin_dir="$HOME/.local/bin"
+existing="$(command -v board 2>/dev/null || true)"
+if [ -n "$existing" ] && [ "$existing" != "$bin_dir/board" ]; then
+  echo "board: a different 'board' is already on PATH ($existing) — skipped; use .orchestrate/board"
+else
+  mkdir -p "$bin_dir" && cp "$source_dir/scripts/board" "$bin_dir/board" && chmod +x "$bin_dir/board"
+  case ":$PATH:" in
+    *":$bin_dir:"*) echo "installed → $bin_dir/board (run  board  in any pane inside a repo)" ;;
+    *) echo "installed → $bin_dir/board — add $bin_dir to PATH, or run .orchestrate/board" ;;
+  esac
+fi
+
 echo "Codex explicit invocation: \$$skill_name. Other clients may use slash commands, @mentions, a skill tool, or natural language."

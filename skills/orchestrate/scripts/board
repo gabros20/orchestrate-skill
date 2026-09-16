@@ -10,7 +10,8 @@ workers may only `note`. Stdlib only. Resolves the workspace through the main wo
 works from any pane whose cwd is anywhere inside the repo or one of its worktrees.
 
   board                        live kanban (q quit · j/k focus · enter expand card · e expand all ·
-                               a attention only · arrows scroll · r refresh)
+                               a attention only · arrows scroll · r reload — re-executes the script
+                               from disk; a reinstalled script reloads itself automatically)
   board show [-x] [--json]     one-shot kanban · agents · log · task N · attention · plan · resume
   board check [--finish] [--json]   reconcile journal vs disk (chain, gates, liveness, drift, budget)
   board path                   print the journal file
@@ -1215,21 +1216,59 @@ def cmd_watch(ws: Path) -> None:
     resized = {"flag": True}
     signal.signal(signal.SIGWINCH, lambda *_: resized.__setitem__("flag", True))
     out = sys.stdout
+    script = Path(sys.argv[0]).resolve()
+    script_mtime = script.stat().st_mtime if script.exists() else 0.0
+    view = View(S=Style(not os.environ.get("NO_COLOR")))
+    offset = 0
+    reloaded_at = 0.0
+    carried = os.environ.pop("BOARD_VIEW", "")  # state carried across a reload (r key / script update)
+    if carried:
+        try:
+            st_ = json.loads(carried)
+            view.expanded, view.focus, view.open = bool(st_.get("expanded")), str(st_.get("focus", "")), str(st_.get("open", ""))
+            view.attention_only, offset = bool(st_.get("attention")), int(st_.get("offset", 0))
+            reloaded_at = float(st_.get("reloaded", 0.0))
+        except (ValueError, TypeError):
+            pass
+
+    def restore() -> None:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        out.write("\033[?25h\033[?1049l")
+        out.flush()
+
+    def reload(reason: str) -> None:
+        """Re-execute the script from disk — a real restart that keeps the view where it was."""
+        flash = f"  {view.S.dot} ⟳ reloading ({reason})…" if not view.S.ascii else f"  * reloading ({reason})..."
+        out.write("\033[H" + DIM + flash + RESET + "\033[K")
+        out.flush()
+        time.sleep(0.25)  # long enough to be seen, short enough to feel instant
+        restore()
+        os.environ["BOARD_VIEW"] = json.dumps({"expanded": view.expanded, "focus": view.focus, "open": view.open,
+                                               "attention": view.attention_only, "offset": offset, "reloaded": time.time()})
+        os.execv(sys.executable, [sys.executable, str(script), "watch"])
+
     out.write("\033[?1049h\033[?25l")  # alt screen, hide cursor
     out.flush()
-    view = View(S=Style(not os.environ.get("NO_COLOR")))
     try:
         tty.setcbreak(fd)
-        offset, last_sig, rows, anchors, tick = 0, None, [], [], 0
+        last_sig, rows, anchors, tick = None, [], [], 0
+        updated_at = 0.0
         cols, lines = term_size()
         while True:
             if resized["flag"]:
                 cols, lines = term_size()
                 resized["flag"] = False
                 last_sig = None
+            try:  # the installed script changed (reinstall) → run the new code, not the old one in memory
+                if script.exists() and script.stat().st_mtime != script_mtime:
+                    reload("script updated")
+            except OSError:
+                pass
             sig = signature(ws)
             tick += 1
             if sig != last_sig or tick % 4 == 0:  # on change, plus every ~2s for the timers
+                if last_sig is not None and sig != last_sig:
+                    updated_at = time.time()
                 rows, anchors = build_rows(load(ws), cols, view)
                 last_sig = sig
             body = max(1, lines - 1)
@@ -1241,11 +1280,18 @@ def cmd_watch(ws: Path) -> None:
                 frame.append("\033[K\n")
             below = len(rows) - offset - body
             dot = view.S.dot
+            now = time.time()
+            status = ""
+            if now - reloaded_at < 4:
+                status = f"reloaded {dt.datetime.fromtimestamp(reloaded_at).strftime('%H:%M:%S')}"
+            elif now - updated_at < 3:
+                status = ("↻ " if not view.S.ascii else "* ") + f"updated {dt.datetime.fromtimestamp(updated_at).strftime('%H:%M:%S')}"
             hint = (f"q quit  {dot}  j/k focus  {dot}  enter card  {dot}  " +
                     ("e contract" if view.expanded else "e expand") + f"  {dot}  " +
-                    ("a all" if view.attention_only else "a attention") + f"  {dot}  r refresh" +
+                    ("a all" if view.attention_only else "a attention") + f"  {dot}  r reload" +
                     (f"  {dot}  +{below} below" if below > 0 else ""))
-            frame.append(DIM + " " * max(0, cols - dw(hint) - MARGIN) + hint + RESET + "\033[K")
+            left = (" " * MARGIN + (view.S.fg(OK) if status else "") + status + RESET) if status else ""
+            frame.append(left + DIM + " " * max(1, cols - dw(hint) - dw(status) - 2 * MARGIN) + hint + RESET + "\033[K")
             out.write("".join(frame))
             out.flush()
             r, _, _ = select.select([fd], [], [], 0.5)
@@ -1281,11 +1327,9 @@ def cmd_watch(ws: Path) -> None:
                 elif key == "a":
                     view.attention_only, last_sig = not view.attention_only, None
                 elif key == "r":
-                    last_sig = None
+                    reload("r")
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
-        out.write("\033[?25h\033[?1049l")
-        out.flush()
+        restore()
 
 
 # --- flight plan --------------------------------------------------------------------------

@@ -38,7 +38,8 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, 
   narrow panes drop model/engine from card meta; red reserved for failures (todo is neutral);
   truecolor / 256 / 16-colour profiles by capability, `NO_COLOR`, `BOARD_ASCII=1`; titles, notes
   and decisions sanitised (C0/C1/ESC/bidi) before they reach the terminal; watch polls top-level
-  files only, never the archive.
+  files only, never the archive. `r` is a real reload (re-exec from disk, view state carried);
+  a reinstalled script reloads itself; the footer shows `reloaded` / `↻ updated` stamps.
 - **Engine catalog corrected from live probes (2026-09-16).** Codex 0.154: `gpt-6-astra` (client
   ≥0.153), `ultra` effort ("automatic task delegation"), `exec` drops `-a` and gains `--worktree`,
   `resume` takes `-c sandbox_mode` not `--sandbox` and ignores a positional prompt with redirected

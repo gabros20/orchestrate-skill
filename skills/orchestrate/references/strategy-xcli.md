@@ -30,8 +30,9 @@ overhead and zero shared context — the prompt must carry EVERYTHING. xcli is a
 fan-out and model pinning as background processes (`shared-hosts.md`).
 
 **Per-engine invocation blocks** — flags, model slugs, effort enums, quirks, each with its
-verified date — live in `shared-engines.md`. Verify flags before trusting them: CLIs drift; run
-`<cli> --help` once per session before scripting against it.
+verified date — live one file per engine (`engine-<name>.md`, indexed with the cross-engine
+session / receipt / cap map in `shared-engines.md`). Verify flags before trusting them: CLIs
+drift; run `<cli> --help` once per session before scripting against it.
 
 **Task text carries the WORKER communication block** (`shared-token-economy.md`) with
 `.orchestrate/raw/` paths made absolute for the CLI's cwd — external workers narrate by default
@@ -60,17 +61,23 @@ and their stdout lands in YOUR context; the contract is the filter.
   message verbatim>"` — the card lands in blocked with the reason, `board check` flags any xcli
   `DONE` return that carries no commits, and the roster keeps the refusal beside the attempt.
 - **Launch hygiene is a rule set, not folklore** — probe flags per session, wrapper script with
-  explicit redirects, prompt from a file, resume by explicit id, quota stall = BLOCKED + resume
-  the same session after the reset (`shared-lane-hygiene.md`). Observed: three
-  consecutive failed launches (`-a` removed, `resume` rejecting `--sandbox`, positional prompt
-  ignored) cost 40 minutes and zero tokens — every one was a flags fact, journaled as a note.
+  explicit redirects, prompt from a file, session id journaled and resumed by id, quota stall =
+  BLOCKED + resume the same session after the reset, receipt journaled, lane capped at the
+  engine (`shared-lane-hygiene.md`). Observed: three consecutive failed launches (`-a` removed,
+  `resume` rejecting `--sandbox`, positional prompt ignored) cost 40 minutes and zero tokens —
+  every one was a flags fact, journaled as a note.
+- **Verification runs THROUGH the journal**: `board exec N --name tests -- npm test` runs the check,
+  captures its log under `raw/`, journals exit code + duration, and shows it on the card
+  (`tests ok 12s`); a check that ran elsewhere is journaled with `board result N --name --exit`.
+  `board done` is refused over a failed check exactly as over a failed gate.
 
 ## Staged-codex recipe (`strategy=staged engine=codex`)
 
 Per task, choose model AND effort by complexity (mechanical → cheap tier at high effort; judgment
-→ strong tier) · brief written to its own spec file · empty-diff check on every return, before the
-task reaches a review gate · reviews stay on the controller's engine, since cross-model review is
-the point.
+→ strong tier) · brief written to its own spec file · session id + log journaled at dispatch ·
+empty-diff check on every return, before the task reaches a review gate · usage receipt on every
+return · reviews stay on the controller's engine, since cross-model review is the point. The
+flight plan prints the lane's launch line pre-configured from the record (`board plan` → `lane`).
 
 ## Rules (all engines)
 
@@ -92,14 +99,12 @@ the point.
 ## Division-of-labor heuristic
 
 Claude = reasoning/architecture/review · Codex (GPT lineage) = heavy implementation + honest peer
-counter · Grok = fast second opinion / search-adjacent tasks (and with `grok-4.5` on the API, a
-frontier-class peer for coding and agentic work) · Kimi (Moonshot lineage, K3 — Artificial Analysis
-Intelligence Index 4/189 as of 2026-07-20, behind Fable 5/GPT-5.6 Sol, ahead of Opus 4.8) =
-frontier-class independent lineage, the fourth vote in cross-lineage panels, and the pick for
-1M-context long-horizon/large-context work · Cursor/agy/opencode/Hermes = alternate workers when
-quotas, sandboxing, or lineage diversity matter (agy = Gemini lineage, the third vote in a
-cross-lineage panel) · Pi = provider-agnostic carrier with NO lineage of its own — the lineage is
-whatever model it pins, so it adds no panel vote; reach for it when it carries a model or
-subscription quota no other lane offers, and contain it (no sandbox, no approvals —
-`shared-engines.md`). Cross-validation: send the same review to two engines, dedup findings, keep
-the union (conflicting severity → higher).
+counter · Grok = fast second opinion / search-adjacent tasks · Kimi (Moonshot lineage, K3 —
+Artificial Analysis Intelligence Index 4/189 as of 2026-07-20) = the fourth vote in cross-lineage
+panels and the pick for 1M-context work · Cursor/agy/opencode/Hermes = alternate workers when
+quotas, sandboxing, or lineage diversity matter (agy = Gemini lineage, the third vote) · Pi =
+provider-agnostic carrier with NO lineage of its own — it adds no panel vote; reach for it when it
+carries a model or subscription quota no other lane offers, and contain it (no sandbox, no
+approvals — `engine-pi.md`). Cross-validation: send the same review to two engines, dedup
+findings, keep the union (conflicting severity → higher). Vendor-native review layers (Codex
+Guardian, Claude's auto-mode classifier) are extra independent signals, never gate substitutes.

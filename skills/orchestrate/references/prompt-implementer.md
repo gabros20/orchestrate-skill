@@ -21,6 +21,9 @@ Produces:
 
 Agent tool, `model: <REQUIRED — set explicitly, see shared-model-routing.md>`,
 `effort: <pin if the surface supports it; else session effort — record in run.md>`.
+Give the worker a shell, not a bespoke typed-tool catalog: sandboxed bash-only interfaces beat
+curated tool sets on TheAgentCompany (+21–24 points, 19–72% fewer tokens; typed tools added on
+top gained nothing) — wrappers cost schema tokens on every turn.
 
 ```
 You are implementing Task N: [name]

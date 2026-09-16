@@ -89,7 +89,8 @@
       "references/strategy-xcli.md",
       "references/shared-hosts.md",
       "references/shared-monitoring.md",
-      "references/shared-token-economy.md"
+      "references/shared-token-economy.md",
+      "references/engine-codex.md"
     ],
     "forbidden_references": [
       "references/strategy-team.md",
@@ -128,6 +129,19 @@
       "references/strategy-xcli.md",
       "references/shared-lane-hygiene.md",
       "references/shared-engines.md"
+    ],
+    "forbidden_references": [
+      "references/strategy-team.md",
+      "references/prompt-planner-debate.md"
+    ]
+  },
+  {
+    "id": "checks-and-lanes",
+    "prompt": "Run the test suite for each task through the board so failures show on the card, and give the run a verify lane for the verifier subagent.",
+    "expected_references": [
+      "references/shared-monitoring.md",
+      "references/shared-contracts.md",
+      "references/shared-review-gates.md"
     ],
     "forbidden_references": [
       "references/strategy-team.md",

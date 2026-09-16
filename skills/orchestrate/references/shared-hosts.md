@@ -73,7 +73,7 @@ ambiguous, ask the user — a wrong host assumption mis-binds every dispatch aft
 
 1. **Native binding** from the matrix above.
 2. **xcli shell-out** — every host can run bash, so every host can drive any headless engine
-   (`shared-engines.md` has per-engine invocation blocks; rules in `strategy-xcli.md`). This
+   (`shared-engines.md` indexes the per-engine blocks; rules in `strategy-xcli.md`). This
    recovers PARALLEL (N background
    processes in worktrees), model pinning (pick the engine/model per process), and DISPATCH depth.
 3. **Solo with a warning** — do the work in-context, tell the user which strategy you couldn't
@@ -139,18 +139,17 @@ Grok subagents auto-worktree · Antigravity per-subagent worktree option.
 
 ## Per-host quirks that bite
 
-- **Codex**: `codex exec` hangs forever on open stdin — pipe the brief (`- < spec.md`) or
-  `</dev/null`. `exec` no longer takes `-a`; `resume` takes no `--sandbox` (use `-c
-  sandbox_mode=…`) and ignores a positional prompt when stdin is redirected; `--last` is hijacked
-  by any later run in the cwd — resume by id (`shared-engines.md`). No background shells — long
-  processes need `nohup … &` + polling the output file. Tool names differ from Claude's entirely
-  (shell/apply_patch/…): never tell a Codex worker to "use the Edit tool".
+- **Codex**: `codex exec` hangs forever on open stdin — pipe the brief; `exec` takes no `-a`,
+  `resume` takes no `--sandbox` and ignores a positional prompt; `--last` is hijacked by any later
+  run in the cwd — resume by id (`engine-codex.md`). No background shells — `nohup … &` + poll
+  the output file. Tool names differ from Claude's entirely (shell/apply_patch/…): never tell a
+  Codex worker to "use the Edit tool".
 - **Cursor**: headless ask-user is broken (above); custom slash commands don't work in the CLI —
   invoke the skill, not a command file.
-- **Antigravity**: `agy -p` is confirmed but its flag surface (output format, approvals, CI auth)
-  is under-documented — probe `agy --help` before scripting; no confirmed non-interactive auth.
-  IDE and CLI use different global skill dirs (`~/.gemini/config/skills` vs
-  `~/.gemini/antigravity-cli/skills`).
+- **Antigravity**: `agy -p` now has a documented headless surface (`--output-format`, `--effort`,
+  `--json-schema`, `--conversation`, `--print-timeout`) and CI auth via `GEMINI_API_KEY`
+  (`engine-agy.md`) — still probe `agy --help` before scripting. IDE and CLI use different global
+  skill dirs (`~/.gemini/config/skills` vs `~/.gemini/antigravity-cli/skills`).
 - **Gemini-lineage consent**: skill activation may show the user a confirmation prompt
   (Gemini CLI always; Antigravity may) — first activation isn't silent.
 - **opencode**: delegation blocks the session — treat it as staged-only in-session; skills are

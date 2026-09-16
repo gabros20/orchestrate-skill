@@ -80,6 +80,10 @@ end, never renumber.
    the model that already couldn't do it. **Asymmetric hysteresis** — the cheap→strong hop is
    cheap and reversible, so fire it on one bad checkpoint; restarts and human escalation need
    repeated agreement.
+   `board attention` raises `!` on a third implementer attempt with no `escalate` event, and
+   `board postmortem` tallies escalations, drift and first-attempt-clean rates per tier — the
+   evidence for ONE routing change, recommended after repeated stable-scope outcomes, never
+   applied automatically and never off one success.
 5. **Token budget ≈ quality** (it explains ~80% of multi-agent quality variance): scale effort by
    complexity — simple lookup = 1 agent / 3–10 tool calls; comparison = 2–4 agents; complex =
    more. State the budget in the brief; cap chat returns per `shared-contracts.md`.

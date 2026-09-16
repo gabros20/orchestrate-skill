@@ -25,7 +25,13 @@ Produces:
 - Verification with evidence (the /verify split)
 
 Two DISTINCT gate kinds; don't conflate them. Gates are enforced, not trusted: a gate that can't
-fail the work isn't a gate.
+fail the work isn't a gate. Machine checks (tests, lint, `scripts/check-sync`) are the cheapest
+gate of all: run them through the journal (`board exec N --name tests -- …`) so the exit code is
+on the record and on the card, and `board done` is refused over a failure. The record itself is a
+gate: `board check` fails a task marked done with no review gate ever opened (review on) or with
+quality opened before spec — an output-blind governance floor, judged on roles and order alone.
+Vendor-native review layers (Codex Guardian, Claude Code's auto-mode classifier) are additional
+independent signals; they never replace `board gate`.
 
 ## 1. Plan-veto (before any execution)
 

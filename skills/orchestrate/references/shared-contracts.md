@@ -145,16 +145,21 @@ exact cursor it was generated at. **Never edit the journal; re-resolve with `boa
 Vocabulary (all through `scripts/board`): `board init PLAN --strategy … --goal` (kickoff: archives
 the previous run's workspace to `archive/<run-id>/`, writes the `run` record with branch + base
 sha, queues every task, generates `run.md`'s Resolved block) · `board set key=value` (re-resolve a
-dimension; the plan goes back to pending) · `board plan approved|changed|skipped` · `board dispatch
-N --agent <real id> --model M [--role --engine --effort --worktree]` (`--model` is REQUIRED — rule
-3; every implementer dispatch is a new *attempt*, which resets the review cycle) · `board return N
---agent A --status DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED [--commits --report
---observed-model --tokens]` (the typed return; rule 13's observation; usage receipts) · `board
-review N --kind spec|quality --round K` (gate opened) · `board gate N --kind K --verdict ok|fail|warn
+dimension; the plan goes back to pending; `lanes=todo,implement,verify,review,integrate,done,blocked`
+declares the board's lanes — a projection of state × role, `todo/done/blocked` required) · `board
+plan approved|changed|skipped` · `board dispatch N --agent <real id> --model M [--role --engine
+--effort --worktree --session ID --log raw/lane-N.jsonl --cmd-file]` (`--model` is REQUIRED — rule
+3; every implementer dispatch is a new *attempt*, which resets the review cycle; the session id
+is what `board resume` resumes by) · `board return N --agent A --status
+DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED [--commits --report --observed-model
+--tokens --session]` (the typed return; rule 13's observation; usage receipts) · `board review N
+--kind spec|quality --round K` (gate opened) · `board gate N --kind K --verdict ok|fail|warn
 [--findings FILE]` (gate closed explicitly — outranks the findings-file parse, which takes the FIRST
-verdict mark in text order) · `board nudge` / `board escalate N --to MODEL --why` · `board decide ID
+verdict mark in text order) · `board exec N --name tests -- <cmd>` (a machine check run THROUGH the
+journal: log under `raw/`, exit + duration journaled; `board result N --name --exit` for one that
+ran elsewhere) · `board nudge` / `board escalate N --to MODEL --why` · `board decide ID
 "…"` (mirrors into `decisions.md`) · `board rail "…"` · `board done N [--msg]` (writes the ledger
-line itself — refused while the current attempt has a failed gate) · `board finish --gate pass|fail
+line itself — refused while the current attempt has a failed gate or a failed check) · `board finish --gate pass|fail
 --evidence PATH` (`pass` is refused while `check --finish` is dirty unless `--force --reason`; binds
 HEAD, the goal hash and the journal cursor, so later work, a moved HEAD or a changed goal render it
 STALE). Workers get one optional line — `board note N "<msg>"` — a heartbeat, never a status and
@@ -164,11 +169,15 @@ Views, all derived from the journal plus the files above (briefs → todo, repor
 review, ledger → done — final, always wins): the kanban the user watches from their own pane
 (`board`; `e` all cards, `enter` one card, `a` attention only), `board plan` (the flight plan),
 `board agents` (roster with attempts, drift, usage), `board log`, `board attention` (what to act on,
-most urgent first), `board task N`, `board check [--finish] [--json]` (chain integrity,
+most urgent first), `board task N`, `board check [--finish] [--replay] [--json]` (chain integrity,
 dispatched-never-returned, reviewer silence, ledger lines naming missing commits/artifacts, done
-over a failed gate, xcli DONE without commits, drift, budget overrun, unapproved launch, finish
-validity), and `board resume` (the handoff's state layer with a receipt: head, journal cursor,
-probed pointers, `NOT_PROVEN` on every claim no artifact backs). **The journal never outranks the
+over a failed gate or check, done with no gate opened, quality before spec, xcli DONE without
+commits or receipt, a third attempt without escalation, drift, budget overrun, unapproved launch,
+finish validity; `--replay` derives every card from the journal alone and diffs the disk view),
+`board postmortem` (per-tier evidence for the evolve pass, recommend-only), and
+`board resume` (the handoff's
+state layer with a receipt: head, journal cursor, probed pointers, resume-by-id line per open
+lane, cost per accepted task, `NOT_PROVEN` on every claim no artifact backs). **The journal never outranks the
 ledger**, and it obeys the invariants: a worker saying "done" is a proposal, so **only the
 controller records transitions**. The user opens and closes the pane; the skill only keeps the record.
 

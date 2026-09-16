@@ -59,13 +59,43 @@ JOURNAL = "journal.jsonl"
 LEGACY_JOURNAL = "board.jsonl"
 KEEP_ON_ARCHIVE = {"board", ".gitignore", "toolbox.md", "archive"}
 DIMS = ("strategy", "review", "engine", "host", "models", "effort", "isolation", "trigger",
-        "workers", "budget", "confirm", "alias", "goal")
+        "workers", "budget", "confirm", "alias", "goal", "lanes")
 TIER_DEFAULT = {"orchestrator": "opus-class", "worker": "sonnet-class", "reviewer": "sonnet-class",
                 "advisor": "strongest", "reasoner": "opus-class", "peer": "codex/grok"}
 STATUSES = ("DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED", "REFUSED")
 TASK_EVENTS = {"todo", "title", "dispatch", "return", "review", "gate", "nudge", "escalate", "done",
-               "blocked", "note"}
+               "blocked", "note", "check"}
 DONE_SHOW = 3  # done cards shown in contracted mode before "+N more"
+# Lanes are a PROJECTION of the canonical state × the open stint's role — declared with
+# `board init --lanes …` (a run dim) or defaulted to COLUMNS; the state model underneath never changes.
+LANE_OF_ROLE = (("implement", "implement"), ("worker", "implement"), ("executor", "implement"), ("fix", "implement"),
+                ("verif", "verify"), ("integrat", "integrate"), ("advis", "advise"), ("review", "review"),
+                ("judge", "review"))
+LANE_BASE = {"implement": "in_progress", "verify": "in_progress", "integrate": "in_progress", "advise": "in_progress"}
+# Per-engine resume-by-id lines (printed by `board resume` for every open stint that journaled a session).
+RESUME_CMD = {
+    "codex": "codex exec resume {id} -c 'sandbox_mode=\"workspace-write\"' --json -o out.md - < nudge.md",
+    "claude": "claude -p --resume {id} \"<nudge>\"",
+    "grok": "grok -r {id} --prompt-file nudge.md",
+    "opencode": "opencode run -s {id} \"<nudge>\"",
+    "hermes": "hermes -z \"<nudge>\" --resume {id}",
+    "kimi": "kimi -S {id} -p \"<nudge>\"",
+    "pi": "pi --session {id} -p \"<nudge>\"",
+    "cursor": "cursor-agent -p --resume {id} \"<nudge>\"",
+    "agy": "agy -p --conversation {id} \"<nudge>\"",
+}
+# Per-engine launch previews for the flight plan (pre-configured from the record; slugs stay the engine file's job).
+LAUNCH_CMD = {
+    "codex": "codex exec --cd <repo> -m {model} -c model_reasoning_effort={effort} --sandbox workspace-write --worktree --json -o out.md - < spec.md",
+    "claude": "claude -p --bare --model {model} --effort {effort} --max-budget-usd <cap> --output-format stream-json \"$(cat spec.md)\"",
+    "grok": "grok --cwd <repo> -m {model} --reasoning-effort {effort} -s $(uuidgen) --prompt-file spec.md --output-format json",
+    "opencode": "opencode run -f spec.md --model {model} --variant {effort} --format json",
+    "hermes": "hermes -z \"$(cat spec.md)\" --model {model} --usage-file usage.json --worktree --ignore-rules",
+    "kimi": "kimi -p \"$(cat spec.md)\" -m {model} --output-format stream-json </dev/null",
+    "pi": "pi -p -nc --no-session --model {model} --thinking {effort} --mode json @spec.md",
+    "cursor": "cursor-agent -p --model {model} --output-format stream-json --worktree <name> \"$(cat spec.md)\"",
+    "agy": "agy -p --cwd <repo> --model {model} --effort {effort} --output-format stream-json \"$(cat spec.md)\"",
+}
 
 
 # --- workspace -----------------------------------------------------------------------
@@ -255,6 +285,21 @@ class Task:
         self.report = ""
         self.findings: list[str] = []
         self.last_status = ""
+        self.check_entries: list[tuple[float, int, str, str, str, str, str]] = []  # (ts, attempt, name, status, exit, dur, log)
+        self.escalations = 0
+
+    @property
+    def checks(self) -> dict[str, dict[str, str]]:
+        """Named checks of the current attempt (latest result per name): status running|ok|fail, exit, dur, log."""
+        out: dict[str, tuple[float, dict[str, str]]] = {}
+        for ts, attempt, name, status, code, dur, log in self.check_entries:
+            if attempt >= self.attempt and (name not in out or ts >= out[name][0]):
+                out[name] = (ts, {"status": status, "exit": code, "dur": dur, "log": log, "ts": str(ts)})
+        return {k: v[1] for k, v in out.items()}
+
+    @property
+    def failed_checks(self) -> list[str]:
+        return [k for k, v in self.checks.items() if v["status"] == "fail"]
 
     @property
     def gates(self) -> dict[str, str]:
@@ -311,6 +356,9 @@ class Stint:
         self.nudges = 0
         self.escalated_to = ""
         self.heartbeat_ts = ts
+        self.session = str(ev.get("session", ""))    # the engine's session id — resume by THIS, never "last"
+        self.log = str(ev.get("log", ""))            # captured event stream / stdout, relative to .orchestrate/
+        self.cmd_file = str(ev.get("cmd_file", ""))  # the wrapper script that launched the lane
 
 
 class Run:
@@ -373,6 +421,38 @@ class State:
 
     def open_stints(self) -> list[Stint]:
         return [s for s in self.stints if not s.returned]
+
+    @property
+    def lanes(self) -> list[str]:
+        """Declared lanes (run dim `lanes`, comma-separated) or the canonical columns."""
+        raw = self.run.dims.get("lanes")
+        names = [x.strip().lower().replace(" ", "_") for x in (raw.split(",") if isinstance(raw, str) else list(raw or []))]
+        names = [x for x in names if x]
+        if not names or not {"todo", "done", "blocked"} <= set(names):
+            return list(COLUMNS)
+        return names
+
+    def lane_of(self, t: Task) -> str:
+        """Project a card onto the declared lanes: canonical state, refined by the open stint's role."""
+        lanes, s = self.lanes, t.state
+        if s in ("todo", "done", "blocked") or lanes == COLUMNS:
+            return s
+        open_ = [x for x in self.stints if x.task == t.id and not x.returned]
+        role = open_[-1].role.lower() if open_ else ""
+        want = ""
+        for key, lane in LANE_OF_ROLE:
+            if key in role:
+                want = lane
+                break
+        if not want and any(c["status"] == "running" for c in t.checks.values()):
+            want = "verify"
+        if want in lanes:
+            return want
+        if s in lanes:
+            return s
+        base = "review" if s == "review" else "in_progress"
+        alt = [l for l in lanes if LANE_BASE.get(l, l) == base]
+        return alt[0] if alt else lanes[1]
 
 
 def parse_ts(value: object) -> float:
@@ -482,12 +562,13 @@ def review_verdict(path: Path) -> str:
     return min(words)[1] if words else ".."
 
 
-def load(ws: Path) -> State:
+def load(ws: Path, journal_only: bool = False) -> State:
+    """Derive the run. `journal_only` replays the journal cold (no disk facts) — `board check --replay`."""
     st = State(ws)
     get = st.task
 
     # 1. disk facts (artifact deltas are the only liveness signal)
-    if ws.exists():
+    if ws.exists() and not journal_only:
         for p in ws.glob("task-*-brief.md"):
             m = re.match(r"task-(.+)-brief\.md$", p.name)
             if not m:
@@ -603,6 +684,7 @@ def load(ws: Path) -> State:
             s = st.open_stint(str(ev.get("agent", "")), str(tid))
             if s:
                 s.returned, s.status = ts, status
+                s.session = str(ev.get("session") or s.session)
                 s.observed = str(ev.get("observed_model", ""))
                 s.tokens = parse_tokens(ev.get("tokens"))
                 s.commits, s.report = str(ev.get("commits", "")), str(ev.get("report", ""))
@@ -636,7 +718,11 @@ def load(ws: Path) -> State:
             s = st.open_stint(str(ev.get("agent", "")), str(tid))
             if s:
                 s.escalated_to = str(ev.get("to", ""))
+            t.escalations += 1
             t.note = clean(f"escalate -> {ev.get('to', '?')}: {ev.get('why', '')}").strip(": ")
+        elif kind == "check":
+            t.check_entries.append((ts, t.attempt, clean(ev.get("name", "check")) or "check", str(ev.get("status", "")),
+                                    str(ev.get("exit", "")), str(ev.get("dur", "")), str(ev.get("log", ""))))
         elif kind == "done":
             t.candidates.append((ts, seq, "done", clean(ev.get("msg", ""))))
         elif kind == "blocked":
@@ -649,7 +735,7 @@ def load(ws: Path) -> State:
             s.heartbeat_ts = max(s.heartbeat_ts, ts)
 
     # 3. findings files on disk close review stints and carry verdicts (attempt = current at their mtime)
-    if ws.exists():
+    if ws.exists() and not journal_only:
         for p in sorted(ws.glob("review-task*-r*.md")):
             m = re.match(r"review-task(.+?)-(.+)-r(\d+)\.md$", p.name)
             if not m:
@@ -715,6 +801,8 @@ def resolved_block(st: State) -> str:
              f"goal: {d.get('goal') or '-'}", kv("strategy", "review", "engine", "host"),
              f"models: {models} · effort: {effort}", kv("isolation", "trigger", "workers", "confirm", "alias"),
              f"budget: {budget}"]
+    if d.get("lanes"):
+        lines.append(f"lanes: {d['lanes']}")
     if run.plan and run.plan != "pending":
         when = dt.datetime.fromtimestamp(run.plan_ts).isoformat(timespec="minutes") if run.plan_ts else ""
         lines.append(f"plan: {run.plan} {when}" + (f" ({run.plan_msg})" if run.plan_msg else ""))
@@ -757,9 +845,11 @@ def write_resolved(ws: Path) -> None:
 # --- rendering (raw ANSI, capability-aware palette, stdlib only) ---------------------------
 
 RGB = {"todo": (128, 138, 156), "in_progress": (62, 142, 247), "review": (245, 165, 36),
-       "done": (48, 164, 108), "blocked": (180, 85, 232)}
+       "done": (48, 164, 108), "blocked": (180, 85, 232),
+       "implement": (62, 142, 247), "verify": (32, 178, 170), "integrate": (120, 130, 250), "advise": (150, 150, 160)}
 OK, WARN, BAD = (48, 164, 108), (245, 165, 36), (229, 72, 77)
-ANSI16 = {"todo": "90", "in_progress": "34", "review": "33", "done": "32", "blocked": "35"}
+ANSI16 = {"todo": "90", "in_progress": "34", "review": "33", "done": "32", "blocked": "35",
+          "implement": "34", "verify": "36", "integrate": "34", "advise": "37"}
 MARGIN = 2  # left/right page margin
 # braille "dots" spinner (the cli-spinners default) with a plain |/-\ fallback for ascii/non-utf
 # terminals — both are well-worn picks from https://stackoverflow.com/questions/2685435
@@ -798,7 +888,8 @@ class Style:
         return ""
 
     def col(self, name: str) -> str:
-        return self.fg(RGB[name], name)
+        key = name if name in RGB else LANE_BASE.get(name, "in_progress")
+        return self.fg(RGB[key], key)
 
 
 def cw(ch: str) -> int:
@@ -857,6 +948,10 @@ def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
         s = t.state
         if s == "blocked":
             out.append(("x", t, t.note or t.detail or "blocked — needs owner + next action"))
+        elif s != "done" and t.failed_checks:
+            c = t.checks[t.failed_checks[0]]
+            out.append(("x", t, f"{', '.join(t.failed_checks)} check failed (exit {c['exit'] or '?'}) — fix, re-run"
+                        + (f" · {c['log']}" if c["log"] else "")))
         elif s == "in_progress" and is_stale(t, now):
             out.append(("!", t, f"no artifact delta for {fmt_dur(now - t.last_activity)} — disk check, then ONE nudge"))
         elif s == "review":
@@ -874,8 +969,23 @@ def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
                 out.append(("?", t, "report landed — dispatch the review"))
         elif s == "in_progress" and t.last_status == "DONE_WITH_CONCERNS":
             out.append(("?", t, "returned with concerns — read the report first"))
+        if s != "done" and t.attempt >= 3 and not t.escalations:
+            out.append(("!", t, f"attempt {t.attempt} with no escalation — capability before retry (routing rule 4)"))
     order = {"x": 0, "!": 1, "?": 2}
     return sorted(out, key=lambda x: (order[x[0]], natural_key(x[1].id)))
+
+
+def check_badges(t: Task, S: Style) -> Row:
+    """`tests ok 12s · lint fail` — the current attempt's named checks, GitHub-checks style, on the card."""
+    segs: Row = []
+    for name, c in t.checks.items():
+        segs.append((f" {S.dot} ", DIM))
+        mark = "ok" if c["status"] == "ok" else "fail" if c["status"] == "fail" else ".."
+        colour = S.fg(OK) if mark == "ok" else S.fg(BAD) if mark == "fail" else S.fg(WARN)
+        segs += [(f"{name} ", DIM), (mark, colour)]
+        if mark == "ok" and c["dur"]:
+            segs.append((f" {c['dur']}", DIM))
+    return segs
 
 
 def card_meta(t: Task, now: float, S: Style, narrow: bool) -> Row:
@@ -883,13 +993,14 @@ def card_meta(t: Task, now: float, S: Style, narrow: bool) -> Row:
     st = t.state
     who_parts = [t.agent] if narrow else [t.agent, t.model, t.engine if t.engine and t.engine != "claude" else ""]
     who = f" {S.dot} ".join(x for x in who_parts if x)
+    badges = check_badges(t, S) if st in ("todo", "in_progress", "review") else []
     if st == "in_progress":
         idle = now - t.last_activity
         stale = idle > STALE_AFTER
         tail = f" {S.dot} ".join(p for p in (who or "dispatched", fmt_dur(now - t.since) if t.since else "") if p)
         if stale:
-            return [("! ", S.fg(WARN) + BOLD), (tail, DIM), (f" {S.dot} stale {fmt_dur(idle)}", S.fg(WARN))]
-        return [("> ", S.fg(OK) + BOLD), (tail, DIM)]
+            return [("! ", S.fg(WARN) + BOLD), (tail, DIM), (f" {S.dot} stale {fmt_dur(idle)}", S.fg(WARN))] + badges
+        return [("> ", S.fg(OK) + BOLD), (tail, DIM)] + badges
     if st == "review":
         segs: Row = []
         for k, v in t.gates.items():
@@ -902,11 +1013,13 @@ def card_meta(t: Task, now: float, S: Style, narrow: bool) -> Row:
             segs = [(t.detail or "awaiting review", DIM)]
         if who and any(v.startswith("..") for v in t.gates.values()):
             segs.append((f" {S.dot} {who}", DIM))
-        return segs
+        return segs + badges
     if st == "done":
         return [(t.final_note or t.note or t.detail or "complete", DIM)]
     if st == "blocked":
         return [("x ", S.fg(BAD) + BOLD), ((t.note or t.detail or "blocked"), S.col("blocked"))]
+    if badges:
+        return [(t.detail or "", DIM)] + badges
     return [(t.detail or "", DIM)]
 
 
@@ -986,6 +1099,28 @@ def card_details(t: Task, st: State, now: float, S: Style) -> list[tuple[str, Ro
         if t.attempt > 1:
             segs.append((f" {d} attempt {t.attempt}", DIM))
         out.append(("gates", segs))
+    if t.checks:
+        segs = []
+        for name, c in t.checks.items():
+            if segs:
+                segs.append((f" {d} ", DIM))
+            colour = S.fg(OK) if c["status"] == "ok" else S.fg(BAD) if c["status"] == "fail" else S.fg(WARN)
+            segs += [(f"{name} ", DIM), (c["status"], colour)]
+            if c["exit"] != "":
+                segs.append((f" exit {c['exit']}", DIM))
+            if c["dur"]:
+                segs.append((f" {c['dur']}", DIM))
+            if c["log"]:
+                segs.append((f" {c['log']}", DIM))
+        out.append(("checks", segs))
+    lanes = [s for s in st.stints if s.task == t.id and (s.session or s.log)]
+    if lanes:
+        segs = []
+        for s in lanes:
+            if segs:
+                segs.append((f" {d} ", DIM))
+            segs += [(s.agent, DIM), (f" session {s.session}" if s.session else "", ""), (f" log {s.log}" if s.log else "", DIM)]
+        out.append(("lane", segs))
     files = ([t.report] if t.report else []) + t.findings
     if files:
         out.append(("evidence", [(f" {d} ".join(files), DIM)]))
@@ -1019,9 +1154,11 @@ def header_rows(st: State, W: int, now: float, S: Style) -> list[Row]:
             colour, label = (S.fg(WARN), "RUN COMPLETE (STALE)") if invalid else (S.fg(OK), "RUN COMPLETE")
         else:
             colour, label = S.fg(BAD), "RUN FAILED"
+        done_n = sum(1 for t in st.tasks.values() if t.state == "done")
+        per = f"  {d}  {fmt_tokens(run.tokens // done_n)}/accepted task" if run.tokens and done_n else ""
         rows.append([(m + label, colour + BOLD), (f"  {d}  final gate {run.finish}", colour),
                      (f"  {d}  {run.finish_evidence}" if run.finish_evidence else "", DIM),
-                     (f"  {d}  {invalid}" if invalid else "", S.fg(WARN))])
+                     (per, DIM), (f"  {d}  {invalid}" if invalid else "", S.fg(WARN))])
     lab = 11
 
     def line(label: str, segs: Row) -> None:
@@ -1070,6 +1207,15 @@ def header_rows(st: State, W: int, now: float, S: Style) -> list[Row]:
         if b.get("tokens") or run.tokens:
             used("tokens", fmt_tokens(run.tokens) if run.tokens else "0", b.get("tokens"))
         line("budget", parts)
+    chk = [c for t in st.tasks.values() for c in t.checks.values()]
+    if chk:
+        cnt = {k: sum(1 for c in chk if c["status"] == k) for k in ("ok", "fail", "running")}
+        segs = [(f"{cnt['ok']}/{len(chk)} ok", S.fg(OK) if not cnt["fail"] else "")]
+        if cnt["fail"]:
+            segs += [(f"  {d}  ", DIM), (f"{cnt['fail']} failed", S.fg(BAD))]
+        if cnt["running"]:
+            segs += [(f"  {d}  ", DIM), (f"{cnt['running']} running", S.fg(WARN))]
+        line("checks", segs)
     if run.plan or dims.get("alias") or dims.get("confirm"):
         segs = []
         if run.plan:
@@ -1103,6 +1249,10 @@ def header_rows(st: State, W: int, now: float, S: Style) -> list[Row]:
     return rows
 
 
+def lane_label(lane: str) -> str:
+    return LABELS.get(lane) or lane.upper().replace("_", " ")
+
+
 class View:
     """Rendering options shared by show/watch."""
 
@@ -1125,8 +1275,8 @@ def build_rows(st: State, width: int, view: View) -> tuple[list[Row], list[tuple
     ordered = st.ordered()
     idw = max([len(t.id) for t in ordered] + [1])
     att_ids = {t.id for _, t, _ in attention(st, now)}
-    for col in COLUMNS:
-        cards = [t for t in ordered if t.state == col]
+    for col in st.lanes:
+        cards = [t for t in ordered if st.lane_of(t) == col]
         if view.attention_only:
             cards = [t for t in cards if t.id in att_ids]
         c = S.col(col)
@@ -1135,13 +1285,13 @@ def build_rows(st: State, width: int, view: View) -> tuple[list[Row], list[tuple
         if not cards:
             if col == "blocked" or view.attention_only:
                 continue
-            rows.append([(m + f"{LABELS[col]}  0", c + DIM)])
+            rows.append([(m + f"{lane_label(col)}  0", c + DIM)])
             rows.append([])
             continue
         hidden = 0
         if col == "done" and not view.expanded and len(cards) > DONE_SHOW:
             cards, hidden = cards[-DONE_SHOW:], len(cards) - DONE_SHOW
-        title = f" {LABELS[col]} "
+        title = f" {lane_label(col)} "
         count = f" {len(cards) + hidden} "
         fill = W - 2 - dw(title) - 1 - dw(count) - 1
         rows.append([(m + S.tl + S.h, c), (title, c + BOLD), (S.h * max(1, fill), c), (count, c + BOLD), (S.h + S.tr, c)])
@@ -1378,6 +1528,11 @@ def render_plan(st: State, why: str = "") -> str:
     n = len(tasks)
     gates = gate_names(str(d.get("review") or "dual"))
     agents = 0
+    counts: dict[str, int] = {}  # tier -> nodes in the tree (drives the cost band)
+
+    def count(tier_: str, k: int = 1) -> None:
+        counts[tier_] = counts.get(tier_, 0) + k
+
     lines: list[str] = []
     lines.append(f"strategy={strategy}" + (f" — {why}" if why else ""))
     lines.append(f"goal: {d.get('goal') or '(not recorded)'}")
@@ -1392,17 +1547,21 @@ def render_plan(st: State, why: str = "") -> str:
             last = i == len(gates) - 1
             lines.append(f"{prefix}{'└─' if last else '├─'} {g} reviewer · {tier('reviewer')}{at('reviewer')}")
             agents += 1
+            count("reviewer")
 
     if strategy in ("staged", "xcli", "advisor"):
         if strategy == "advisor":
             lines.append(f"├─ advisor lane · {tier('advisor')} · consults only, out of the hot path")
             agents += 1
+            count("advisor")
         unit = "worker" if strategy == "xcli" else "implementer"
         lines.append(f"├─ ×{n} tasks ({strategy}), the repeating unit:")
         lines.append(f"│  ├─ {unit} · task N · {worker_line} · {iso}")
         agents += n
+        count("worker", n)
         gate_lines("│  │  ")
         agents += len(gates) * max(0, n - 1)  # gates repeat per task
+        count("reviewer", len(gates) * max(0, n - 1))
         if gates:
             lines.append("│  └─ fix wave (same contract) → re-review, cap 2–3 rounds per gate")
     elif strategy == "parallel":
@@ -1410,13 +1569,16 @@ def render_plan(st: State, why: str = "") -> str:
         for t in tasks[:cap]:
             lines.append(f"├─ worker · card {t.id} {t.title} · {worker_line} · worktree wt-{t.id}")
             agents += 1
+        count("worker", n)
         if n > cap:
             lines.append(f"├─ … {n - cap} more cards queued behind workers={cap}")
         for g in gates:
             lines.append(f"│  └─ {g} reviewer per card · {tier('reviewer')}{at('reviewer')}")
         agents += len(gates) * n
+        count("reviewer", len(gates) * n)
         lines.append(f"├─ integrator · {tier('orchestrator')} · merge gates decide readiness")
         agents += 1
+        count("worker")
     elif strategy == "loop":
         cycles = run.budget.get("cycles") or "?"
         lines.append(f"├─ ×≤{cycles} cycles · trigger {d.get('trigger') or 'goal'}:")
@@ -1424,6 +1586,8 @@ def render_plan(st: State, why: str = "") -> str:
         lines.append(f"│  ├─ verifier · {tier('reviewer')}{at('reviewer')} · fresh per round")
         lines.append(f"│  └─ evolve pass every N cycles · {tier('orchestrator')}")
         agents += 3
+        count("worker", int(cycles) if str(cycles).isdigit() else 1)
+        count("reviewer", int(cycles) if str(cycles).isdigit() else 1)
     elif strategy == "hierarchical":
         for t in tasks:
             lines.append(f"├─ sub-orchestrator · {t.title or t.id} · {tier('orchestrator')}{at('orchestrator')}")
@@ -1456,18 +1620,66 @@ def render_plan(st: State, why: str = "") -> str:
         lines.append(f"├─ {role} · {models[role]}{at(role)} · nested/delegated — counted by the lane, not this tree")
     lines.append(f"└─ final-deliverable gate · {models.get('reasoner') or models.get('orchestrator') or 'strongest'} · fresh context, judges the goal verbatim")
     agents += 1
+    count("reviewer")
     lines.append("")
     gate_txt = " → ".join(gates) if gates else "off"
     lines.append(f"gates   {gate_txt} per unit · final gate once · fan-in: {n} dispatches → {n} returns expected")
     rails = [f"branch {st.meta.get('branch', '?')}", f"isolation {iso}", f"confirm {d.get('confirm') or 'on'}"] + run.rails
     lines.append("rails   " + " · ".join(rails))
+    if engine not in ("claude", "mixed") and engine in LAUNCH_CMD:
+        eff = eff_map.get("worker") or eff_default or "high"
+        lines.append("lane    " + LAUNCH_CMD[engine].format(model=tier("worker"), effort=eff) + "  (spec file per lane · empty-diff check · session id journaled)")
     b = run.budget
     tok = b.get("tokens")
+    est = cost_band(st.ws, counts)
     lines.append(f"budget  ~{agents} agents (from the tree; nested lanes add their own)" + (f" · cap {b['agents']}" if b.get("agents") else "") +
-                 (f" · tokens {tok}" if tok else " · tokens: state a range, never a precision you don't have"))
+                 (f" · tokens cap {tok}" if tok else "") +
+                 (f" · tokens est {est}" if est else " · tokens: no receipts yet — state a range, never a precision you don't have"))
+    if st.lanes != COLUMNS:
+        lines.append("lanes   " + " → ".join(st.lanes))
     lines.append("board   open a pane and run  board  (or .orchestrate/board)")
-    lines.append("tweak   [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget  —  `board set key=value` re-resolves")
+    lines.append("tweak   [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget [8] lanes  —  `board set key=value` re-resolves")
     return "\n".join(lines)
+
+
+def receipts(ws: Path) -> tuple[dict[str, list[int]], int]:
+    """Token receipts per tier from ARCHIVED runs (past evidence only): {tier: [tokens…]}, run count."""
+    out: dict[str, list[int]] = {}
+    runs = 0
+    for jp in sorted(ws.glob("archive/*/journal.jsonl")):
+        try:
+            past = load(jp.parent, journal_only=True)
+        except Exception:  # a damaged archive must not break the flight plan
+            continue
+        got = False
+        for s in past.stints:
+            if s.tokens:
+                out.setdefault(role_tier(s.role), []).append(s.tokens)
+                got = True
+        runs += got
+    return out, runs
+
+
+def quantile(xs: list[int], q: float) -> int:
+    if not xs:
+        return 0
+    xs = sorted(xs)
+    return xs[min(len(xs) - 1, int(round(q * (len(xs) - 1))))]
+
+
+def cost_band(ws: Path, counts: dict[str, int]) -> str:
+    """p50–p90 token band for the planned tree, from past receipts — the pre-flight number, honestly sourced."""
+    rc, runs = receipts(ws)
+    if not rc:
+        return ""
+    pooled = [x for xs in rc.values() for x in xs]
+    low = high = 0
+    for tier_, k in counts.items():
+        xs = rc.get(tier_) or pooled
+        low += k * quantile(xs, 0.5)
+        high += k * quantile(xs, 0.9)
+    thin = " — thin evidence, treat as a floor" if len(pooled) < 3 else ""
+    return f"{fmt_tokens(low)}–{fmt_tokens(high)} (p50–p90 of {len(pooled)} receipt{'s' if len(pooled) != 1 else ''}, {runs} past run{'s' if runs != 1 else ''}{thin})"
 
 
 # --- roster · timeline · check · resume ------------------------------------------------------
@@ -1494,8 +1706,8 @@ def render_agents(st: State) -> str:
         extra = " · ".join(x for x in (f"nudged x{s.nudges}" if s.nudges else "", f"escalated -> {s.escalated_to}" if s.escalated_to else "",
                                        s.worktree) if x)
         rows.append([s.agent, s.role, s.task, str(s.attempt), model, s.engine or "-", s.effort or "-", f"{hhmm(s.started)} → {end}", dur, status,
-                     fmt_tokens(s.tokens) if s.tokens else "-", extra])
-    return table(["agent", "role", "task", "att", "model", "engine", "effort", "window", "dur", "status", "tokens", ""], rows)
+                     fmt_tokens(s.tokens) if s.tokens else "-", s.session or "-", extra])
+    return table(["agent", "role", "task", "att", "model", "engine", "effort", "window", "dur", "status", "tokens", "session", ""], rows)
 
 
 def render_log(events: list[dict]) -> str:
@@ -1541,6 +1753,7 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
     findings: list[str] = list(st.problems)
     now = time.time()
     ws = st.ws
+    review_mode = str(st.run.dims.get("review") or "dual")
     for t in st.ordered():
         s = t.state
         if is_stale(t, now):
@@ -1561,6 +1774,14 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
             failed = [k for k, v in t.gates.items() if v.startswith("fail")]
             if failed:
                 findings.append(f"task {t.id}: done, but the current attempt's {', '.join(failed)} gate is a fail — ledger outran the gate")
+            if t.failed_checks:
+                findings.append(f"task {t.id}: done, but check(s) {', '.join(t.failed_checks)} failed on the current attempt — ledger outran the check")
+            if st.run.dims and review_mode != "off" and t.dispatched and not t.gate_entries:
+                findings.append(f"task {t.id}: done with no review gate ever opened (review={review_mode}) — the receipt has no reviewer")
+        if "quality" in t.gates and "spec" in t.gates and not t.gates["spec"].startswith("ok"):
+            findings.append(f"task {t.id}: quality gate opened while spec is {t.gates['spec']} — gates are ordered, spec first")
+        if s != "done" and t.attempt >= 3 and not t.escalations:
+            findings.append(f"task {t.id}: attempt {t.attempt} with no escalation — capability before retry (routing rule 4)")
         if s == "blocked" and not (t.note or t.detail):
             findings.append(f"task {t.id}: blocked without owner + next action — that is abandoned, not blocked")
     for s in st.open_stints():
@@ -1570,6 +1791,8 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
     for s in [x for x in st.stints if x.returned]:
         if s.status == "DONE" and s.engine and s.engine != "claude" and not s.commits and role_tier(s.role) == "worker":
             findings.append(f"task {s.task}: xcli {s.engine} return DONE with no commits — run the empty-diff check (REFUSED?)")
+        if s.status in ("DONE", "DONE_WITH_CONCERNS") and s.engine and s.engine != "claude" and not s.tokens:
+            findings.append(f"task {s.task}: xcli {s.engine} return with no usage receipt (--tokens) — budgets need receipts")
     done_ids = [t.id for t in st.ordered() if t.state == "done"]
     if done_ids:
         last_done = max(natural_key(i) for i in done_ids)
@@ -1605,6 +1828,65 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
     return findings
 
 
+def replay(st: State) -> list[str]:
+    """Cold replay: derive every card from the journal ALONE and diff it against the disk-backed view.
+    A mismatch whose pointers are gone is `inconclusive`, never a false failure."""
+    cold = load(st.ws, journal_only=True)
+    out: list[str] = []
+    for t in st.ordered():
+        c = cold.tasks.get(t.id)
+        cs = c.state if c else "absent"
+        if cs == t.state:
+            continue
+        ptrs = ([t.report] if t.report else []) + t.findings
+        missing = [p for p in ptrs if not (st.ws / p).exists()]
+        if missing:
+            out.append(f"replay: task {t.id} — journal alone derives {cs}, disk view says {t.state}: inconclusive ({', '.join(missing)} missing)")
+        else:
+            out.append(f"replay: task {t.id} — journal alone derives {cs}, disk view says {t.state} — a fact reached the disk without its journal line")
+    for tid, c in cold.tasks.items():
+        if tid not in st.tasks:
+            out.append(f"replay: task {tid} exists in the journal only ({c.state})")
+    return out
+
+
+def render_postmortem(st: State) -> str:
+    """Per-tier evidence for the evolve pass: routing suggestions are recommended, never applied (one change, repeated evidence)."""
+    if not st.stints:
+        return "board: no agents dispatched yet — nothing to learn"
+    tiers: dict[str, list[Stint]] = {}
+    for s in st.stints:
+        tiers.setdefault(role_tier(s.role), []).append(s)
+    L = [f"# POSTMORTEM · run {st.run.id or '?'} · {sum(1 for t in st.tasks.values() if t.state == 'done')}/{len(st.tasks)} accepted"]
+    rows = []
+    for tier_, ss in tiers.items():
+        tasks = sorted({s.task for s in ss}, key=natural_key)
+        tok = sum(s.tokens for s in ss)
+        drift = sum(1 for s in ss if s.observed and s.observed != s.model)
+        rows.append([tier_, str(len(ss)), str(len(tasks)), ", ".join(sorted({s.model for s in ss if s.model})) or "-",
+                     str(drift), str(sum(s.nudges for s in ss)), str(sum(1 for s in ss if s.escalated_to)),
+                     fmt_tokens(tok) if tok else "-", fmt_tokens(tok // len(ss)) if tok else "-"])
+    L.append(table(["tier", "dispatches", "tasks", "models", "drift", "nudges", "escalations", "tokens", "per dispatch"], rows))
+    done = [t for t in st.tasks.values() if t.state == "done"]
+    first = [t for t in done if t.attempt <= 1]
+    chk = [c for t in st.tasks.values() for c in t.check_entries if c[3] in ("ok", "fail")]
+    L.append(f"first-attempt clean: {len(first)}/{len(done)} accepted tasks · gate rounds: " +
+             (", ".join(f"task {t.id} ×{len(t.gate_entries)}" for t in done) or "-") +
+             (f" · checks {sum(1 for c in chk if c[3] == 'ok')}/{len(chk)} ok" if chk else ""))
+    if st.run.tokens and done:
+        L.append(f"cost per accepted task: {fmt_tokens(st.run.tokens // len(done))} ({fmt_tokens(st.run.tokens)} / {len(done)})")
+    L.append("## Routing (recommend only — never applied here; one change, and only on repeated evidence)")
+    workers = tiers.get("worker", [])
+    esc = sum(1 for s in workers if s.escalated_to)
+    if esc >= 2:
+        L.append(f"- worker tier escalated {esc}× — consider one tier UP for judgment-heavy tasks (evidence: {esc} escalations)")
+    elif len(done) >= 3 and len(first) == len(done) and not any(s.observed and s.observed != s.model for s in workers):
+        L.append(f"- worker tier: {len(first)}/{len(done)} first-attempt clean, no drift — consider one tier DOWN on mechanical tasks only")
+    else:
+        L.append("- no routing change: evidence insufficient (needs repeated, stable-scope outcomes — never off one success)")
+    return "\n".join(L)
+
+
 def render_resume(st: State, probe: bool = True) -> str:
     now = time.time()
     run, d = st.run, st.run.dims
@@ -1637,6 +1919,8 @@ def render_resume(st: State, probe: bool = True) -> str:
                     extra += f" · STALE {fmt_dur(now - t.last_activity)} (NOT_PROVEN alive)"
             elif col == "review":
                 extra = " — " + (" · ".join(f"{k} {v if not v.startswith('..') else 'NOT_PROVEN'}" for k, v in t.gates.items()) or "awaiting review")
+            if col in ("in_progress", "review") and t.checks:
+                extra += " · checks: " + ", ".join(f"{k} {v['status']}" for k, v in t.checks.items())
             elif col == "blocked":
                 extra = f" — {t.note or t.detail}"
             elif col == "done":
@@ -1646,7 +1930,12 @@ def render_resume(st: State, probe: bool = True) -> str:
         L.append("## Open stints (locators — verify, never assume alive)")
         for s in st.open_stints():
             L.append(f"- {s.agent} · {s.role} · task {s.task} · {s.model or '?'}" + (f" · {s.engine}" if s.engine else "") +
-                     (f" · worktree {s.worktree}" if s.worktree else "") + f" · since {hhmm(s.started)} · heartbeat {hhmm(s.heartbeat_ts)}")
+                     (f" · worktree {s.worktree}" if s.worktree else "") + (f" · session {s.session}" if s.session else "") +
+                     (f" · log {s.log}" if s.log else "") + f" · since {hhmm(s.started)} · heartbeat {hhmm(s.heartbeat_ts)}")
+            if s.session and (s.engine or "claude") in RESUME_CMD:
+                L.append(f"  resume: {RESUME_CMD[s.engine or 'claude'].format(id=s.session)}")
+            elif s.engine and s.engine != "claude":
+                L.append(f"  resume: NOT_PROVEN — no session id journaled; find it in the engine's store, never resume \"last\"")
     if run.decisions:
         L.append("## Key decisions")
         for dec in run.decisions[-8:]:
@@ -1678,6 +1967,10 @@ def render_resume(st: State, probe: bool = True) -> str:
         L.append("## Cleanup")
         L.append("- worktrees to account for: " + ", ".join(wts))
     L.append("## Receipt")
+    done_n = sum(1 for t in st.tasks.values() if t.state == "done")
+    if run.tokens:
+        L.append(f"- tokens {fmt_tokens(run.tokens)} · accepted tasks {done_n}" +
+                 (f" · per accepted task {fmt_tokens(run.tokens // done_n)}" if done_n else ""))
     receipt = f"head {head[:12] or '?'} · journal seq {run.last_seq} hash {run.last_hash[:12] or '-'} · generated {now_utc()}"
     L.append(f"- {receipt}")
     L.append(f"- receipt-hash {sha(receipt)[:16]}  (a resume whose head or journal cursor differs is stale — regenerate)")
@@ -1710,8 +2003,10 @@ def to_json(st: State) -> dict:
     return {
         "run": {"id": st.run.id, "dims": st.run.dims, "plan": st.run.plan, "finish": st.run.finish, "branch": st.run.branch,
                 "base": st.run.base, "tokens": st.run.tokens, "agents": len(st.stints), "last_seq": st.run.last_seq},
-        "tasks": [{"id": t.id, "title": t.title, "state": t.state, "agent": t.agent, "model": t.model, "gates": t.gates,
-                   "attempt": t.attempt, "stale": is_stale(t, now), "report": t.report, "findings": t.findings, "note": t.note}
+        "lanes": st.lanes,
+        "tasks": [{"id": t.id, "title": t.title, "state": t.state, "lane": st.lane_of(t), "agent": t.agent, "model": t.model,
+                   "gates": t.gates, "checks": t.checks, "attempt": t.attempt, "stale": is_stale(t, now), "report": t.report,
+                   "findings": t.findings, "note": t.note}
                   for t in st.ordered()],
         "stints": [vars(s) for s in st.stints],
         "attention": [{"mark": mk, "task": t.id, "why": why} for mk, t, why in attention(st, now)],
@@ -1803,6 +2098,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("path")
     p = sub.add_parser("agents"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("check"); p.add_argument("--finish", action="store_true", help="the pre-finish gate: strict"); p.add_argument("--json", action="store_true")
+    p.add_argument("--replay", action="store_true", help="cold replay: derive from the journal alone and diff against the disk view")
+    sub.add_parser("postmortem")
+    p = sub.add_parser("exec", help="run a check THROUGH the journal: board exec N --name tests -- npm test")
+    p.add_argument("task"); p.add_argument("--name", required=True); p.add_argument("command", nargs="*")
+    p = sub.add_parser("result", help="journal a check that ran elsewhere")
+    p.add_argument("task"); p.add_argument("--name", required=True); p.add_argument("--exit", type=int, required=True)
+    p.add_argument("--dur"); p.add_argument("--log"); p.add_argument("--msg")
     p = sub.add_parser("resume"); p.add_argument("--no-probe", action="store_true")
     p = sub.add_parser("task"); p.add_argument("task")
     sub.add_parser("attention")
@@ -1826,10 +2128,13 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--engine")
         if name == "dispatch":
             p.add_argument("--role"); p.add_argument("--effort"); p.add_argument("--worktree")
+            p.add_argument("--session", help="the engine's session id (pre-pinned where the engine allows)")
+            p.add_argument("--log", help="captured event stream, relative to .orchestrate/"); p.add_argument("--cmd-file", help="the wrapper script")
             p.add_argument("--reset-gates", action="store_true", help="(implicit: every implementer dispatch is a new attempt)")
         if name == "return":
             p.add_argument("--status", choices=STATUSES, required=True)
             p.add_argument("--commits"); p.add_argument("--report"); p.add_argument("--observed-model"); p.add_argument("--tokens")
+            p.add_argument("--session", help="the engine's session id, if only known after the launch")
         if name in ("review", "gate"):
             p.add_argument("--kind", required=True); p.add_argument("--round", type=int)
         if name == "gate":
@@ -1844,7 +2149,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str]) -> int:
+    tail: list[str] = []
+    if argv and argv[0] == "exec" and "--" in argv:  # everything after -- is the command, verbatim
+        tail, argv = argv[argv.index("--") + 1:], argv[:argv.index("--")]
     args = build_parser().parse_args(argv)
+    if tail:
+        args.command = tail
     if args.selftest:
         return selftest()
     ws = workspace()
@@ -1882,7 +2192,8 @@ def main(argv: list[str]) -> int:
         evs = evs[-args.n:]
         print("\n".join(json.dumps(e, ensure_ascii=False) for e in evs) if args.json else render_log(evs))
     elif cmd == "check":
-        findings = check(load(ws), args.finish)
+        st = load(ws)
+        findings = check(st, args.finish) + (replay(st) if args.replay else [])
         if args.json:
             print(json.dumps({"ok": not findings, "findings": findings}, indent=1))
         else:
@@ -1892,6 +2203,31 @@ def main(argv: list[str]) -> int:
         return 1 if findings else 0
     elif cmd == "resume":
         print(render_resume(load(ws), probe=not args.no_probe))
+    elif cmd == "postmortem":
+        print(render_postmortem(load(ws)))
+    elif cmd == "exec":
+        argv_cmd = [a for a in args.command if a != "--"] if args.command else []
+        if not argv_cmd:
+            sys.exit("board: exec needs a command after --  (board exec N --name tests -- npm test)")
+        name = re.sub(r"[^\w.-]+", "-", args.name).strip("-") or "check"
+        (ws / "raw").mkdir(parents=True, exist_ok=True)
+        rel = f"raw/check-task{args.task}-{name}.log"
+        append_event(ws, task=args.task, ev="check", name=name, status="running", cmd=" ".join(argv_cmd), log=rel)
+        t0 = time.time()
+        with (ws / rel).open("w", encoding="utf-8") as fh:
+            try:
+                rc = subprocess.run(argv_cmd, stdout=fh, stderr=subprocess.STDOUT).returncode
+            except OSError as exc:
+                fh.write(f"board: could not launch {argv_cmd[0]}: {exc}\n")
+                rc = 127
+        dur = fmt_dur(time.time() - t0)
+        append_event(ws, task=args.task, ev="check", name=name, status="ok" if rc == 0 else "fail", exit=rc, dur=dur, log=rel)
+        print(f"board: check {name} {'ok' if rc == 0 else 'FAIL'} (exit {rc}, {dur}) -> .orchestrate/{rel}")
+        return rc
+    elif cmd == "result":
+        append_event(ws, task=args.task, ev="check", name=re.sub(r"[^\w.-]+", "-", args.name).strip("-") or "check",
+                     status="ok" if args.exit == 0 else "fail", exit=args.exit, dur=args.dur, log=args.log, msg=args.msg)
+        print(f"board: check {args.name} {'ok' if args.exit == 0 else 'FAIL'} (exit {args.exit}) journaled")
     elif cmd == "init":
         cmd_init(ws, args)
     elif cmd == "set":
@@ -1919,12 +2255,13 @@ def main(argv: list[str]) -> int:
         if not args.model:
             sys.exit("board: dispatch needs --model — pin a model on every dispatch (SKILL.md rule 3)")
         append_event(ws, task=args.task, ev="dispatch", agent=args.agent, role=args.role, model=args.model,
-                     engine=args.engine, effort=args.effort, worktree=args.worktree, msg=args.msg)
+                     engine=args.engine, effort=args.effort, worktree=args.worktree, session=args.session, log=args.log,
+                     cmd_file=args.cmd_file, msg=args.msg)
     elif cmd == "return":
         if not args.agent:
             sys.exit("board: return needs --agent")
         append_event(ws, task=args.task, ev="return", agent=args.agent, status=args.status, commits=args.commits,
-                     report=args.report, observed_model=args.observed_model, tokens=args.tokens, msg=args.msg)
+                     report=args.report, observed_model=args.observed_model, tokens=args.tokens, session=args.session, msg=args.msg)
         if args.observed_model:
             write_resolved(ws)
     elif cmd == "review":
@@ -1943,6 +2280,8 @@ def main(argv: list[str]) -> int:
         failed = [k for k, v in (t.gates if t else {}).items() if v.startswith("fail")]
         if failed:
             sys.exit(f"board: task {args.task} has a failed gate ({', '.join(failed)}) — fix wave + re-review first")
+        if t and t.failed_checks:
+            sys.exit(f"board: task {args.task} has a failed check ({', '.join(t.failed_checks)}) — fix, re-run it first")
         line = f"Task {args.task}: complete" + (f" ({clean(args.msg)})" if args.msg else "")
         ws.mkdir(parents=True, exist_ok=True)
         with (ws / "progress.md").open("a", encoding="utf-8") as fh:
@@ -2115,8 +2454,51 @@ def selftest() -> int:
         findings = check(load(ws))
         assert any("drift" in f for f in findings) and not any("journal line" in f for f in findings), findings
         res = run("resume")
-        for needle in ("## Goal", "task 2 Auth", "D-01", "Open work", "## Receipt", "receipt-hash", "Cleanup", "wt-1"):
+        for needle in ("## Goal", "task 2 Auth", "D-01", "Open work", "## Receipt", "receipt-hash", "Cleanup", "wt-1", "per accepted task"):
             assert needle in res, needle
+
+        # --- checks: exec runs THROUGH the journal, badges render, done is refused over a failure ----
+        out = run("exec", "3", "--name", "tests", "--", sys.executable, "-c", "print('ok')")
+        assert "tests ok" in out and (ws / "raw" / "check-task3-tests.log").read_text().strip() == "ok", out
+        run("exec", "3", "--name", "lint", "--", sys.executable, "-c", "import sys; sys.exit(2)", expect_fail=True)
+        st = load(ws)
+        assert st.tasks["3"].checks["tests"]["status"] == "ok" and st.tasks["3"].checks["lint"]["exit"] == "2"
+        show = run("show", "--no-color")
+        assert "lint fail" in show and "checks" in show and "1 failed" in show, show
+        assert "x task 3" in run("attention")
+        run("done", "3", expect_fail=True)  # a failed check blocks the ledger like a failed gate
+        run("result", "3", "--name", "lint", "--exit", "0", "--dur", "3s")
+        st = load(ws)
+        assert st.tasks["3"].checks["lint"]["status"] == "ok" and not st.tasks["3"].failed_checks
+        assert not any("outran the check" in f for f in check(st))
+
+        # --- lanes are a projection of state × role; sessions travel with the stint ---------------
+        run("set", "lanes=todo,implement,verify,review,integrate,done,blocked")
+        run("plan", "approved")
+        run("dispatch", "3", "--agent", "task3-verify", "--model", "haiku", "--role", "verifier", "--engine", "codex",
+            "--session", "sess-3", "--log", "raw/lane-3.jsonl")
+        st = load(ws)
+        assert st.lanes[1] == "implement" and st.lane_of(st.tasks["3"]) == "verify" and st.lane_of(st.tasks["1"]) == "done"
+        show = run("show", "--no-color")
+        assert "VERIFY" in show and "3  Docs" in show.split("VERIFY", 1)[1].split("REVIEW", 1)[0], show
+        res = run("resume")
+        assert "session sess-3" in res and "codex exec resume sess-3" in res, res
+        assert "sess-3" in run("agents") and "lanes   todo → implement" in run("plan")
+        assert "lane" in run("task", "3") and json.loads(run("show", "--json"))["tasks"][2]["lane"] == "verify"
+        run("return", "3", "--agent", "task3-verify", "--status", "DONE")
+        assert "no usage receipt" in "\n".join(check(load(ws)))
+
+        # --- replay: the journal alone must derive the same board -----------------------------------
+        assert not replay(load(ws)), replay(load(ws))
+        with (ws / "progress.md").open("a") as fh:
+            fh.write("Task 3: complete (by hand)\n")
+        rp = replay(load(ws))
+        assert rp and "task 3" in rp[0] and "without its journal line" in rp[0], rp
+        assert "replay:" in run("check", "--replay", expect_fail=True)
+        (ws / "progress.md").write_text("\n".join(l for l in (ws / "progress.md").read_text().splitlines() if "by hand" not in l) + "\n")
+        assert not replay(load(ws))
+        pm = run("postmortem")
+        assert "worker" in pm and "recommend" in pm and "cost per accepted task" in pm, pm
 
         # --- finish is gated and bound --------------------------------------------------
         run("finish", "--gate", "pass", "--evidence", "task-1-report.md", expect_fail=True)  # task 2/3 open
@@ -2153,6 +2535,12 @@ def selftest() -> int:
         st = load(ws)
         assert "archived" in out and st.run.dims["strategy"] == "loop" and not st.problems and st.tasks["1"].state == "todo"
         assert len(list((ws / "archive").iterdir())) == 2 and not (ws / "progress.md").exists()
+        assert st.lanes == COLUMNS, "a new run starts with the canonical lanes"
+        plan = run("plan")
+        assert "tokens est" in plan and "past run" in plan, plan  # the cost band comes from archived receipts
+        run("init", "plan.md", "--resume", "--engine", "codex", "--effort", "high", "--lanes", "todo,implement,verify,review,done,blocked")
+        plan = run("plan")
+        assert "lane    codex exec" in plan and "[8] lanes" in plan and "lanes   todo → implement → verify" in plan, plan
         print("board: selftest OK")
         return 0
     finally:

@@ -88,9 +88,11 @@ spawn a duplicate|SKILL.md,references/shared-safety-rails.md,references/strategy
 eward-hacking|references/shared-safety-rails.md,references/strategy-loop.md
 board init|SKILL.md,references/shared-contracts.md,references/strategy-staged.md,references/shared-flight-plan.md
 board return|references/shared-contracts.md,references/strategy-staged.md,references/shared-monitoring.md,references/shared-model-routing.md
-REFUSED|references/shared-contracts.md,references/strategy-xcli.md,references/shared-engines.md
-resume by|references/shared-engines.md,references/shared-hosts.md,references/shared-lane-hygiene.md
+REFUSED|references/shared-contracts.md,references/strategy-xcli.md,references/engine-codex.md,references/shared-engines.md
+resume by id|references/engine-codex.md,references/engine-grok.md,references/shared-hosts.md,references/shared-lane-hygiene.md,references/shared-engines.md
 board gate|references/shared-contracts.md,references/shared-review-gates.md
+board exec|SKILL.md,references/shared-contracts.md,references/shared-monitoring.md,references/shared-review-gates.md,references/strategy-xcli.md
+--lanes|SKILL.md,references/shared-monitoring.md,references/shared-flight-plan.md
 '
 while IFS='|' read -r pattern homes; do
   [ -n "$pattern" ] || continue

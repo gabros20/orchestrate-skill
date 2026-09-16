@@ -10,6 +10,76 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.16.0] — 2026-09-16
+
+### Added
+- **Checks on the board.** `board exec N --name tests -- <cmd>` runs a machine check THROUGH the
+  journal: the log lands under `raw/check-taskN-<name>.log`, start and finish are `check` events
+  with exit code and duration, the card shows `tests ok 12s` / `lint fail`, the header counts
+  `checks 3/4 ok`, a failed check is an `x` in attention and refuses `board done` exactly like a
+  failed gate; `board result N --name --exit` journals a check that ran elsewhere.
+- **Lanes as a projection.** `board init --lanes todo,implement,verify,review,integrate,done,blocked`
+  (or `board set lanes=…`, a run dim) projects each card onto declared lanes by canonical state ×
+  the open stint's role (verifier → VERIFY, integrator → INTEGRATE, reviewers → REVIEW); omitted →
+  the five defaults; the state model underneath never changes; `run.md` records the lanes.
+- **Sessions travel with the stint.** `board dispatch --session <id> --log raw/lane-N.jsonl
+  --cmd-file` (or `board return --session`); the roster gains a `session` column, the expanded card
+  a `lane` row, and `board resume` prints the engine's resume-by-id line for every open lane
+  (Codex `exec resume`, Grok `-r`, Claude `--resume`, opencode `-s`, Hermes `--resume`, Kimi `-S`,
+  Pi `--session`, Cursor, Antigravity) — `NOT_PROVEN` when no id was journaled.
+- **Pre-flight cost band.** `board plan` prices the topology tree from the receipts of archived
+  runs (per-tier p50–p90 of every `--tokens` return): `tokens est 180k–420k (p50–p90 of 12
+  receipts, 3 past runs)`; a `lane` line shows the subprocess engine's launch pre-configured from
+  the record; `[8] lanes` joins the tweak keys.
+- **Governance floor and receipts in `board check`.** New rules: done over a failed check, done
+  with no review gate ever opened (review on), quality gate opened while spec is not ok, xcli
+  DONE without a usage receipt, a third implementer attempt with no `escalate` event (also `!` in
+  attention). `board check --replay` re-derives every card from the journal ALONE and diffs it
+  against the disk view — a fact that reached the disk without its journal line is a finding,
+  `inconclusive` where the pointers are gone.
+- **`board postmortem`** — per-tier dispatches, tasks, models, drift, nudges, escalations, tokens
+  and tokens per dispatch, first-attempt-clean rate, check pass rate, cost per accepted task, and a
+  routing suggestion that is recommended, never applied (one change, repeated evidence only);
+  the loop evolve pass takes it as input. `RUN COMPLETE` and the resume receipt carry tokens per
+  accepted task.
+- **One reference file per engine** — `engine-codex.md`, `engine-grok.md`, `engine-claude.md`,
+  `engine-cursor.md`, `engine-agy.md`, `engine-opencode.md`, `engine-hermes.md`, `engine-kimi.md`,
+  `engine-pi.md` (~400 tokens each); `shared-engines.md` becomes the index with the cross-engine
+  session / resume / receipt / lane-cap / hermetic-flag map. A one-engine run loads one block
+  instead of the 2.9k-token catalog.
+
+### Changed
+- **Engine catalog re-verified live (2026-09-16).** Claude: `-p` has no `--max-turns` — the cap
+  is `--max-budget-usd`; `--restricted`, `--session-id`, `--forward-subagent-text`, fleet
+  `stop/rm/respawn` added. Codex: no `codex mcp-server` (removed), no `web_search` config key
+  (removed; `--search` is top-level only), `danger-full-access` sandbox, `--approve-for-me`,
+  `codex queue --thread` (native nudge), `codex agents`, `codex review`, `codex features list`,
+  Guardian, nested-token rollup (journal the root turn only). Grok: `grok-4.5` also listed, `-p`
+  is an alias of `--single` (never renamed), `-s <uuid>` pre-pins the session id, `grok usage`
+  receipts, `streaming-messages-json`, `dashboard/trace/export`. opencode: `stats`, `export
+  --sanitize`, `acp`, `pr`. Hermes: the "OpenAI-compatible server + batch runner" claim dropped
+  (`serve` is a JSON-RPC gateway); `--ignore-rules`/`--safe-mode`, `insights`, `chat --max-turns`,
+  `--yolo` (never), native `hermes kanban` noted as a peer design. Antigravity: headless surface
+  now documented (`--output-format`, `--effort`, `--json-schema`, `--conversation`,
+  `--print-timeout`, `GEMINI_API_KEY` CI auth). Kimi: agent-core-v2 default, subagent pool on by
+  default, fail-fast quota. Cursor: `--mode plan|ask` may supersede the ask-user auto-skip —
+  marked re-verify. Pi: unchanged; reaches `gpt-6-astra`.
+- **Lane hygiene** grows to ten rules: pre-pin or capture the session id and journal it; capture
+  the receipt (root turn only for Codex); cap the lane at the engine; hermetic lane flags per
+  engine; the nudge binding per engine.
+- **Review gates** name machine checks as the cheapest gate and the record itself as an
+  output-blind governance floor; vendor-native review layers (Codex Guardian, Claude auto-mode
+  classifier) are extra signals, never substitutes. Model-routing rule 4 cites `board attention`
+  / `board postmortem` as the escalation evidence; the implementer template asks for a shell, not
+  a typed-tool catalog (TheAgentCompany: bash-only +21–24 points, 19–72% fewer tokens).
+- `SKILL.md` workflow steps 3, 6 and 8 wire `--lanes`, `board exec`, `--session/--tokens` and
+  `board postmortem`; `scripts/check-sync` registry gains `board exec`, `--lanes`, `resume by id`.
+
+### Research
+- `docs/research/2026-09-review-sweep.md` — the review that fed this release: live probes of nine
+  CLIs, an X sweep and a web sweep on agent factories / harness engineering, and a survey of how
+  pipeline dashboards model stages and checks.
+
 ## [1.15.0] — 2026-09-16
 
 ### Added

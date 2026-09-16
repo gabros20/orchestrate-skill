@@ -10,6 +10,23 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.20.1] — 2026-09-16
+
+### Fixed
+- Changelog entry and `plugin.json` version for 1.20.0 (the release chain tagged it before the
+  docs patch had landed); `shared-lane-hygiene.md` rule 2 names `--after`.
+
+## [1.20.0] — 2026-09-16
+
+### Added
+- **Gated launches: `board launch … --after N[,M]`.** The generated wrapper runs `board wait
+  --task N --timeout 0` *before* the engine starts, so a dependent lane sleeps in the shell —
+  zero model calls, zero tokens — and its first turn begins with the dependency already on disk.
+  The card shows `~ queued after task N` (not stale, not running); the dispatch event records
+  `after`. Why: a model "waiting" re-reads its whole context on every ~110 s poll; in the
+  responsibilities-only todo run two waiters spent ~1M tokens idling. `board wait --timeout 0`
+  now means "no deadline" (for wrappers, which run outside any harness timeout).
+
 ## [1.19.2] — 2026-09-16
 
 ### Changed

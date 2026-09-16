@@ -10,6 +10,13 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.21.1] — 2026-09-16
+
+### Changed
+- Docs only: the website, `llms.txt`, README and installation guide describe the 1.21 features
+  (gated lanes that never start on a missing input, read-only lanes, `brief-check` dependency
+  hints, `board --help` by role, `install.sh all` covering every CLI home present).
+
 ## [1.21.0] — 2026-09-16
 
 ### Added

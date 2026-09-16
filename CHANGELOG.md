@@ -10,6 +10,13 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.21.2] — 2026-09-16
+
+### Changed
+- Website: a dedicated **mail** block — peers, send/ask/wait, checkpoint delivery, the
+  instruction/information tagging, the loop-proof caps, and "disk first, decisions second, mail
+  last". Docs only.
+
 ## [1.21.1] — 2026-09-16
 
 ### Changed

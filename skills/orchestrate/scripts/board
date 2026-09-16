@@ -444,6 +444,7 @@ class State:
         self.meta: dict[str, str] = {}
         self.mail: list[Mail] = []
         self.acks: dict[str, int] = {}   # agent -> highest seq it has read
+        self.run_checks: dict[str, dict[str, str]] = {}   # run-level checks (integration, final verification)
 
     def unread(self, agent: str) -> list[Mail]:
         """Mail an agent has not acked: direct, or broadcast from someone else."""
@@ -459,6 +460,7 @@ class State:
     def card_agent(self, t: Task) -> str:
         open_ = [s for s in self.stints if s.task == t.id and not s.returned]
         return open_[-1].agent if open_ else t.agent
+
 
     def task(self, tid: str) -> Task:
         return self.tasks.setdefault(str(tid), Task(str(tid)))
@@ -748,6 +750,11 @@ def load(ws: Path, journal_only: bool = False) -> State:
         tid = ev.get("task")
         if tid is None:
             continue
+        if kind == "check" and (str(tid) in ("run", "-", "") or (str(tid) not in st.tasks and not any(
+                e.get("task") == tid and e.get("ev") in ("todo", "dispatch") for e in st.events))):
+            st.run_checks[clean(ev.get("name", "check")) or "check"] = {"status": str(ev.get("status", "")), "exit": str(ev.get("exit", "")),
+                                                                        "dur": str(ev.get("dur", "")), "log": str(ev.get("log", ""))}
+            continue
         t = get(str(tid))
         if ev.get("title"):
             t.title = clean(str(ev["title"])[:80])
@@ -762,6 +769,17 @@ def load(ws: Path, journal_only: bool = False) -> State:
             st.stints.append(Stint(ev, ts, t.attempt))
         elif kind == "return":
             status = str(ev.get("status", "DONE"))
+            prior = next((s_ for s_ in reversed(st.stints) if s_.agent == str(ev.get("agent", "")) and s_.task == str(tid)), None)
+            if prior and prior.returned and str(ev.get("status", "")) == prior.status:
+                # receipt amendment: same agent, same task, same status — attach what the first return lacked
+                if ev.get("tokens"):
+                    run.tokens -= prior.tokens
+                    prior.tokens = parse_tokens(ev.get("tokens"))
+                    run.tokens += prior.tokens
+                prior.observed = str(ev.get("observed_model") or prior.observed)
+                prior.session = str(ev.get("session") or prior.session)
+                t.touch_heartbeat(ts)
+                continue
             t.last_status = status
             if status in ("BLOCKED", "NEEDS_CONTEXT", "REFUSED"):
                 t.candidates.append((ts, seq, "blocked", clean(ev.get("msg", "")) or status.lower().replace("_", " ")))
@@ -1270,7 +1288,9 @@ def header_rows(st: State, W: int, now: float, S: Style) -> list[Row]:
         counts[t.state] += 1
     elapsed = fmt_dur(now - float(meta["started"])) if meta.get("started") else ""
     right = f"{counts['done']}/{len(st.tasks)} done" + (f"  {d}  {elapsed}" if elapsed else "")
-    where = meta.get("repo", "") + (f" @ {meta['branch']}" if meta.get("branch") else "")
+    here = git("rev-parse", "--abbrev-ref", "HEAD")
+    where = meta.get("repo", "") + (f" @ {meta['branch']}" if meta.get("branch") else "") + \
+        (f" (you: {here})" if meta.get("branch") and here and here != meta["branch"] else "")
     left = "ORCHESTRATE"
     gap = W - dw(left) - 3 - dw(where) - dw(right)
     rows.append([(m + left, BOLD), ("   " + clip(where, max(0, W - dw(left) - 3 - dw(right) - 2)), ""),
@@ -1334,7 +1354,7 @@ def header_rows(st: State, W: int, now: float, S: Style) -> list[Row]:
         if b.get("tokens") or run.tokens:
             used("tokens", fmt_tokens(run.tokens) if run.tokens else "0", b.get("tokens"))
         line("budget", parts)
-    chk = [c for t in st.tasks.values() for c in t.checks.values()]
+    chk = [c for t in st.tasks.values() for c in t.checks.values()] + list(st.run_checks.values())
     if chk:
         cnt = {k: sum(1 for c in chk if c["status"] == k) for k in ("ok", "fail", "running")}
         segs = [(f"{cnt['ok']}/{len(chk)} ok", S.fg(OK) if not cnt["fail"] else "")]
@@ -1342,6 +1362,9 @@ def header_rows(st: State, W: int, now: float, S: Style) -> list[Row]:
             segs += [(f"  {d}  ", DIM), (f"{cnt['fail']} failed", S.fg(BAD))]
         if cnt["running"]:
             segs += [(f"  {d}  ", DIM), (f"{cnt['running']} running", S.fg(WARN))]
+        for name, c in st.run_checks.items():
+            colour = S.fg(OK) if c["status"] == "ok" else S.fg(BAD) if c["status"] == "fail" else S.fg(WARN)
+            segs += [(f"  {d}  run: {name} ", DIM), (c["status"], colour), (f" {c['dur']}" if c["dur"] else "", DIM)]
         line("checks", segs)
     if run.plan or dims.get("alias") or dims.get("confirm"):
         segs = []
@@ -1705,7 +1728,8 @@ def render_plan(st: State, why: str = "") -> str:
     elif strategy == "parallel":
         cap = int(d.get("workers") or 0) or n
         for t in tasks[:cap]:
-            lines.append(f"├─ worker · card {t.id} {t.title} · {worker_line} · worktree wt-{t.id}")
+            where_ = f"worktree wt-{t.id}" if iso not in ("off", "none", "shared tree") else "shared tree (isolation off)"
+            lines.append(f"├─ worker · card {t.id} {t.title} · {worker_line} · {where_}")
             agents += 1
         count("worker", n)
         if n > cap:
@@ -2816,6 +2840,11 @@ def selftest() -> int:
         st = load(ws)
         assert st.tasks["3"].checks["lint"]["status"] == "ok" and not st.tasks["3"].failed_checks
         assert not any("outran the check" in f for f in check(st))
+        run("exec", "run", "--name", "integration", "--", sys.executable, "-c", "pass")
+        run("exec", "77", "--name", "orphan", "--", sys.executable, "-c", "pass")   # nobody planned task 77 → run-level
+        st = load(ws)
+        assert "integration" in st.run_checks and "orphan" in st.run_checks and "77" not in st.tasks, st.run_checks
+        assert "run: integration ok" in run("show", "--no-color")
         run("exec", "3", "--name", "unit", "--agent", "task3-impl", "--", sys.executable, "-c", "pass")
         assert load(ws).events[-1]["actor"] == "worker", "a worker's own check is attributed to the worker"
         # parallel workers must not race the chain: 12 concurrent notes, one journal, no problems
@@ -2841,6 +2870,10 @@ def selftest() -> int:
         assert "lane" in run("task", "3") and json.loads(run("show", "--json"))["tasks"][2]["lane"] == "verify"
         run("return", "3", "--agent", "task3-verify", "--status", "DONE")
         assert "no usage receipt" in "\n".join(check(load(ws)))
+        before = len(load(ws).stints)
+        run("return", "3", "--agent", "task3-verify", "--status", "DONE", "--tokens", "12k")   # receipt amendment
+        st = load(ws)
+        assert len(st.stints) == before and st.stint_of("task3-verify").tokens == 12000 and "no usage receipt" not in "\n".join(check(st))
 
         # --- replay: the journal alone must derive the same board -----------------------------------
         assert not replay(load(ws)), replay(load(ws))
@@ -2970,6 +3003,11 @@ def selftest() -> int:
         run("init", "plan.md", "--resume", "--engine", "codex", "--effort", "high", "--lanes", "todo,implement,verify,review,done,blocked")
         plan = run("plan")
         assert "lane    codex exec" in plan and "[8] lanes" in plan and "lanes   todo → implement → verify" in plan, plan
+        run("set", "strategy=parallel", "isolation=off")
+        assert "shared tree (isolation off)" in run("plan") and "wt-1" not in run("plan")
+        subprocess.run(["git", "checkout", "-q", "-b", "elsewhere"], check=True)
+        assert "(you: elsewhere)" in run("show", "--no-color"), "viewer's branch is named when it differs from the run's"
+        subprocess.run(["git", "checkout", "-q", "main"], check=True)
 
         # --- an older repo: a pre-journal workspace is detected, refused by bare init, adopted by --resume ----
         shutil.rmtree(ws)

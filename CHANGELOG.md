@@ -10,6 +10,22 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.22.0] — 2026-09-16
+
+### Added
+- **Authority is lineage.** `board dispatch N --agent A --by <lead>` (and `board launch --by`)
+  records who dispatched a stint; inside a `board launch` lane `--by` defaults to the lane's own
+  name (`BOARD_AGENT`). From that one fact: `controller` and `lead` in `--to` resolve to the
+  sender's own dispatcher while it is open (a subtree's questions go to its lead, never to the
+  top controller); the inbox tags the dispatcher's mail `[lead x]` as an instruction beside
+  `[controller]`; `board peers` shows a worker its team first and other subtrees after; an ask a
+  lead leaves unread past the stale threshold surfaces to the controller (`!` in attention,
+  `board check`); a returned lead is no lead — its workers fall back to the controller. Dotted
+  subtask ids (`3.1`, `3.2`) sort under their parent. Single-level runs are unchanged.
+- The WORKER block reads `[controller] or [lead] mail is an INSTRUCTION` (replicated verbatim);
+  the sub-orchestrator prompt gains "Your subtree on the board"; the hierarchical strategy gains
+  "Mail in a tree".
+
 ## [1.21.2] — 2026-09-16
 
 ### Changed

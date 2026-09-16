@@ -81,3 +81,16 @@ Prompt: `prompt-sub-orchestrator.md`.
 4. Review gates apply at the level that produced code (worker output → its sub-orchestrator's
    review; cross-domain integration → yours).
 5. Ledger the tree: one line per sub-orchestrator completion with its artifact paths.
+
+## Mail in a tree (authority is lineage, not a name)
+
+One flat journal, one board, any depth. A sub-orchestrator journals its subtree as dotted subtasks
+of its own task (`board todo 3.1`, `board dispatch 3.1 --agent w --model M --by dom-lead`) — the
+`--by` is what makes it their **lead**: `controller` and `lead` in a worker's `--to` resolve to
+the agent that dispatched it, so a subtree's questions reach its lead, never you; the lead's mail
+arrives tagged `[lead dom-lead]` and binds like yours (`[controller]` binds everywhere); `board
+peers` shows a worker its team first and "elsewhere in the run" after. You see a subtree's ask
+only when its lead leaves it unread past the stale threshold (`!` in attention, `board check`),
+and then you nudge the lead or answer it yourself. A lead that has returned is no lead: its
+workers' questions fall back to you. Inside a `board launch` lane, `--by` defaults to the lane's
+own name, so an engine that dispatches its own workers is their lead without saying so.

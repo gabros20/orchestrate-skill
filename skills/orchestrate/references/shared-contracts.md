@@ -148,7 +148,7 @@ sha, queues every task, generates `run.md`'s Resolved block) · `board set key=v
 dimension; the plan goes back to pending; `lanes=todo,implement,verify,review,integrate,done,blocked`
 declares the board's lanes — a projection of state × role, `todo/done/blocked` required) · `board
 plan approved|changed|skipped` · `board dispatch N --agent <real id> --model M [--role --engine
---effort --worktree --session ID --log raw/lane-N.jsonl --cmd-file]` (`--model` is REQUIRED — rule
+--effort --worktree --owns --by <lead> --session ID --log raw/lane-N.jsonl --cmd-file]` (`--model` is REQUIRED — rule
 3; every implementer dispatch is a new *attempt*, which resets the review cycle; the session id
 is what `board resume` resumes by) · `board return N --agent A --status
 DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED [--commits --report --observed-model
@@ -174,7 +174,8 @@ they delivered). Mail is journaled (`mail`, and an `ack` when read) and delivere
 next board call — every worker-side command (`note`, `exec`, `send`, `peers`, `vote`) hands
 over unread mail, so delivery rides on calls the worker makes anyway; never mid-turn, on any host.
 `board follow [--for controller]` is the controller's filtered tail of the same journal. Controller mail is an INSTRUCTION; peer mail is
-INFORMATION. Loop-proof by construction: `MAIL_CAP` sends per stint, `THREAD_CAP` replies deep,
+INFORMATION; in a tree, `--by <lead>` on a dispatch makes the lead's mail an instruction too and
+routes the worker's `--to controller` asks to that lead while it is open (`strategy-hierarchical.md`). Loop-proof by construction: `MAIL_CAP` sends per stint, `THREAD_CAP` replies deep,
 no duplicates, no mail to a returned agent; `board check` flags chatter, unread-past-stale and
 unanswered asks. Votes: `board vote N --kind K --agent A --verdict ok|fail|warn` — the gate is
 derived by quorum (`panel:N` majority, `consensus:N` any-deny) under the rules in force when the

@@ -66,6 +66,16 @@ and their stdout lands in YOUR context; the contract is the filter.
   engine (`shared-lane-hygiene.md`). Observed: three consecutive failed launches (`-a` removed,
   `resume` rejecting `--sandbox`, positional prompt ignored) cost 40 minutes and zero tokens —
   every one was a flags fact, journaled as a note.
+- **The lane is one command.** `board launch N --agent A --engine codex --model M -- spec.md`
+  writes the wrapper, pins the session, journals the dispatch, starts the lane and journals its
+  exit and receipt (`shared-lane-hygiene.md` 2/4/7). Approval and sandbox flags are never in the
+  template — `--extra='--approve-for-me'` / `--extra='--always-approve'` says you chose them.
+  `--dry-run` shows the wrapper before anything runs; the `exit` event puts a dead lane in
+  attention ("exited rc=1 with no return") before you would otherwise notice.
+- **Shared tree, two writers** (`isolation=off` on purpose): the board derives the rail — commit
+  by path (`git add <your files>`), never `git add -A` — and prints it in the flight plan and
+  header; put it in the brief too. Observed live: one lane scooped the other's untracked file
+  and had to reset its own commit.
 - **Verification runs THROUGH the journal**: `board exec N --name tests -- npm test` runs the check,
   captures its log under `raw/`, journals exit code + duration, and shows it on the card
   (`tests ok 12s`); a check that ran elsewhere is journaled with `board result N --name --exit`.

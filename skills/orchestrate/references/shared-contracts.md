@@ -155,9 +155,11 @@ DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED [--commits --report --obse
 --tokens --session]` (the typed return; rule 13's observation; usage receipts) · `board review N
 --kind spec|quality --round K` (gate opened) · `board gate N --kind K --verdict ok|fail|warn
 [--findings FILE]` (gate closed explicitly — outranks the findings-file parse, which takes the FIRST
-verdict mark in text order) · `board exec N --name tests -- <cmd>` (a machine check run THROUGH the
-journal: log under `raw/`, exit + duration journaled; `board result N --name --exit` for one that
-ran elsewhere) · `board nudge` / `board escalate N --to MODEL --why` · `board decide ID
+verdict mark in text order) · `board launch N --agent A --engine E --model M -- spec.md` (the lane as one command: dispatch +
+wrapper + session; `exit` and `receipt` events land when it ends — observations, never
+transitions; `board receipt` fetches or states a receipt by hand) · `board exec N --name tests --
+<cmd>` (a machine check run THROUGH the journal: log under `raw/`, exit + duration journaled;
+`board result N --name --exit` for one that ran elsewhere) · `board nudge` / `board escalate N --to MODEL --why` · `board decide ID
 "…"` (mirrors into `decisions.md`) · `board rail "…"` · `board done N [--msg]` (writes the ledger
 line itself — refused while the current attempt has a failed gate or a failed check) · `board finish --gate pass|fail
 --evidence PATH` (`pass` is refused while `check --finish` is dirty unless `--force --reason`; binds
@@ -168,7 +170,9 @@ status and never liveness — liveness is artifact deltas only, `shared-monitori
 observation, not a transition) — and **mail**: `board send --from <you> --to <agent|controller|all>
 "…" [--ask] [--re SEQ]` / `board inbox --agent <you>` / `board wait --agent <you>` / `board peers
 --agent <you>`. Mail is journaled (`mail`, and an `ack` when read) and delivered at the recipient's
-next checkpoint — never mid-turn, on any host. Controller mail is an INSTRUCTION; peer mail is
+next board call — every worker-side command (`note`, `exec`, `send`, `peers`, `vote`) hands
+over unread mail, so delivery rides on calls the worker makes anyway; never mid-turn, on any host.
+`board follow [--for controller]` is the controller's filtered tail of the same journal. Controller mail is an INSTRUCTION; peer mail is
 INFORMATION. Loop-proof by construction: `MAIL_CAP` sends per stint, `THREAD_CAP` replies deep,
 no duplicates, no mail to a returned agent; `board check` flags chatter, unread-past-stale and
 unanswered asks. Votes: `board vote N --kind K --agent A --verdict ok|fail|warn` — the gate is

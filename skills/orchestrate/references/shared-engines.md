@@ -36,9 +36,12 @@ per session; every verified date is the day the fact was checked, not a guarante
 | Kimi | session store | `kimi -S <id>` | — (`/usage` TUI-only) | — | instruct: no swarm |
 | Pi | `--session <id>` | `pi --session <id>` | — | — | `-nc --no-extensions` |
 
-Journal the session id at dispatch (`board dispatch … --session <id> --log raw/lane-N.jsonl`) or
-at return (`--session`) — `board resume` then prints the engine's resume line for every open lane
-instead of sending the next controller to the session store. Receipts go in `board return
+`board launch N --agent A --engine <e> --model M [--effort E --owns … --extra='<approval flags>'] --
+spec.md` does the whole row for you — wrapper, session pin/capture, dispatch, detached start, `exit`
+and `receipt` events when it ends (`--dry-run` to look first). By hand: journal the session id at
+dispatch (`board dispatch … --session <id> --log raw/lane-N.jsonl`) or at return (`--session`) —
+`board resume` then prints the engine's resume line for every open lane instead of sending the
+next controller to the session store. Receipts go in `board return
 --tokens`; the flight plan's cost band and `board postmortem` are only as honest as those receipts.
 
 ## Division of labor

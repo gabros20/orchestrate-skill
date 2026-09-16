@@ -385,6 +385,7 @@ class Run:
         self.cycles = 0
         self.last_seq = 0
         self.last_hash = ""
+        self.adopted = ""       # set when the journal was started over a pre-journal workspace
 
     @property
     def models(self) -> dict[str, str]:
@@ -647,6 +648,9 @@ def load(ws: Path, journal_only: bool = False) -> State:
             continue
         if kind == "rail":
             run.rails.append(clean(ev.get("msg", "")))
+            continue
+        if kind == "adopt":
+            run.adopted = clean(ev.get("msg", "")) or "adopted"
             continue
         if kind == "decide":
             run.decisions = [d for d in run.decisions if d["id"] != ev.get("id")]
@@ -1754,6 +1758,16 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
     now = time.time()
     ws = st.ws
     review_mode = str(st.run.dims.get("review") or "dual")
+    shape, summary = workspace_shape(ws, st)
+    if shape == "pre-journal":
+        findings.append(f"workspace predates the journal ({summary}) — adopt it: `board init PLAN --resume --strategy … --goal …` (never a bare init: that archives the ledger)")
+    copy_ = ws / "board"
+    try:
+        me = Path(__file__).resolve()
+        if copy_.exists() and copy_.resolve() != me and copy_.read_bytes() != me.read_bytes() and me.stat().st_mtime > copy_.stat().st_mtime:
+            findings.append("`.orchestrate/board` is older than the installed skill — run scripts/workspace to refresh the zero-install copy")
+    except OSError:
+        pass
     for t in st.ordered():
         s = t.state
         if is_stale(t, now):
@@ -1840,6 +1854,10 @@ def replay(st: State) -> list[str]:
             continue
         ptrs = ([t.report] if t.report else []) + t.findings
         missing = [p for p in ptrs if not (st.ws / p).exists()]
+        journaled = [e for e in st.events if str(e.get("task")) == t.id and e.get("ev") not in ("todo", "title")]
+        if st.run.adopted and not journaled:
+            out.append(f"replay: task {t.id} — journal alone derives {cs}, disk view says {t.state}: inconclusive (pre-journal history, adopted)")
+            continue
         if missing:
             out.append(f"replay: task {t.id} — journal alone derives {cs}, disk view says {t.state}: inconclusive ({', '.join(missing)} missing)")
         else:
@@ -2016,6 +2034,21 @@ def to_json(st: State) -> dict:
 
 # --- commands ------------------------------------------------------------------------
 
+def workspace_shape(ws: Path, st: State) -> tuple[str, str]:
+    """(shape, summary) — `empty` · `pre-journal` (artifacts, no run record) · `open` (unfinished run) · `finished`."""
+    artifacts = [p.name for p in ws.glob("task-*") if ws.exists()] + (["progress.md"] if (ws / "progress.md").exists() else [])
+    counts = {c: sum(1 for x in st.tasks.values() if x.state == c) for c in COLUMNS}
+    summary = " · ".join(f"{n} {c.replace('_', ' ')}" for c, n in counts.items() if n)
+    if not st.run.dims and (artifacts or st.tasks):
+        return "pre-journal", summary or f"{len(artifacts)} artifact(s)"
+    if not st.run.dims:
+        return "empty", ""
+    open_ = [x for x in st.tasks.values() if x.state != "done"]
+    if st.run.finish and not open_:
+        return "finished", summary
+    return "open", summary
+
+
 def archive_previous_run(ws: Path, run_id: str) -> Path | None:
     """A new run gets a fresh workspace; the old one moves to archive/<run_id>/ (journal included)."""
     if not ws.exists():
@@ -2044,13 +2077,22 @@ def cmd_init(ws: Path, args: argparse.Namespace) -> None:
         else:
             dims[key] = val
     prev = load(ws)
+    shape, summary = workspace_shape(ws, prev)
     archived = None
-    if prev.events and not args.resume:
-        archived = archive_previous_run(ws, prev.run.id)
+    adopting = args.resume and shape == "pre-journal"
+    if not args.resume and shape in ("open", "pre-journal") and not args.fresh:
+        layout = "no run record — a workspace from before the journal" if shape == "pre-journal" else f"run {prev.run.id} unfinished"
+        sys.exit(f"board: .orchestrate/ already holds work ({summary}; {layout}).\n"
+                 f"       adopt it:    board init PLAN --resume --strategy … --goal \"…\"   (journal started, ledger/reports kept, Resolved block above run.md's prose)\n"
+                 f"       start over:  board init PLAN --fresh …                          (archives it to .orchestrate/archive/<run-id>/ first)")
+    if (prev.events or shape == "pre-journal") and not args.resume:
+        archived = archive_previous_run(ws, prev.run.id or f"legacy-{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}")
     if dims or not args.resume:
         run_id = prev.run.id if args.resume and prev.run.id else new_run_id()
         append_event(ws, ev="run", run_id=run_id, branch=git("rev-parse", "--abbrev-ref", "HEAD"), base=git("rev-parse", "HEAD"),
                      cli=f"board schema {SCHEMA}", **dims)
+    if adopting:
+        append_event(ws, ev="adopt", msg=f"pre-journal workspace adopted ({summary}); history before this line lives on disk only")
     st = load(ws)
     added = 0
     if args.plan:
@@ -2079,6 +2121,9 @@ def cmd_init(ws: Path, args: argparse.Namespace) -> None:
     write_resolved(ws)
     if archived:
         print(f"board: previous run archived -> {archived}")
+    if adopting:
+        print(f"board: adopted a pre-journal workspace ({summary}) — ledger and reports kept, journal started here; "
+              "`board check --replay` marks pre-journal history inconclusive, not wrong")
     print(f"board: {added} task(s) queued -> {journal_path(ws)}")
     if dims:
         print("board: run.md Resolved block written; next: `board plan` → gate → `board plan approved`")
@@ -2109,7 +2154,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("task"); p.add_argument("task")
     sub.add_parser("attention")
     p = sub.add_parser("log"); p.add_argument("-n", type=int, default=40); p.add_argument("--json", action="store_true")
-    p = sub.add_parser("init"); p.add_argument("plan", nargs="?"); p.add_argument("--resume", action="store_true", help="add to the current run instead of archiving it")
+    p = sub.add_parser("init"); p.add_argument("plan", nargs="?")
+    p.add_argument("--resume", action="store_true", help="adopt/continue the workspace that is there (journal kept or started; nothing archived)")
+    p.add_argument("--fresh", action="store_true", help="archive unfinished work on purpose and start a new run")
     for key in DIMS:
         p.add_argument(f"--{key}")
     p = sub.add_parser("set"); p.add_argument("pairs", nargs="+", metavar="key=value")
@@ -2366,10 +2413,12 @@ def selftest() -> int:
         assert (ws / JOURNAL).exists() and (ws / (LEGACY_JOURNAL + ".bak")).exists() and (ws / "journal.jsonl.v1.bak").exists()
         assert st.tasks["7"].state == "in_progress" and not st.problems and st.events[0]["schema"] == SCHEMA and st.run.id.startswith("legacy-")
 
-        # --- kickoff archives the legacy run ---------------------------------------------
-        out = run("init", "plan.md", "--strategy", "staged", "--review", "dual", "--host", "Claude Code",
+        # --- kickoff refuses to archive live work; --fresh archives it on purpose ---------------
+        run("init", "plan.md", "--strategy", "staged", "--goal", "Ship the thing", expect_fail=True)
+        assert not (ws / "archive").exists(), "a bare init over unfinished work must refuse, not archive"
+        out = run("init", "plan.md", "--fresh", "--strategy", "staged", "--review", "dual", "--host", "Claude Code",
                   "--models", "worker=sonnet,reviewer=opus", "--budget", "agents=6", "--goal", "Ship the thing")
-        assert "archived" in out and list((ws / "archive").iterdir()), "previous run must be archived on init"
+        assert "archived" in out and list((ws / "archive").iterdir()), "previous run must be archived on --fresh"
         st = load(ws)
         assert [t.id for t in st.ordered()] == ["1", "2", "3"], "plan headings → todo (fence ignored, legacy gone)"
         assert st.run.branch == "main" and len(st.run.base) == 40 and st.run.id and not st.run.id.startswith("legacy")
@@ -2531,7 +2580,8 @@ def selftest() -> int:
         # --- second init archives the run; --resume does not --------------------------------
         run("init", "--resume")
         assert (ws / "progress.md").exists()
-        out = run("init", "plan.md", "--strategy", "loop", "--goal", "Round two")
+        run("init", "plan.md", "--strategy", "loop", "--goal", "Round two", expect_fail=True)  # tasks 2/3 still open
+        out = run("init", "plan.md", "--fresh", "--strategy", "loop", "--goal", "Round two")
         st = load(ws)
         assert "archived" in out and st.run.dims["strategy"] == "loop" and not st.problems and st.tasks["1"].state == "todo"
         assert len(list((ws / "archive").iterdir())) == 2 and not (ws / "progress.md").exists()
@@ -2541,6 +2591,31 @@ def selftest() -> int:
         run("init", "plan.md", "--resume", "--engine", "codex", "--effort", "high", "--lanes", "todo,implement,verify,review,done,blocked")
         plan = run("plan")
         assert "lane    codex exec" in plan and "[8] lanes" in plan and "lanes   todo → implement → verify" in plan, plan
+
+        # --- an older repo: a pre-journal workspace is detected, refused by bare init, adopted by --resume ----
+        shutil.rmtree(ws)
+        ws.mkdir()
+        (ws / "run.md").write_text("# Run\nstrategy staged, chosen because the tasks are independent\n")
+        (ws / "task-1-brief.md").write_text("# Task 1: Scaffold\n")
+        (ws / "task-1-report.md").write_text("Status: DONE\n")
+        (ws / "task-2-brief.md").write_text("# Task 2: Auth\n")
+        (ws / "progress.md").write_text("Task 1: complete (review clean)\n")
+        st = load(ws)
+        assert workspace_shape(ws, st)[0] == "pre-journal" and st.tasks["1"].state == "done" and st.tasks["2"].state == "todo"
+        assert any("predates the journal" in f for f in check(st)), check(st)
+        run("init", "plan.md", "--strategy", "staged", "--goal", "Adopt me", expect_fail=True)
+        assert (ws / "progress.md").exists() and not (ws / "archive").exists(), "refusal must leave the ledger where it is"
+        out = run("init", "plan.md", "--resume", "--strategy", "staged", "--review", "dual", "--goal", "Adopt me")
+        assert "adopted a pre-journal workspace" in out and "1 done" in out, out
+        st = load(ws)
+        runmd = (ws / "run.md").read_text()
+        assert st.run.adopted and st.tasks["1"].state == "done" and st.tasks["2"].state == "todo" and st.tasks["3"].state == "todo"
+        assert runmd.startswith(OPEN) and "chosen because" in runmd, "Resolved block goes above the existing prose, never over it"
+        assert not any("predates" in f for f in check(st))
+        rp = replay(st)
+        assert rp and "inconclusive (pre-journal history" in rp[0] and not any("without its journal line" in r for r in rp), rp
+        run("init", "plan.md", "--resume")  # idempotent: nothing archived, nothing re-queued
+        assert len(load(ws).events) == len(st.events)
         print("board: selftest OK")
         return 0
     finally:

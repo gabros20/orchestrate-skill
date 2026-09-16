@@ -41,6 +41,9 @@ Prompts: `prompt-implementer.md`, `prompt-spec-reviewer.md`, `prompt-quality-rev
    expensive observed failure mode is re-dispatching completed task sequences after compaction.
 4. `board init PLAN --strategy staged --review … --models … --goal "…"` — writes the resolved
    dimensions into `.orchestrate/run.md` (Resolved block) and queues every task; prose below.
+   Resuming (step 3 found a ledger, or the workspace predates the journal): add `--resume` —
+   the journal is adopted over the existing ledger/reports and the Resolved block goes above the
+   prose; a bare `init` refuses rather than archive live work, `--fresh` archives on purpose.
 5. **Criteria before code** (multi-task plans): author every task's acceptance check as its own
    step — after plan approval, before the first dispatch — ideally by a different agent than the
    one that will implement it. A verification line written by the same reasoning that wrote the

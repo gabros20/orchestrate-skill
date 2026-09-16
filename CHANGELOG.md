@@ -42,6 +42,13 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, 
   routing suggestion that is recommended, never applied (one change, repeated evidence only);
   the loop evolve pass takes it as input. `RUN COMPLETE` and the resume receipt carry tokens per
   accepted task.
+- **Adoption route for older workspaces.** `board init` detects the workspace shape (empty ·
+  pre-journal · open · finished): over unfinished work a bare `init` is refused with the two
+  routes printed — `--resume` adopts (journal started or continued, ledger/reports kept, an
+  `adopt` line journaled, Resolved block inserted above `run.md`'s prose) and `--fresh` archives on
+  purpose. `board check` names a pre-journal workspace and a stale `.orchestrate/board` copy;
+  `--replay` reports pre-adoption history as `inconclusive`. SKILL.md step 3, the staged setup
+  and the handoff reference carry the note.
 - **One reference file per engine** — `engine-codex.md`, `engine-grok.md`, `engine-claude.md`,
   `engine-cursor.md`, `engine-agy.md`, `engine-opencode.md`, `engine-hermes.md`, `engine-kimi.md`,
   `engine-pi.md` (~400 tokens each); `shared-engines.md` becomes the index with the cross-engine

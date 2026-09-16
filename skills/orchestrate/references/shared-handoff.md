@@ -62,5 +62,9 @@ measured worst failure mode of compression.
   and ends with a **receipt** — HEAD, the journal cursor (seq + hash), tokens per accepted task
   and a receipt hash — so a successor can tell a stale handoff from a current one. Start from it,
   add the WHY and the traps, then probe-test.
+- A successor arriving with a newer skill: `scripts/workspace` refreshes the zero-install
+  `.orchestrate/board`; `board check` names a workspace that predates the journal; `board init
+  PLAN --resume …` adopts it (ledger and reports kept, journal started, pre-journal history
+  `inconclusive` under `--replay`) — never a bare `init`, which is refused over live work.
 - Sub-orchestrators and long loop runs should write a handoff at budget exhaustion as part of
   stopping cleanly (`shared-safety-rails.md`).

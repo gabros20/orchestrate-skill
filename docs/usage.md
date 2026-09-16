@@ -326,6 +326,19 @@ writes the lines above. Titles, notes and decisions are sanitised before they re
 | `board postmortem` | per-tier evidence for the evolve pass — dispatches, tasks, models, drift, nudges, escalations, tokens and tokens per dispatch, first-attempt-clean rate, check pass rate, cost per accepted task — and a routing suggestion that is recommended, never applied (one change, repeated evidence only) |
 | `board resume` | the handoff's state layer in `shared-handoff.md`'s order — goal, state per task (with checks), open-stint locators with the engine's **resume-by-id line** for every journaled session, decisions, probed pointers (`[MISSING]`), open work, cleanup — with `NOT_PROVEN` on every claim no artifact backs and a **receipt** (tokens per accepted task · HEAD · journal seq + hash · receipt hash) |
 
+### Upgrading: repos that already have an older `.orchestrate/`
+
+Nothing needs hand-migration. `scripts/workspace` refreshes the zero-install `.orchestrate/board`
+whenever the skill's copy is newer (`board check` reminds you if it is stale); a pre-v2 journal
+(`board.jsonl`, schema-less lines) migrates on first read with `.bak` copies; a workspace from
+before the journal existed (briefs, reports, `progress.md`, prose `run.md` — no run record) is
+detected as **pre-journal**: `board check` says so, and `board init PLAN --resume --strategy …
+--goal "…"` adopts it — the ledger and reports stay where they are (done stays done), the
+journal starts with an `adopt` line, and the `## Resolved` block is inserted *above* the existing
+prose. A bare `board init` over any unfinished work is refused (it would archive the ledger and
+make every task look new); `--fresh` archives it on purpose. Under `board check --replay`,
+history from before the adoption is reported `inconclusive`, never as a fault.
+
 `install.sh` puts `board` on your PATH (`~/.local/bin`); every run also carries a zero-install
 copy at `.orchestrate/board`, and the flight plan prints the command. CLI-agnostic — the same
 journal and views over a Claude Code, Codex, Grok, opencode or Pi run — stdlib-only python3.

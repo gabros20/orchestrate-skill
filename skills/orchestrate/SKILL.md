@@ -140,9 +140,12 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 1. Inspect the task, plan, repository state, host capabilities, and stop condition.
 2. Resolve strategy, dimensions, roles, models, budget, isolation, review, and degradation.
 3. Initialize `.orchestrate/` with [workspace](scripts/workspace); record the resolved run with
-   [board](scripts/board) — `board init PLAN --strategy … --goal "…"` archives any previous run,
-   writes the `## Resolved` block of `run.md` and queues every planned task; prose (the why) goes
-   below the block. Re-resolve a dimension with `board set key=value`, never by editing; declare
+   [board](scripts/board) — `board init PLAN --strategy … --goal "…"` writes the `## Resolved`
+   block of `run.md` and queues every planned task; prose (the why) goes below the block. **An
+   existing `.orchestrate/` with work in it is adopted, never restarted**: `board init … --resume`
+   starts or continues the journal over the ledger and reports that are there (a workspace from
+   an older skill included — `board check` says "predates the journal"); a bare `init` refuses,
+   and only `--fresh` archives unfinished work on purpose. Re-resolve a dimension with `board set key=value`, never by editing; declare
    the board's lanes when the shape has more stages than the five defaults (`--lanes`).
 4. Create task briefs with [task-brief](scripts/task-brief) and validate them with
    [brief-check](scripts/brief-check).

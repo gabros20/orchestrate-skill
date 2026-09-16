@@ -42,9 +42,12 @@ and the card shows `tests ok 12s` / `lint fail` (a `checks` line in the header c
 failed check is an `x` in attention and blocks `board done`). Lanes are a projection: `board init
 --lanes todo,implement,verify,review,integrate,done,blocked` shows a verifier's stint under
 VERIFY and an integrator's under INTEGRATE — the state model underneath never changes.
-Controller side: `board attention` lists what to act on, most urgent first (`x` blocked / failed
+**Mail** rides the same journal: a worker's `--ask` is a `?` in attention with the reply command
+ready, `mail N unread · M for you` sits in the header, and `board inbox --agent controller` is
+part of every liveness check (an unanswered ask is a worker parked in `board wait`). Controller
+side: `board attention` lists what to act on, most urgent first (`x` blocked / failed
 gate / failed check, `!` stale, silent reviewer or a third attempt with no escalation, `?`
-pending gate / concerns); run `board check` at every liveness check and before any recovery
+pending gate / concerns / mail for you); run `board check` at every liveness check and before any recovery
 action — it lists journal-chain breaks, dispatched-never-returned, reviewer silence,
 report-without-review, done over a failed gate or check, done with no gate ever opened, quality
 before spec, xcli DONE without commits or without a usage receipt, model drift and budget

@@ -10,6 +10,38 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.17.0] — 2026-09-16
+
+### Added
+- **Mail — a channel between agents with no server.** `board send "…" --from A --to
+  <agent|controller|all> [--ask] [--re SEQ]` journals a `mail` event; `board inbox --agent A`
+  prints the unread, tagged `[controller]` (an INSTRUCTION) or `[peer x]` (INFORMATION), and
+  journals an `ack` — delivery is a receipt on the chain. `board wait --agent A` is the
+  rendezvous: a worker that asked parks until the answer lands (≤ 110 s slices, exit 124 on
+  timeout). `board mail` shows the thread; `board peers --agent A` lists the other open agents and
+  what they own (`board dispatch --owns "src/api/**"`). Delivery is at the recipient's next
+  checkpoint on every host — the research found no CLI-agnostic mid-turn interrupt (only Pi's RPC
+  `steer` and Codex's app-server); `--push` prints the native binding and never runs it.
+- **Loop-proof by construction.** Eight sends per stint, threads three replies deep, no duplicate
+  mail, no mail to a returned agent — each refused at `board send` with the reason ("this is a
+  meeting, not a message"). The WORKER block gains the rule (checkpoint reads; reply ONLY to an
+  ask; NEVER mail to acknowledge or report progress); `board check` flags chatter, unread past the
+  stale threshold, unanswered asks and undeliverable mail. Board: `mail` header line, `m2` card
+  badge, `?` in attention with the reply command ready; `board resume` lists mail for the
+  controller; the flight plan states `mail: checkpoint delivery` on multi-writer strategies.
+- **Votes — majority and any-deny gates.** `board vote N --kind K --agent A --verdict ok|fail|warn
+  --why` (REVIEWER block +1 line); the gate is derived — `panel:N` majority, `consensus:N`
+  any-deny — under the rules in force when the vote was cast, shows as the card's gate text
+  (`approve 2/3 ok`), refuses `board done` on a deny, and an explicit `board gate` outranks.
+  `kind=plan` makes the plan-veto multi-approver.
+- **`team` on every host.** Where native messaging is missing the strategy becomes the file-mail
+  team (parallel workers + mail at integration points) instead of degrading to `hierarchical`;
+  the hosts matrix MESSAGE row reads `⚠️ board send (checkpoint)`.
+
+### Changed
+- Honest numbers re-measured: WORKER block ≈ 334 → 463 tokens per dispatch (the mail rule),
+  REVIEWER ≈ 176 → 221 (the vote line); MINIMAL unchanged at 19. `scripts/check-sync` registry gains `board inbox`, `board vote`, `board peers`.
+
 ## [1.16.0] — 2026-09-16
 
 ### Added

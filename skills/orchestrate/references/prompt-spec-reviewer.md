@@ -49,6 +49,8 @@ return = verdict + counts by severity + file path. Your repo access is read-only
 file under .orchestrate/ is your one write.
 Delivering your inline verdict is your completion condition — running as a background subagent
 or teammate, send it to the controller via SendMessage as your final action.
+If your inputs name a vote (panel or consensus), cast it: `board vote N --kind <gate> --agent
+<you> --verdict ok|fail|warn --why "…"` — ONE line, journaled; the quorum is derived, never yours to call.
 
 ## Check
 - MISSING: requirements skipped; things claimed but not actually implemented

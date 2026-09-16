@@ -147,5 +147,18 @@
       "references/strategy-team.md",
       "references/prompt-planner-debate.md"
     ]
+  },
+  {
+    "id": "parallel-mail",
+    "prompt": "Run these four independent features in parallel worktrees; the workers must be able to warn each other before touching shared files and ask me interface questions without stopping.",
+    "expected_references": [
+      "references/strategy-parallel.md",
+      "references/shared-contracts.md",
+      "references/shared-isolation.md"
+    ],
+    "forbidden_references": [
+      "references/strategy-loop.md",
+      "references/prompt-planner-debate.md"
+    ]
   }
 ]

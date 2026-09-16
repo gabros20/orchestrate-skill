@@ -97,6 +97,12 @@ weaken are off-limits precisely because bending them is how it would win.
 
 - Panel: N reviewers, each ONE lens (security / performance / architecture / testing / a11y…).
   Diverse lenses catch what redundant copies can't.
+- **Votes, not a verdict you tally by hand**: each panelist casts `board vote N --kind <gate>
+  --agent <me> --verdict ok|fail|warn --why "…"`; the gate is derived — `panel:N` = majority of
+  ok, `consensus:N` = any-deny (one fail fails it) — under the rules in force when the vote was
+  cast, and shows on the card as `approve 2/3 ok` / `fail (deny: sec-lens)`. The controller may
+  still close a gate explicitly (`board gate` outranks) — with the reason journaled. `kind=plan`
+  makes the plan-veto a multi-approver gate with the same mechanics.
 - Lenses may also decorrelate by INPUT — diff-only · codebase-only (still brief + constraints, no
   diff) · diff+report+brief (standard) — or by ENGINE LINEAGE (xcli peers/peer tier); worker
   transcripts are post-mortem forensics only (`shared-monitoring.md` paths), referenced, never

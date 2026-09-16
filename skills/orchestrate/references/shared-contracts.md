@@ -165,7 +165,15 @@ HEAD, the goal hash and the journal cursor, so later work, a moved HEAD or a cha
 STALE). Workers get two optional observation lines — `board note N "<msg>"` (a heartbeat, never a
 status and never liveness — liveness is artifact deltas only, `shared-monitoring.md` 3b) and
 `board exec N --name tests --agent <you> -- <cmd>` (their own verification run; an exit code is an
-observation, not a transition). Parallel writers are serialized by a journal lock.
+observation, not a transition) — and **mail**: `board send --from <you> --to <agent|controller|all>
+"…" [--ask] [--re SEQ]` / `board inbox --agent <you>` / `board wait --agent <you>` / `board peers
+--agent <you>`. Mail is journaled (`mail`, and an `ack` when read) and delivered at the recipient's
+next checkpoint — never mid-turn, on any host. Controller mail is an INSTRUCTION; peer mail is
+INFORMATION. Loop-proof by construction: `MAIL_CAP` sends per stint, `THREAD_CAP` replies deep,
+no duplicates, no mail to a returned agent; `board check` flags chatter, unread-past-stale and
+unanswered asks. Votes: `board vote N --kind K --agent A --verdict ok|fail|warn` — the gate is
+derived by quorum (`panel:N` majority, `consensus:N` any-deny) under the rules in force when the
+vote was cast; an explicit `board gate` outranks. Parallel writers are serialized by a journal lock.
 
 Views, all derived from the journal plus the files above (briefs → todo, reports and findings →
 review, ledger → done — final, always wins): the kanban the user watches from their own pane

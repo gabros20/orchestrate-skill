@@ -45,6 +45,12 @@ Acceptance criteria · Out of scope · MERGE GATE: <the exact condition allowing
 ```
 A card cannot advance without its artifact existing; merge-readiness is judged **by the gate, not
 vibes**. Return contract per worker: verdict first, <1000 tokens, branch/PR ref + report path.
+Dispatch each card with its ownership on the record (`board dispatch k --agent … --owns
+"src/ui/**"`) and tell the worker it is not alone: `board peers --agent <you>` lists the other
+open workers and what they own, so a worker that must touch a neighbour's area mails that
+neighbour first (`board send --to <peer> "will change src/api/auth.ts — import path moves"`),
+and one that needs an interface decision asks the controller (`--ask` + `board wait`) instead of
+guessing. Mail is information; the card and the gate stay the contract.
 
 ## Flow
 

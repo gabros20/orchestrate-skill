@@ -152,6 +152,11 @@ board resume                            # the handoff's state layer, with a rece
 board postmortem                        # per-tier evidence for routing, recommend-only
 ```
 
+Agents talk through the same journal — `board send` / `inbox` / `wait` — information and questions
+only, delivered at the recipient's next checkpoint on every host (no server, no host feature), with
+hard caps so two agents can never talk instead of working; `board peers` tells a parallel worker who
+else is working and what they own. Panels vote (`board vote`): majority or any-deny, derived.
+
 `install.sh` puts `board` on your PATH; every workspace also carries a zero-install copy. Existing
 `.orchestrate/` folders from older versions are adopted (`board init … --resume`), never restarted.
 Command reference: [docs/usage.md](docs/usage.md#the-journal-flight-plan--board--resume).

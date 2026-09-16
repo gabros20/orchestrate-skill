@@ -154,9 +154,12 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    re-resolving that dimension and re-asking; record the outcome (`board plan approved`).
 6. Dispatch only ready work — journal each dispatch and each return (`board dispatch N --agent
    --model [--session --log]`, `board return N --agent --status [--tokens]`), each gate (`board
-   review` / `board gate`), each machine check (`board exec N --name tests -- <cmd>`) and each
-   recovery (`board nudge` / `board escalate`). Monitor without duplicating agents (`board
-   attention`, `board check`) and integrate through the selected strategy's owner.
+   review` / `board gate` / `board vote`), each machine check (`board exec N --name tests -- <cmd>`)
+   and each recovery (`board nudge` / `board escalate`). Agents talk through the journal, never
+   mid-turn: `board send` / `inbox` / `wait` (information and questions only — the caps make it
+   loop-proof); dispatch parallel workers with `--owns` so `board peers` tells each one who else
+   is working. Monitor without duplicating agents (`board attention`, `board inbox --agent
+   controller`, `board check`) and integrate through the selected strategy's owner.
 7. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
    and send failures back to the correct worker or owner.
 8. Close each gated unit with `board done N` (it writes the ledger line; refused over a failed

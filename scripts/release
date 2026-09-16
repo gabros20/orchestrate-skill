@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# release <version> [--dry-run] — the whole release chain, refusing at the first thing that is not true.
+# Gates: clean tree on a feature branch · check-sync green · CHANGELOG has the entry · plugin.json matches ·
+# tag absent (local and origin). Then: push → PR → merge → main → tag → GitHub Release → install everywhere.
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+v="${1:-}"; mode="${2:-}"
+[ -n "$v" ] || { echo "usage: scripts/release <version> [--dry-run]" >&2; exit 2; }
+fail() { echo "release: REFUSED — $1" >&2; exit 1; }
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+[ "$branch" != "main" ] || fail "on main; release from the feature branch (the chain merges it)"
+[ -z "$(git status --porcelain)" ] || fail "working tree not clean — commit everything first"
+grep -q "^## \[$v\]" CHANGELOG.md || fail "CHANGELOG.md has no '## [$v]' entry"
+pv="$(python3 -c 'import json; print(json.load(open(".codex-plugin/plugin.json"))["version"])')"
+[ "$pv" = "$v" ] || fail ".codex-plugin/plugin.json says $pv, not $v"
+git fetch -q --tags origin
+! git rev-parse -q --verify "refs/tags/v$v" >/dev/null || fail "tag v$v already exists"
+scripts/check-sync || fail "check-sync failed"
+notes="$(awk -v v="$v" '$0 ~ "^## \\[" v "\\]" { on = 1; next } on && /^## \[/ { exit } on' CHANGELOG.md)"
+[ -n "$(printf '%s' "$notes" | tr -d '[:space:]')" ] || fail "the [$v] changelog section is empty"
+title="$(git log -1 --pretty=%s)"
+echo "release: v$v from $branch — every gate passes"
+
+if [ "$mode" = "--dry-run" ]; then
+  printf '%s\n' "$notes"
+  echo "release: dry run — nothing pushed, merged, tagged or installed"
+  exit 0
+fi
+[ -z "$mode" ] || fail "unknown option $mode"
+
+git push -u origin "$branch"
+if ! gh pr view "$branch" >/dev/null 2>&1; then
+  gh pr create --base main --head "$branch" --title "$title" --body "$notes"
+fi
+gh pr merge "$branch" --merge
+git checkout main
+git pull -q --ff-only origin main
+git tag -a "v$v" -m "v$v"
+git push origin "v$v"
+gh release create "v$v" --title "v$v" --notes "$notes"
+./install.sh all
+echo "release: v$v published, tagged and installed"

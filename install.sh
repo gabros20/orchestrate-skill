@@ -46,10 +46,17 @@ case "$target" in
                install_to "$HOME/.agents/skills" ;;
   pi)          install_to "$HOME/.pi/agent/skills"
                install_to "$HOME/.agents/skills" ;;
-  all)         install_to "$HOME/.claude/skills"
+  jcode)       install_to "$HOME/.jcode/skills" ;;
+  all)         # claude, codex and the shared ~/.agents always; every other CLI home only if it already exists —
+               # never create a home for a CLI the user does not have.
+               install_to "$HOME/.claude/skills"
                install_to "${CODEX_HOME:-$HOME/.codex}/skills"
-               install_to "$HOME/.agents/skills" ;;
-  *) echo "usage: ./install.sh [claude|codex|agents|cursor|antigravity|opencode|grok|hermes|kimi|pi|all]" >&2; exit 1 ;;
+               install_to "$HOME/.agents/skills"
+               for parent in "$HOME/.cursor" "$HOME/.gemini/config" "$HOME/.gemini/antigravity-cli" "$HOME/.config/opencode" \
+                             "$HOME/.grok" "$HOME/.hermes" "$HOME/.kimi-code" "$HOME/.pi/agent" "$HOME/.jcode"; do
+                 if [ -d "$parent" ]; then install_to "$parent/skills"; fi
+               done ;;
+  *) echo "usage: ./install.sh [claude|codex|agents|cursor|antigravity|opencode|grok|hermes|kimi|pi|jcode|all]" >&2; exit 1 ;;
 esac
 
 # `board` — the live kanban the user runs in a pane of their own. Installed on PATH when

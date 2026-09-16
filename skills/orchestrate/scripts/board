@@ -1,37 +1,44 @@
 #!/usr/bin/env python3
-"""board — the journal (v2) and its views: flight plan, live kanban, roster, checks, resume receipt.
+"""board — the journal (v2) and its views. Stdlib only. Resolves the workspace through the main
+worktree, so it works from any pane or lane whose cwd is anywhere inside the repo or a worktree.
 
-Everything is derived from `.orchestrate/` — briefs, reports, review findings, the ledger — plus
-ONE append-only, hash-chained stream, `.orchestrate/journal.jsonl`, that carries the facts the
-disk cannot: what was resolved at kickoff, who was dispatched on what, what came back, which
-gates ran, what was decided. Newest fact wins; a ledger line is final. The board is a VIEW,
-never a second record: transitions are the controller's to record (observation ≠ transition);
-workers may only `note`. Stdlib only. Resolves the workspace through the main worktree, so it
-works from any pane whose cwd is anywhere inside the repo or one of its worktrees.
+Everything is derived from `.orchestrate/` — briefs, reports, findings, the ledger — plus ONE
+append-only, hash-chained stream, `.orchestrate/journal.jsonl`. Newest fact wins; a ledger line
+is final. The board is a VIEW, never a second record: transitions are the controller's to record;
+workers only observe (note · exec · send · inbox · wait · peers · vote), and a lane in a
+read-only sandbox degrades to a printed line instead of a traceback.
 
-  board                        live kanban (q quit · j/k focus · enter expand card · e expand all ·
-                               a attention only · arrows scroll · r reload — re-executes the script
-                               from disk; a reinstalled script reloads itself automatically)
-  board show [-x] [--json]     one-shot kanban · agents · log · task N · attention · plan · resume
-  board check [--finish] [--json]   reconcile journal vs disk (chain, gates, liveness, drift, budget)
-  board path                   print the journal file
+CONTROLLER — the loop
+  init PLAN --strategy S [--review --engine --host --models r=t,.. --effort --isolation --trigger
+       --workers --budget --confirm --alias --lanes --goal ".."] [--resume | --fresh]
+  set key=value ..                 re-resolve a dimension (the plan goes back to pending)
+  plan [--why ".."] · plan approved|changed|skipped [--msg]
+  dispatch N --agent A --model M [--role --engine --effort --worktree --owns --session --log --cmd-file]
+  return N --agent A --status DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED
+       [--commits a..b --report PATH --observed-model M --tokens 84k --session ID]
+  review N --kind K [--round --agent --model] · gate N --kind K --verdict ok|fail|warn [--round --findings]
+  exec N --name X -- <cmd> · result N --name X --exit RC [--log]     a check THROUGH the journal
+  nudge N --agent A · escalate N --agent A --to MODEL --why ".." · blocked N --msg ".."
+  decide ID "msg" [--owner --task] · rail "msg" · todo N [title]
+  done N [--msg]                   writes the ledger line; refused over a failed gate or check
+  check [--finish] [--replay] [--json] · finish --gate pass|fail --evidence PATH [--force --reason]
+  wait --task N [--task M] [--timeout 0]   block until their work is on disk (exit 3: one cannot land)
 
-  board init PLAN --strategy S [--review --engine --host --models r=t,.. --effort --isolation
-                  --trigger --workers --budget agents=9,tokens=.. --confirm --alias --goal "…"]
-                  [--resume]    kickoff: archive any previous run, queue every '# Task N',
-                                write run.md's Resolved block. --resume adds tasks to the current run.
-  board set key=value [..]     re-resolve a dimension (journaled; plan goes back to pending)
-  board plan [--why] · board plan approved|changed|skipped [--msg]
-  board dispatch N --agent A --model M [--role R --engine E --effort X --worktree W --msg]
-  board return N --agent A --status DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED
-                  [--commits a..b --report PATH --observed-model M --tokens 84k --msg]
-  board review N --kind spec|quality|.. [--round K --agent A --model M]     (gate opened)
-  board gate N --kind K --verdict ok|fail|warn [--round K --findings FILE]  (gate closed, explicit)
-  board nudge N --agent A · board escalate N --agent A --to MODEL --why ".."
-  board decide ID "msg" [--owner O --task N]     also appends decisions.md
-  board rail "msg"                               degradation / single-flight owner, one line
-  board blocked N --msg ".." · board done N [--msg] (writes the ledger line) · board note N "msg"
-  board finish --gate pass|fail --evidence PATH [--msg] [--force --reason ".."]
+LANES — a subprocess engine as one command
+  launch N --agent A --engine E --model M [--effort --owns --after N,M --cwd --extra='..' --dry-run --fg] -- spec.md
+  lane-exit N --agent A --exit RC · receipt N --agent A [--tokens --calls --cost --session]
+  (exit 125 = a dependency failed and the engine never started; 124 = the gate timed out)
+
+WORKERS — observations (every one also hands you your unread mail)
+  note N "msg" --agent A · exec N --name X --agent A -- <cmd> · result N --name X --exit RC --agent A
+  send "msg" --from A --to <agent|controller|all> [--ask] [--re SEQ] · inbox --agent A [--peek]
+  wait --agent A [--timeout S] · wait --agent A --task N · peers --agent A
+  vote N --kind K --agent A --verdict ok|fail|warn [--why ".."]
+
+VIEWS
+  board (live kanban: q · j/k · enter · e · a · r · n) · watch [--here] · runs · show [-x --attention --json]
+  plan · agents · attention · task N · log [-n --json] · mail [--task N]
+  follow [--for controller --kinds .. --since SEQ --timeout S] · postmortem · resume [--no-probe] · path
 """
 
 from __future__ import annotations
@@ -1170,8 +1177,10 @@ def hhmm(ts: float) -> str:
 
 
 def queued_after(st: "State", t: Task) -> list[str]:
+    """The dependencies a gated lane is still sleeping on (its wrapper is waiting; the engine has not started)."""
     for x in st.stints:
-        if x.task == t.id and not x.returned and x.after and not all(dep_landed(st, st.tasks[d]) for d in x.after if d in st.tasks):
+        if x.task == t.id and not x.returned and x.after and x.exit_code is None and \
+                not all(dep_landed(st, st.tasks[d]) for d in x.after if d in st.tasks):
             return x.after
     return []
 
@@ -1197,8 +1206,12 @@ def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
             out.append(("x", t, f"{', '.join(t.failed_checks)} check failed (exit {c['exit'] or '?'}) — fix, re-run"
                         + (f" · {c['log']}" if c["log"] else "")))
         elif s == "in_progress" and any(x.task == t.id and not x.returned and x.exit_code is not None for x in st.stints):
-            x = next(x for x in st.stints if x.task == t.id and not x.returned and x.exit_code is not None)
-            out.append(("!" if x.exit_code == 0 else "x", t, f"lane {x.agent} exited rc={x.exit_code} with no return — read the report, then board return"))
+            x = [x for x in st.stints if x.task == t.id and not x.returned and x.exit_code is not None][-1]   # the newest lane
+            if x.exit_code == 125:
+                out.append(("x", t, f"lane {x.agent} never started — dependency task {', '.join(x.after) or '?'} cannot land; "
+                            f"board return {t.id} --agent {x.agent} --status BLOCKED --msg \"dependency failed\", fix it, relaunch"))
+            else:
+                out.append(("!" if x.exit_code == 0 else "x", t, f"lane {x.agent} exited rc={x.exit_code} with no return — read the report, then board return"))
         elif s == "in_progress" and queued_after(st, t):
             pass  # the wrapper is waiting for a dependency; the model has not started — nothing to nudge
         elif s == "in_progress" and is_stale(t, now):
@@ -2127,7 +2140,7 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
     for s in [x for x in st.stints if x.returned]:
         if s.status == "DONE" and s.engine and s.engine != "claude" and not s.commits and role_tier(s.role) == "worker":
             findings.append(f"task {s.task}: xcli {s.engine} return DONE with no commits — run the empty-diff check (REFUSED?)")
-        if s.status in ("DONE", "DONE_WITH_CONCERNS") and s.engine and s.engine != "claude" and not s.tokens:
+        if s.status in ("DONE", "DONE_WITH_CONCERNS") and s.engine and (s.engine != "claude" or s.log) and not s.tokens:
             findings.append(f"task {s.task}: xcli {s.engine} return with no usage receipt (--tokens) — budgets need receipts")
     done_ids = [t.id for t in st.ordered() if t.state == "done"]
     if done_ids:
@@ -2457,16 +2470,20 @@ def render_wrapper(ws: Path, task: str, agent: str, engine: str, model: str, eff
     parts += [shlex.quote(x) for x in extra]
     stdin = f"< {shlex.quote(str(spec))}" if tpl["prompt"] == "stdin" else "</dev/null"
     me = Path(__file__).resolve()
+    me_q, agent_q, task_q = shlex.quote(str(me)), shlex.quote(agent), shlex.quote(task)
     gate = ""
     if after:
         deps = " ".join(f"--task {shlex.quote(x)}" for x in after)
-        gate = (f"{shlex.quote(str(me))} wait --agent {shlex.quote(agent)} {deps} --timeout 0 > {shlex.quote(str(ws / (log[:-6] + '.wait')))} 2>&1 "
-                f"|| {{ {shlex.quote(str(me))} lane-exit {shlex.quote(task)} --agent {shlex.quote(agent)} --exit 124; exit 124; }}")
+        # exit 3 (a dependency cannot land) / 2 (unknown task) → 125: the engine never starts; 124 stays a timeout
+        gate = (f"{me_q} wait --agent {agent_q} {deps} --timeout 0 > {shlex.quote(str(ws / (log[:-6] + '.wait')))} 2>&1 "
+                f"|| {{ rc=$?; [ \"$rc\" = 124 ] || rc=125; {me_q} lane-exit {task_q} --agent {agent_q} --exit \"$rc\"; exit \"$rc\"; }}")
     script = "\n".join([
         "#!/bin/sh",
         f"# board launch · task {task} · {agent} · {engine} {model} @ {effort or 'high'}" + (f" · session {session}" if session else "") +
         (f" · after task {', '.join(after)}" if after else ""),
-        f"cd {shlex.quote(str(cwd))}"] + ([gate] if gate else []) + [
+        f"cd {shlex.quote(str(cwd))}",
+        f"export ORCHESTRATE_WS={shlex.quote(str(ws.resolve()))}   # every board call inside the lane resolves THIS run, worktree or not",
+        f"export PATH={shlex.quote(str(me.parent))}:$PATH"] + ([gate] if gate else []) + [
         f"{' '.join(parts)} {stdin} > {shlex.quote(str(ws / log))} 2> {shlex.quote(str(ws / (log[:-6] + '.err')))}",
         "rc=$?",
         f"{shlex.quote(str(me))} lane-exit {shlex.quote(task)} --agent {shlex.quote(agent)} --exit \"$rc\"",
@@ -2539,6 +2556,33 @@ def dep_landed(st: "State", d: Task) -> bool:
     return bool(exited) and (st.ws / f"task-{d.id}-report.md").exists()
 
 
+def dep_failed(st: "State", d: Task) -> str:
+    """Why a dependency can never land (empty = it still can): returned BLOCKED/NEEDS_CONTEXT/REFUSED, blocked by
+    the controller, or its latest lane died with no report. A waiter that keeps waiting for it would wait forever;
+    a gated wrapper that started its engine on it would pay for a lane with a missing input."""
+    if d.state == "done":
+        return ""
+    if d.returned and d.last_status in ("BLOCKED", "NEEDS_CONTEXT", "REFUSED"):
+        return f"returned {d.last_status}"
+    if d.state == "blocked":
+        return d.detail or d.note or "blocked"
+    mine = [s for s in st.stints if s.task == d.id]
+    if mine and not mine[-1].returned and mine[-1].exit_code not in (None, 0) and not (st.ws / f"task-{d.id}-report.md").exists():
+        return f"lane {mine[-1].agent} exited rc={mine[-1].exit_code} with no report"
+    return ""
+
+
+def observe(ws: Path, fallback: str = "", actor: str = "worker", **fields: object) -> dict | None:
+    """A worker-side journal write. In a read-only lane (codex --sandbox read-only, claude --restricted) it degrades
+    to a printed line the worker can carry in its inline return — never a traceback in the model's context."""
+    try:
+        return append_event(ws, actor=actor, **fields)
+    except OSError as exc:
+        print(f"board: journal not writable from this lane ({exc.__class__.__name__}: {exc}) — "
+              + (f"put this line in your inline return so the controller records it: {fallback}" if fallback else "nothing recorded"))
+        return None
+
+
 def deliver(ws: Path, agent: str) -> None:
     """Piggyback delivery: any board call a worker makes also hands over its unread mail (and acks it)."""
     if not agent or agent == "controller":
@@ -2549,7 +2593,7 @@ def deliver(ws: Path, agent: str) -> None:
         return
     print(f"mail for {agent}:")
     print(render_inbox(st, agent)[0])
-    append_event(ws, actor="worker", ev="ack", agent=agent, upto=max(m.seq for m in items), count=len(items))
+    observe(ws, "", ev="ack", agent=agent, upto=max(m.seq for m in items), count=len(items))
 
 
 def follow(ws: Path, since: int, kinds: set[str] | None, for_: str, timeout: int) -> int:
@@ -2696,9 +2740,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--re", type=int, help="seq of the mail this answers"); p.add_argument("--ask", action="store_true", help="a question — the recipient owes ONE reply")
     p.add_argument("--push", action="store_true", help="print the host's native push binding for the recipient (never run)")
     p = sub.add_parser("inbox"); p.add_argument("--agent", required=True); p.add_argument("--peek", action="store_true"); p.add_argument("--json", action="store_true")
-    p = sub.add_parser("wait", help="rendezvous: block until mail arrives, or until --task N has returned (exit 124 on timeout)")
-    p.add_argument("--agent", required=True); p.add_argument("--timeout", type=int, default=WAIT_SLICE)
-    p.add_argument("--task", action="append", help="wait for this task's RETURN instead of for mail (repeatable: all must have returned)")
+    p = sub.add_parser("wait", help="rendezvous: block until mail arrives, or until --task N's work is on disk (exit 3: it cannot land, 124: timeout)")
+    p.add_argument("--agent", default="controller"); p.add_argument("--timeout", type=int, default=WAIT_SLICE, help="seconds; 0 = no deadline")
+    p.add_argument("--task", action="append", help="wait for this task's work instead of for mail (repeatable: all must have landed)")
     p = sub.add_parser("mail"); p.add_argument("--task"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("peers"); p.add_argument("--agent", required=True)
     p = sub.add_parser("vote", help="one reviewer's verdict; the gate is derived by quorum (panel = majority, consensus = any-deny)")
@@ -2889,11 +2933,12 @@ def main(argv: list[str]) -> int:
         append_event(ws, task=args.task, ev="exit", agent=agent, exit=args.exit)
         st = load(ws)
         s = st.stint_of(agent)
-        r = fetch_receipt(ws, s) if s else {}
+        r = fetch_receipt(ws, s) if s and args.exit not in (124, 125) else {}   # a gate exit: the engine never ran, nothing to bill
         if r:
             append_event(ws, task=args.task, ev="receipt", agent=agent, tokens=r.get("tokens"), calls=r.get("calls"),
                          cost=r.get("cost"), session=r.get("session"), source=r.get("source"))
-        print(f"board: lane {agent} exit {args.exit}" + (f" · receipt {fmt_tokens(int(r.get('tokens') or 0))} via {r.get('source')}" if r else " · receipt NOT_PROVEN (engine offers none, or fetch failed)"))
+        print(f"board: lane {agent} exit {args.exit}" + (f" · receipt {fmt_tokens(int(r.get('tokens') or 0))} via {r.get('source')}" if r else
+              (" · engine never started (dependency gate)" if args.exit in (124, 125) else " · receipt NOT_PROVEN (engine offers none, or fetch failed)")))
     elif cmd == "receipt":
         agent = clean(args.agent)
         st = load(ws)
@@ -2935,8 +2980,11 @@ def main(argv: list[str]) -> int:
                 sys.exit(f"board: thread #{args.re} is {depth} deep (cap {THREAD_CAP}) — this is a meeting, not a message: decide, or escalate to the controller")
         if any(m.sender == sender and m.to == to and m.msg == msg for m in st.mail):
             sys.exit("board: identical mail already sent — the recipient reads at its next checkpoint")
-        ev = append_event(ws, actor="controller" if sender == "controller" else "worker", ev="mail", **{"from": sender},
-                          to=to, msg=msg, re=args.re, ask=bool(args.ask))
+        ev = observe(ws, f"board send {shlex.quote(msg)} --from {sender} --to {to}" + (" --ask" if args.ask else "") + (f" --re {args.re}" if args.re else ""),
+                     actor="controller" if sender == "controller" else "worker", ev="mail", **{"from": sender},
+                     to=to, msg=msg, re=args.re, ask=bool(args.ask))
+        if not ev:
+            return 0
         print(f"board: mail #{ev['seq']} {sender} -> {to}" + (" [ask — the recipient owes one reply]" if args.ask else "") +
               " · delivered at the recipient's next checkpoint")
         if args.push and to not in ("controller", "all"):
@@ -2957,16 +3005,35 @@ def main(argv: list[str]) -> int:
         else:
             print(out)
         if items and not args.peek:
-            append_event(ws, actor="controller" if agent == "controller" else "worker", ev="ack", agent=agent,
-                         upto=max(m.seq for m in items), count=len(items))
+            observe(ws, "", actor="controller" if agent == "controller" else "worker", ev="ack", agent=agent,
+                    upto=max(m.seq for m in items), count=len(items))
     elif cmd == "wait":
         agent = clean(args.agent)
         deadline = (time.time() + args.timeout) if args.timeout > 0 else float("inf")   # 0 = forever (wrappers)
+
+        def idle() -> None:  # sleep until the workspace changes (or ~2 s), never a hot re-read of the journal
+            sig = signature(ws)
+            for _ in range(4):
+                time.sleep(0.5)
+                if signature(ws) != sig or time.time() >= deadline:
+                    return
+
         while True:
             st = load(ws)
             if args.task:
                 deps = [st.tasks.get(str(x)) for x in args.task]
-                landed = [d for d in deps if d and dep_landed(st, d)]
+                unknown = [x for x, d in zip(args.task, deps) if d is None]
+                if unknown:
+                    print(f"board: no such task {', '.join(unknown)} — nothing to wait for (planned tasks: {', '.join(t.id for t in st.ordered()) or 'none'})")
+                    return 2
+                failed = [(d, dep_failed(st, d)) for d in deps if dep_failed(st, d)]
+                if failed:
+                    for d, why in failed:
+                        print(f"board: task {d.id} {d.title} cannot land — {why}; this input will not arrive "
+                              f"(return NEEDS_CONTEXT naming it, or the controller re-dispatches task {d.id})")
+                    deliver(ws, agent)
+                    return 3
+                landed = [d for d in deps if dep_landed(st, d)]
                 if len(landed) == len(deps):
                     for d in landed:
                         s = next((x for x in reversed(st.stints) if x.task == d.id and (x.returned or x.exit_code is not None)), None)
@@ -2980,18 +3047,18 @@ def main(argv: list[str]) -> int:
                     open_ = ", ".join(f"task {x}" for x, d in zip(args.task, deps) if not (d and dep_landed(st, d)))
                     print(f"board: {open_} not returned after {args.timeout}s — wait again, or return NEEDS_CONTEXT naming the dependency")
                     return 124
-                time.sleep(0.5)
+                idle()
                 continue
             items = st.unread(agent)
             if items:
                 print(render_inbox(st, agent)[0])
-                append_event(ws, actor="controller" if agent == "controller" else "worker", ev="ack", agent=agent,
-                             upto=max(m.seq for m in items), count=len(items))
+                observe(ws, "", actor="controller" if agent == "controller" else "worker", ev="ack", agent=agent,
+                        upto=max(m.seq for m in items), count=len(items))
                 return 0
             if time.time() >= deadline:
                 print(f"board: no mail for {agent} in {args.timeout}s — continue with your brief, or return NEEDS_CONTEXT if you cannot")
                 return 124
-            time.sleep(0.5)
+            idle()
     elif cmd == "mail":
         st = load(ws)
         print(json.dumps([vars(m) for m in st.mail], ensure_ascii=False, indent=1, default=str) if args.json else render_mail(st, args.task or ""))
@@ -2999,8 +3066,10 @@ def main(argv: list[str]) -> int:
         print(render_peers(load(ws), clean(args.agent)))
         deliver(ws, clean(args.agent))
     elif cmd == "vote":
-        append_event(ws, actor="worker", task=args.task, ev="vote", kind=args.kind, agent=args.agent, verdict=args.verdict,
-                     why=args.why, round=args.round)
+        ev = observe(ws, f"board vote {args.task} --kind {args.kind} --agent {args.agent} --verdict {args.verdict}" + (f" --why {shlex.quote(args.why)}" if args.why else ""),
+                     task=args.task, ev="vote", kind=args.kind, agent=args.agent, verdict=args.verdict, why=args.why, round=args.round)
+        if not ev:
+            return 0
         st = load(ws)
         t = st.tasks.get(str(args.task))
         print(f"board: vote {args.verdict} by {args.agent} on task {args.task} {args.kind} — gate now: {t.gates.get(args.kind, '?') if t else '?'}")
@@ -3010,28 +3079,34 @@ def main(argv: list[str]) -> int:
         if not argv_cmd:
             sys.exit("board: exec needs a command after --  (board exec N --name tests -- npm test)")
         name = re.sub(r"[^\w.-]+", "-", args.name).strip("-") or "check"
-        (ws / "raw").mkdir(parents=True, exist_ok=True)
-        rel = f"raw/check-task{args.task}-{name}.log"
         actor = "worker" if args.agent else "controller"
-        append_event(ws, actor=actor, task=args.task, ev="check", name=name, status="running", cmd=" ".join(argv_cmd),
-                     log=rel, agent=args.agent)
+        fallback = f"board result {args.task} --name {name} --exit <rc>" + (f" --agent {args.agent}" if args.agent else "")
+        ev = observe(ws, fallback, actor=actor, task=args.task, ev="check", name=name, status="running", cmd=" ".join(argv_cmd), agent=args.agent)
+        rel = f"raw/check-task{args.task}-{name}-{ev['seq'] if ev else int(time.time())}.log"   # one log per run: re-runs never erase evidence
+        try:
+            (ws / "raw").mkdir(parents=True, exist_ok=True)
+            fh = (ws / rel).open("w", encoding="utf-8")
+        except OSError:   # read-only lane: the log goes to a temp file and the journal line names it absolutely
+            rel = tempfile.mkstemp(prefix=f"check-task{args.task}-{name}-", suffix=".log")[1]
+            fh = open(rel, "w", encoding="utf-8")
         t0 = time.time()
-        with (ws / rel).open("w", encoding="utf-8") as fh:
+        with fh:
             try:
                 rc = subprocess.run(argv_cmd, stdout=fh, stderr=subprocess.STDOUT).returncode
             except OSError as exc:
                 fh.write(f"board: could not launch {argv_cmd[0]}: {exc}\n")
                 rc = 127
         dur = fmt_dur(time.time() - t0)
-        append_event(ws, actor=actor, task=args.task, ev="check", name=name, status="ok" if rc == 0 else "fail", exit=rc,
-                     dur=dur, log=rel, agent=args.agent)
-        print(f"board: check {name} {'ok' if rc == 0 else 'FAIL'} (exit {rc}, {dur}) -> .orchestrate/{rel}")
+        observe(ws, fallback.replace("<rc>", str(rc)), actor=actor, task=args.task, ev="check", name=name,
+                status="ok" if rc == 0 else "fail", exit=rc, dur=dur, log=rel, agent=args.agent)
+        print(f"board: check {name} {'ok' if rc == 0 else 'FAIL'} (exit {rc}, {dur}) -> {rel if rel.startswith('/') else '.orchestrate/' + rel}")
         deliver(ws, clean(args.agent or ""))
         return rc
     elif cmd == "result":
-        append_event(ws, actor="worker" if args.agent else "controller", task=args.task, ev="check",
-                     name=re.sub(r"[^\w.-]+", "-", args.name).strip("-") or "check", status="ok" if args.exit == 0 else "fail",
-                     exit=args.exit, dur=args.dur, log=args.log, msg=args.msg, agent=args.agent)
+        observe(ws, f"board result {args.task} --name {args.name} --exit {args.exit}" + (f" --agent {args.agent}" if args.agent else ""),
+                actor="worker" if args.agent else "controller", task=args.task, ev="check",
+                name=re.sub(r"[^\w.-]+", "-", args.name).strip("-") or "check", status="ok" if args.exit == 0 else "fail",
+                exit=args.exit, dur=args.dur, log=args.log, msg=args.msg, agent=args.agent)
         print(f"board: check {args.name} {'ok' if args.exit == 0 else 'FAIL'} (exit {args.exit}) journaled")
         deliver(ws, clean(args.agent or ""))
     elif cmd == "init":
@@ -3109,7 +3184,8 @@ def main(argv: list[str]) -> int:
             sys.exit("board: blocked needs --msg (owner + next action, or it's abandoned, not blocked)")
         append_event(ws, task=args.task, ev="blocked", msg=args.msg, agent=args.agent)
     elif cmd == "note":
-        append_event(ws, actor=args.agent or "worker", task=args.task, ev="note", msg=args.msg, agent=args.agent)
+        observe(ws, f"board note {args.task} {shlex.quote(args.msg)}" + (f" --agent {args.agent}" if args.agent else ""),
+                actor=args.agent or "worker", task=args.task, ev="note", msg=args.msg, agent=args.agent)
         deliver(ws, clean(args.agent or ""))
     elif cmd == "decide":
         append_event(ws, ev="decide", id=args.id, msg=args.msg, owner=args.owner, task=args.task)
@@ -3160,6 +3236,11 @@ def selftest() -> int:
         else:
             assert rc in (0, None), f"{argv}: exit {rc}\n{buf.getvalue()}"
         return buf.getvalue()
+
+    # every subcommand the parser knows is in the help, grouped by role — the help can never go stale again
+    names = list(build_parser()._subparsers._group_actions[0].choices)  # type: ignore[union-attr]
+    missing = [x for x in names if not re.search(rf"(?m)^\s+.*\b{re.escape(x)}\b", __doc__ or "")]
+    assert not missing, f"subcommands missing from the help: {missing}"
 
     cwd = os.getcwd()
     env_ws = os.environ.pop("ORCHESTRATE_WS", None)
@@ -3280,7 +3361,10 @@ def selftest() -> int:
 
         # --- checks: exec runs THROUGH the journal, badges render, done is refused over a failure ----
         out = run("exec", "3", "--name", "tests", "--", sys.executable, "-c", "print('ok')")
-        assert "tests ok" in out and (ws / "raw" / "check-task3-tests.log").read_text().strip() == "ok", out
+        logs = sorted((ws / "raw").glob("check-task3-tests-*.log"))
+        assert "tests ok" in out and len(logs) == 1 and logs[0].read_text().strip() == "ok", out
+        run("exec", "3", "--name", "tests", "--", sys.executable, "-c", "print('again')")
+        assert len(list((ws / "raw").glob("check-task3-tests-*.log"))) == 2, "a re-run never erases the previous run's log"
         run("exec", "3", "--name", "lint", "--", sys.executable, "-c", "import sys; sys.exit(2)", expect_fail=True)
         st = load(ws)
         assert st.tasks["3"].checks["tests"]["status"] == "ok" and st.tasks["3"].checks["lint"]["exit"] == "2"
@@ -3464,6 +3548,7 @@ def selftest() -> int:
         shim = Path(tmp) / "bin"
         shim.mkdir(exist_ok=True)
         (shim / "grok").write_text("#!/bin/sh\nif [ \"$1\" = usage ]; then echo '{\"session\":{\"totalTokens\":12345,\"modelCalls\":7}}'; exit 0; fi\n"
+                                   "echo x >> \"$(dirname \"$0\")/grok.calls\"; [ -n \"$ORCHESTRATE_WS\" ] || exit 9\n"
                                    "cat >/dev/null; echo '{\"text\":\"done\",\"stopReason\":\"end_turn\"}'\n")
         (shim / "grok").chmod(0o755)
         old_path = os.environ.get("PATH", "")
@@ -3484,12 +3569,42 @@ def selftest() -> int:
             out = run("launch", "3", "--agent", "task3-after", "--engine", "grok", "--model", "grok-4.6", "--after", "1", "--fg", "--", "plan.md")
             assert "finished rc=0" in out and load(ws).stint_of("task3-after").after == ["1"], out
             assert any("exited rc=0 with no return" in why for _, _, why in attention(st, time.time()))
+            assert "export ORCHESTRATE_WS=" in (ws / load(ws).stint_of("task3-after").cmd_file).read_text(), "the lane's env carries the run"
+            # a dependency that cannot land: the waiter is released with exit 3; a gated lane exits 125 and NEVER starts its engine
+            run("blocked", "2", "--msg", "owner: controller · plan wrong")
+            out = run("wait", "--agent", "task3-after", "--task", "2", "--timeout", "1", expect_fail=True)   # task 2 is blocked
+            assert "cannot land" in out and "plan wrong" in out, out
+            assert "no such task" in run("wait", "--task", "99", "--timeout", "1", expect_fail=True)         # --agent defaults to controller
+            calls = (shim / "grok.calls").read_text().count("x")
+            run("launch", "3", "--agent", "task3-doomed", "--engine", "grok", "--model", "grok-4.6", "--after", "2", "--fg", "--", "plan.md", expect_fail=True)
+            s = load(ws).stint_of("task3-doomed")
+            assert s and s.exit_code == 125 and s.tokens == 0 and (shim / "grok.calls").read_text().count("x") == calls, "a doomed lane never starts its engine"
+            assert any("never started" in why and "task3-doomed" in why for _, _, why in attention(load(ws), time.time()))
+            assert not queued_after(load(ws), load(ws).tasks["3"]), "an exited gate is not 'queued'"
+            run("return", "3", "--agent", "task3-doomed", "--status", "BLOCKED", "--msg", "dependency task 2 failed")
             run("return", "3", "--agent", "task3-lane", "--status", "DONE")   # no --tokens: the receipt already landed
             st = load(ws)
             assert "no usage receipt" not in "\n".join(check(st)) and st.run.tokens >= 12345
             assert "7 calls" in run("task", "3") and "calls" in run("postmortem")
         finally:
             os.environ["PATH"] = old_path
+
+        # --- a read-only lane: observations degrade to a printed line, never a traceback ---------------------------
+        run("dispatch", "4", "--agent", "task4-ro", "--model", "sonnet")
+        for f in (ws / JOURNAL, ws / ".journal.lock"):
+            f.chmod(0o444)
+        try:
+            out = run("note", "4", "hi", "--agent", "task4-ro")
+            assert "not writable" in out and "board note 4 hi --agent task4-ro" in out, out
+            out = run("vote", "4", "--kind", "approve", "--agent", "task4-ro", "--verdict", "ok")
+            assert "board vote 4 --kind approve --agent task4-ro --verdict ok" in out, out
+            assert "not writable" in run("send", "fyi", "--from", "task4-ro", "--to", "controller")
+            assert "no new mail" in run("inbox", "--agent", "task4-ro")
+        finally:
+            for f in (ws / JOURNAL, ws / ".journal.lock"):
+                f.chmod(0o644)
+        assert not load(ws).problems and not any(e.get("agent") == "task4-ro" and e.get("ev") != "dispatch" for e in load(ws).events)
+        run("return", "4", "--agent", "task4-ro", "--status", "DONE")
 
         # --- piggyback delivery: a worker's own board call hands over its mail ---------------------------------
         run("dispatch", "4", "--agent", "task4-b", "--model", "sonnet")

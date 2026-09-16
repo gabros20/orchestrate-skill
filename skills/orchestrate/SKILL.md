@@ -152,16 +152,18 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 5. Render the flight plan from the resolved record (`board plan --why "…"`) and gate on the
    user's approval ([flight plan](references/shared-flight-plan.md)); apply any tweaks by
    re-resolving that dimension and re-asking; record the outcome (`board plan approved`).
-6. Dispatch only ready work — journal each dispatch and each return (`board dispatch N --agent
-   --model [--session --log]`, `board return N --agent --status [--tokens]`), each gate (`board
-   review` / `board gate` / `board vote`; a subprocess lane is one command, `board launch N
-   --agent --engine --model -- brief.md`, which journals its exit and receipt when it ends), each
-   machine check (`board exec N --name tests -- <cmd>`)
-   and each recovery (`board nudge` / `board escalate`). Agents talk through the journal, never
-   mid-turn: `board send` / `inbox` / `wait` (information and questions only — the caps make it
-   loop-proof); dispatch parallel workers with `--owns` so `board peers` tells each one who else
-   is working. Monitor without duplicating agents (`board attention`, `board inbox --agent
-   controller`, `board check`) and integrate through the selected strategy's owner.
+6. Dispatch only ready work, and journal it: every dispatch and return (`board dispatch` /
+   `board return`; a subprocess lane is one command, `board launch N --agent --engine --model
+   [--after M] -- brief.md`, which sleeps in the shell until task M's work is on disk, journals
+   its exit and receipt, and never starts its engine if that work cannot land), every gate
+   (`board review` / `board gate` / `board vote`), every machine check (`board exec N --name
+   tests -- <cmd>`), every recovery (`board nudge` / `board escalate`). Agents talk through the
+   journal, never mid-turn: `board send` / `inbox` / `wait` — information and questions only,
+   capped, loop-proof; dispatch parallel workers with `--owns` so `board peers` tells each one
+   who else is working. Monitor without duplicating agents: `board attention`, `board inbox
+   --agent controller`, `board check`, and one blocking `board wait --task N --timeout 0` in a
+   background shell per landing you wait on (exit 3 = it cannot land). Integrate through the
+   selected strategy's owner.
 7. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
    and send failures back to the correct worker or owner.
 8. Close each gated unit with `board done N` (it writes the ledger line; refused over a failed
@@ -170,10 +172,10 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    receipt; `board postmortem` feeds the evolve pass). Finish only when the stop condition is verified.
 
 Use [toolbox](scripts/toolbox) to inventory available tools once and reuse the recorded result.
-The journal (`.orchestrate/journal.jsonl`) is the run's spine and the board is a view over it,
-never a second record: transitions are the controller's to record; workers only observe —
-`board note` (a heartbeat) and `board exec N --name tests --agent <you> -- <cmd>` (their own
-test run, exit code on the card); the user watches from a pane of their own (`board`).
+The journal (`.orchestrate/journal.jsonl`) is the run's spine and the board a view over it, never
+a second record; `board --help` is grouped by role — the controller records transitions, workers
+only observe (`board note` / `exec --agent <you>` / mail; a read-only lane prints the line to
+carry in its return instead of failing), the user watches from a pane of their own (`board`).
 
 ## Artifact contract
 

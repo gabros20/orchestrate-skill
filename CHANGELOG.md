@@ -10,6 +10,12 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.23.1] — 2026-09-16
+
+### Fixed
+- A `title` or `todo` event after `finish` (a retitle via `board init --resume`) no longer marks
+  the finish STALE — only work events do.
+
 ## [1.23.0] — 2026-09-16
 
 ### Added

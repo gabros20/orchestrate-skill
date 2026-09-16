@@ -10,6 +10,39 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.18.0] — 2026-09-16
+
+### Added
+- **`board launch` — the lane as one command.** An executable per-engine table (`ENGINES`: argv
+  lists, prompt mode, session source, receipt method) renders the wrapper under `raw/`, pins the
+  session id where the engine allows (Grok `-s`, Claude `--session-id`) or captures it from the
+  log after exit (Codex `thread.started`), journals the dispatch (session · log · wrapper · pid ·
+  owns), starts the lane detached, and when it ends journals two observations: `exit` (rc — a
+  lane that exited with no return is `!`/`x` in attention) and `receipt` (tokens · calls · cost:
+  `grok usage`, Codex `turn.completed.usage`, Claude's `result` event, Hermes `--usage-file`).
+  Approval/sandbox flags are never in the template — `--extra='--always-approve'` says you chose
+  them. `--dry-run` prints the wrapper; `--fg` blocks. `board receipt N --agent A` fetches or
+  states a receipt by hand; `run.tokens` is now the sum over stints, so receipts may land before
+  or after the return.
+- **Piggyback mail delivery.** Every worker-side board command (`note`, `exec`, `result`, `send`,
+  `peers`, `vote`) hands the caller its unread mail and acks it — delivery rides on calls the
+  worker makes anyway. The WORKER block's checkpoints shrink to two (start, before report).
+- **`board follow [--for controller] [--kinds] [--since] [--timeout]`** — a filtered,
+  line-buffered journal tail; the controller's own watch (mail for you, returns, lane exits,
+  failed checks, votes, blocks) and a stable feed for hooks; ends on `finish`.
+- **Derived rails.** `isolation=off` with a multi-writer strategy prints "shared tree: commit by
+  path — `git add <your files>`, never -A" in the flight plan and the header without anyone
+  journaling it (observed live: one lane scooped the other's untracked file).
+- **Report ↔ return.** `board return --report` reads the report's own `Status:` line; a
+  disagreement is printed and journaled as `reported=…` (the controller's status is judgment,
+  never refused); `board postmortem` lists `report ≠ return`.
+- **Richer receipts.** Stints carry `calls` and `cost`; the expanded card shows `19 calls · $0.12 ·
+  exit 0`; the postmortem table gains `calls` and `cost` columns.
+
+### Changed
+- Honest numbers re-measured: WORKER block ≈ 475 tokens per dispatch (was 463); REVIEWER unchanged at 221.
+- `scripts/check-sync` registry gains `board launch`.
+
 ## [1.17.1] — 2026-09-16
 
 ### Fixed (from the first live two-Grok mail run)

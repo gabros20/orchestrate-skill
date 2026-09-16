@@ -152,8 +152,10 @@ board resume                            # the handoff's state layer, with a rece
 board postmortem                        # per-tier evidence for routing, recommend-only
 ```
 
-Agents talk through the same journal — `board send` / `inbox` / `wait` — information and questions
-only, delivered at the recipient's next checkpoint on every host (no server, no host feature), with
+A subprocess lane is one command — `board launch N --agent A --engine grok --model M -- brief.md`
+— and journals its own exit and usage receipt. Agents talk through the same journal — `board send`
+/ `inbox` / `wait` — information and questions only, delivered on the recipient's next board call
+on every host (no server, no host feature), with
 hard caps so two agents can never talk instead of working; `board peers` tells a parallel worker who
 else is working and what they own. Panels vote (`board vote`): majority or any-deny, derived.
 

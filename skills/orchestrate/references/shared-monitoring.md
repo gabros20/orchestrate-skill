@@ -44,7 +44,12 @@ failed check is an `x` in attention and blocks `board done`). Lanes are a projec
 VERIFY and an integrator's under INTEGRATE — the state model underneath never changes.
 **Mail** rides the same journal: a worker's `--ask` is a `?` in attention with the reply command
 ready, `mail N unread · M for you` sits in the header, and `board inbox --agent controller` is
-part of every liveness check (an unanswered ask is a worker parked in `board wait`). Controller
+part of every liveness check (an unanswered ask is a worker parked in `board wait`). **The
+controller's own watch is the journal**: `board follow --for controller` prints one line per
+event that needs you (mail to you, returns, lane exits, failed checks, votes, blocks) and ends
+on `finish`; `board wait --agent controller` blocks until the next mail. Lanes started with
+`board launch` journal their `exit` — a lane that exited with no return is `!`/`x` in attention
+before the stale clock would have noticed. Controller
 side: `board attention` lists what to act on, most urgent first (`x` blocked / failed
 gate / failed check, `!` stale, silent reviewer or a third attempt with no escalation, `?`
 pending gate / concerns / mail for you); run `board check` at every liveness check and before any recovery

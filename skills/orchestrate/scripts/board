@@ -42,6 +42,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -64,7 +65,7 @@ TIER_DEFAULT = {"orchestrator": "opus-class", "worker": "sonnet-class", "reviewe
                 "advisor": "strongest", "reasoner": "opus-class", "peer": "codex/grok"}
 STATUSES = ("DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED", "REFUSED")
 TASK_EVENTS = {"todo", "title", "dispatch", "return", "review", "gate", "nudge", "escalate", "done",
-               "blocked", "note", "check", "vote"}
+               "blocked", "note", "check", "vote", "exit", "receipt"}
 # Mail is information, not conversation: hard caps keep two agents from talking instead of working.
 MAIL_CAP = 8        # sends per stint — beyond this the answer belongs in the report
 THREAD_CAP = 3      # replies-to-replies — beyond this it is a meeting, not a message
@@ -87,6 +88,34 @@ RESUME_CMD = {
     "pi": "pi --session {id} -p \"<nudge>\"",
     "cursor": "cursor-agent -p --resume {id} \"<nudge>\"",
     "agy": "agy -p --conversation {id} \"<nudge>\"",
+}
+# Executable lane templates for `board launch`. argv is a LIST (no quoting bugs): {repo} {model} {effort}
+# {session} {spec} {out} {usage} are filled in; "{spec_text}" becomes "$(cat spec)" in the wrapper. `prompt`:
+# how the brief reaches the engine (stdin | flag | text). `session`: "pin" (board mints the id) or "stream"
+# (read from the log after exit). `receipt`: how usage is captured after exit. Approval and sandbox flags
+# are deliberately absent — pass them with --extra, knowingly (grok --always-approve, codex --approve-for-me…).
+ENGINES = {
+    "grok": {"argv": ["grok", "--cwd", "{repo}", "-m", "{model}", "--reasoning-effort", "{effort}", "-s", "{session}",
+                      "--prompt-file", "{spec}", "--output-format", "json"], "prompt": "flag", "session": "pin",
+             "receipt": "grok-usage", "resume": "grok -r {id} --prompt-file nudge.md"},
+    "codex": {"argv": ["codex", "exec", "--cd", "{repo}", "-m", "{model}", "-c", "model_reasoning_effort={effort}",
+                       "--sandbox", "workspace-write", "--json", "-o", "{out}", "-"], "prompt": "stdin", "session": "stream",
+              "receipt": "codex-log"},
+    "claude": {"argv": ["claude", "-p", "--bare", "--session-id", "{session}", "--model", "{model}", "--effort", "{effort}",
+                        "--output-format", "stream-json", "--permission-mode", "acceptEdits"], "prompt": "stdin",
+               "session": "pin", "receipt": "claude-log"},
+    "opencode": {"argv": ["opencode", "run", "-f", "{spec}", "--model", "{model}", "--variant", "{effort}", "--format", "json",
+                          "Execute the attached brief."], "prompt": "flag", "session": "none", "receipt": "none"},
+    "hermes": {"argv": ["hermes", "-z", "{spec_text}", "--model", "{model}", "--usage-file", "{usage}", "--ignore-rules"],
+               "prompt": "text", "session": "none", "receipt": "hermes-usage"},
+    "kimi": {"argv": ["kimi", "-p", "{spec_text}", "-m", "{model}", "--output-format", "stream-json"], "prompt": "text",
+             "session": "none", "receipt": "none"},
+    "pi": {"argv": ["pi", "-p", "-nc", "--no-session", "--model", "{model}", "--thinking", "{effort}", "--mode", "json",
+                    "@{spec}", "Execute this brief."], "prompt": "flag", "session": "none", "receipt": "none"},
+    "cursor": {"argv": ["cursor-agent", "-p", "--model", "{model}", "--output-format", "stream-json", "{spec_text}"],
+               "prompt": "text", "session": "none", "receipt": "none"},
+    "agy": {"argv": ["agy", "-p", "--cwd", "{repo}", "--model", "{model}", "--effort", "{effort}", "--output-format",
+                     "stream-json", "{spec_text}"], "prompt": "text", "session": "none", "receipt": "none"},
 }
 # Per-engine launch previews for the flight plan (pre-configured from the record; slugs stay the engine file's job).
 LAUNCH_CMD = {
@@ -381,6 +410,12 @@ class Stint:
         self.session = str(ev.get("session", ""))    # the engine's session id — resume by THIS, never "last"
         self.log = str(ev.get("log", ""))            # captured event stream / stdout, relative to .orchestrate/
         self.cmd_file = str(ev.get("cmd_file", ""))  # the wrapper script that launched the lane
+        self.pid = int(ev.get("pid") or 0)
+        self.exit_code: int | None = None            # the lane process's exit status (an observation, not a return)
+        self.exited = 0.0
+        self.calls = 0                                # model calls, from the receipt
+        self.cost = 0.0                               # USD, from the receipt when the engine reports one
+        self.reported = ""                            # the report file's own Status line, seen at return
 
 
 class Mail:
@@ -460,6 +495,14 @@ class State:
     def card_agent(self, t: Task) -> str:
         open_ = [s for s in self.stints if s.task == t.id and not s.returned]
         return open_[-1].agent if open_ else t.agent
+
+    def derived_rails(self) -> list[str]:
+        """Rails the record implies without anyone journaling them — stated, never silent."""
+        d = self.run.dims
+        out = []
+        if str(d.get("isolation") or "") in ("off", "none") and str(d.get("strategy") or "") in ("parallel", "team", "hierarchical", "workflow"):
+            out.append("shared tree (isolation=off): commit by path — git add <your files>, never -A")
+        return out
 
 
     def task(self, tid: str) -> Task:
@@ -773,9 +816,7 @@ def load(ws: Path, journal_only: bool = False) -> State:
             if prior and prior.returned and str(ev.get("status", "")) == prior.status:
                 # receipt amendment: same agent, same task, same status — attach what the first return lacked
                 if ev.get("tokens"):
-                    run.tokens -= prior.tokens
                     prior.tokens = parse_tokens(ev.get("tokens"))
-                    run.tokens += prior.tokens
                 prior.observed = str(ev.get("observed_model") or prior.observed)
                 prior.session = str(ev.get("session") or prior.session)
                 t.touch_heartbeat(ts)
@@ -792,13 +833,13 @@ def load(ws: Path, journal_only: bool = False) -> State:
                 s.returned, s.status = ts, status
                 s.session = str(ev.get("session") or s.session)
                 s.observed = str(ev.get("observed_model", ""))
-                s.tokens = parse_tokens(ev.get("tokens"))
+                s.tokens = parse_tokens(ev.get("tokens")) or s.tokens   # a receipt may already have landed
                 s.commits, s.report = str(ev.get("commits", "")), str(ev.get("report", ""))
+                s.reported = str(ev.get("reported", ""))
                 if s.observed:
                     run.observed[role_tier(s.role)] = s.observed
                     if s.model and s.observed != s.model:
                         run.drift.append(f"task {s.task} {s.agent}: requested {s.model}, observed {s.observed}")
-                run.tokens += s.tokens
         elif kind == "review":
             t.candidates.append((ts, seq, "review", clean(ev.get("msg", ""))))
             rnd = ev.get("round")
@@ -829,6 +870,17 @@ def load(ws: Path, journal_only: bool = False) -> State:
         elif kind == "check":
             t.check_entries.append((ts, t.attempt, clean(ev.get("name", "check")) or "check", str(ev.get("status", "")),
                                     str(ev.get("exit", "")), str(ev.get("dur", "")), str(ev.get("log", ""))))
+        elif kind == "exit":
+            s = st.stint_of(str(ev.get("agent", "")))
+            if s and s.task == str(tid):
+                s.exit_code, s.exited = int(ev.get("exit") or 0), ts
+        elif kind == "receipt":
+            s = st.stint_of(str(ev.get("agent", "")))
+            if s and s.task == str(tid):
+                s.tokens = parse_tokens(ev.get("tokens")) or s.tokens
+                s.calls = int(ev.get("calls") or s.calls)
+                s.cost = float(ev.get("cost") or s.cost)
+                s.session = str(ev.get("session") or s.session)
         elif kind == "vote":
             kind_, agent_ = str(ev.get("kind") or "approve"), str(ev.get("agent", ""))
             t.vote_entries.append((ts, t.attempt, kind_, agent_, str(ev.get("verdict", "")).lower(), clean(ev.get("why", ""))))
@@ -869,6 +921,7 @@ def load(ws: Path, journal_only: bool = False) -> State:
                     s.returned, s.status = ts, review_verdict(p).upper()
                     break
 
+    run.tokens = sum(s.tokens for s in st.stints)   # receipts and returns both feed it; count each stint once
     st.meta = run_meta(ws, run)
     return st
 
@@ -1066,6 +1119,9 @@ def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
             c = t.checks[t.failed_checks[0]]
             out.append(("x", t, f"{', '.join(t.failed_checks)} check failed (exit {c['exit'] or '?'}) — fix, re-run"
                         + (f" · {c['log']}" if c["log"] else "")))
+        elif s == "in_progress" and any(x.task == t.id and not x.returned and x.exit_code is not None for x in st.stints):
+            x = next(x for x in st.stints if x.task == t.id and not x.returned and x.exit_code is not None)
+            out.append(("!" if x.exit_code == 0 else "x", t, f"lane {x.agent} exited rc={x.exit_code} with no return — read the report, then board return"))
         elif s == "in_progress" and is_stale(t, now):
             out.append(("!", t, f"no artifact delta for {fmt_dur(now - t.last_activity)} — disk check, then ONE nudge"))
         elif s == "review":
@@ -1223,6 +1279,12 @@ def card_details(t: Task, st: State, now: float, S: Style) -> list[tuple[str, Ro
             segs.append((f" {d} {s.worktree}", DIM))
         if s.owns:
             segs.append((f" {d} owns {s.owns}", DIM))
+        if s.calls:
+            segs.append((f" {d} {s.calls} calls", DIM))
+        if s.cost:
+            segs.append((f" {d} ${s.cost:.2f}", DIM))
+        if s.exit_code is not None:
+            segs.append((f" {d} exit {s.exit_code}", S.fg(OK) if s.exit_code == 0 else S.fg(BAD)))
         out.append(("attempt" if role_tier(s.role) == "worker" else "review", segs))
     if t.gates:
         segs = []
@@ -1378,7 +1440,7 @@ def header_rows(st: State, W: int, now: float, S: Style) -> list[Row]:
         if dims.get("confirm"):
             segs += [(f"  {d}  confirm {dims['confirm']}", DIM)]
         line("plan", segs)
-    for rail in run.rails:
+    for rail in run.rails + st.derived_rails():
         line("rails", [(clip(rail, W - lab), S.fg(WARN))])
     if run.decisions:
         last = run.decisions[-1]
@@ -1786,7 +1848,7 @@ def render_plan(st: State, why: str = "") -> str:
     lines.append("")
     gate_txt = " → ".join(gates) if gates else "off"
     lines.append(f"gates   {gate_txt} per unit · final gate once · fan-in: {n} dispatches → {n} returns expected")
-    rails = [f"branch {st.meta.get('branch', '?')}", f"isolation {iso}", f"confirm {d.get('confirm') or 'on'}"] + run.rails
+    rails = [f"branch {st.meta.get('branch', '?')}", f"isolation {iso}", f"confirm {d.get('confirm') or 'on'}"] + run.rails + st.derived_rails()
     lines.append("rails   " + " · ".join(rails))
     if engine not in ("claude", "mixed") and engine in LAUNCH_CMD:
         eff = eff_map.get("worker") or eff_default or "high"
@@ -2102,10 +2164,16 @@ def render_postmortem(st: State) -> str:
         tasks = sorted({s.task for s in ss}, key=natural_key)
         tok = sum(s.tokens for s in ss)
         drift = sum(1 for s in ss if s.observed and s.observed != s.model)
+        calls = sum(s.calls for s in ss)
+        cost = sum(s.cost for s in ss)
         rows.append([tier_, str(len(ss)), str(len(tasks)), ", ".join(sorted({s.model for s in ss if s.model})) or "-",
                      str(drift), str(sum(s.nudges for s in ss)), str(sum(1 for s in ss if s.escalated_to)),
-                     fmt_tokens(tok) if tok else "-", fmt_tokens(tok // len(ss)) if tok else "-"])
-    L.append(table(["tier", "dispatches", "tasks", "models", "drift", "nudges", "escalations", "tokens", "per dispatch"], rows))
+                     fmt_tokens(tok) if tok else "-", fmt_tokens(tok // len(ss)) if tok else "-",
+                     str(calls) if calls else "-", f"${cost:.2f}" if cost else "-"])
+    L.append(table(["tier", "dispatches", "tasks", "models", "drift", "nudges", "escalations", "tokens", "per dispatch", "calls", "cost"], rows))
+    dis = [s for s in st.stints if s.reported and s.reported != s.status]
+    if dis:
+        L.append("report ≠ return: " + ", ".join(f"{s.agent} said {s.reported}, controller recorded {s.status}" for s in dis))
     done = [t for t in st.tasks.values() if t.state == "done"]
     first = [t for t in done if t.attempt <= 1]
     chk = [c for t in st.tasks.values() for c in t.check_entries if c[3] in ("ok", "fail")]
@@ -2261,6 +2329,131 @@ def to_json(st: State) -> dict:
     }
 
 
+# --- lanes: launch · lane-exit · receipt -------------------------------------------------------------
+
+def render_wrapper(ws: Path, task: str, agent: str, engine: str, model: str, effort: str, session: str, spec: Path,
+                   cwd: Path, extra: list[str]) -> tuple[str, str, str]:
+    """The lane's wrapper script text plus its log and usage paths (relative to .orchestrate/)."""
+    tpl = ENGINES[engine]
+    log = f"raw/lane-{task}-{agent}.jsonl"
+    usage = f"raw/lane-{task}-{agent}.usage.json"
+    out = f"raw/lane-{task}-{agent}.out.md"
+    fill = {"repo": str(cwd), "model": model, "effort": effort or "high", "session": session, "spec": str(spec),
+            "out": str(ws / out), "usage": str(ws / usage)}
+    parts = []
+    for a in tpl["argv"]:
+        if a == "{spec_text}":
+            parts.append(f'"$(cat {shlex.quote(str(spec))})"')
+        else:
+            parts.append(shlex.quote(a.format(**fill)))
+    parts += [shlex.quote(x) for x in extra]
+    stdin = f"< {shlex.quote(str(spec))}" if tpl["prompt"] == "stdin" else "</dev/null"
+    me = Path(__file__).resolve()
+    script = "\n".join([
+        "#!/bin/sh",
+        f"# board launch · task {task} · {agent} · {engine} {model} @ {effort or 'high'}" + (f" · session {session}" if session else ""),
+        f"cd {shlex.quote(str(cwd))}",
+        f"{' '.join(parts)} {stdin} > {shlex.quote(str(ws / log))} 2> {shlex.quote(str(ws / (log[:-6] + '.err')))}",
+        "rc=$?",
+        f"{shlex.quote(str(me))} lane-exit {shlex.quote(task)} --agent {shlex.quote(agent)} --exit \"$rc\"",
+        "exit $rc", ""])
+    return script, log, usage
+
+
+def _json_lines(path: Path) -> list[dict]:
+    out = []
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        pass
+    return out
+
+
+def fetch_receipt(ws: Path, s: Stint) -> dict:
+    """Usage after a lane exits, per engine: {tokens, calls, cost, session, source} — empty when the engine has none."""
+    method = ENGINES.get(s.engine, {}).get("receipt", "none")
+    log = ws / s.log if s.log else None
+    try:
+        if method == "grok-usage" and s.session:
+            cp = subprocess.run(["grok", "usage", s.session], capture_output=True, text=True, timeout=30)
+            d = json.loads(cp.stdout or "{}").get("session", {})
+            if d:
+                return {"tokens": int(d.get("totalTokens") or 0), "calls": int(d.get("modelCalls") or 0), "source": "grok usage"}
+        elif method == "codex-log" and log:
+            evs = _json_lines(log)
+            session = next((e.get("thread_id") for e in evs if e.get("type") == "thread.started"), "")
+            done = [e for e in evs if e.get("type") == "turn.completed"]
+            u = (done[-1].get("usage") or {}) if done else {}
+            tok = int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0)
+            if tok or session:
+                return {"tokens": tok, "calls": len(done), "session": session, "source": "turn.completed.usage"}
+        elif method == "claude-log" and log:
+            res = [e for e in _json_lines(log) if e.get("type") == "result"]
+            if res:
+                u = res[-1].get("usage") or {}
+                tok = sum(int(u.get(k) or 0) for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+                return {"tokens": tok, "calls": int(res[-1].get("num_turns") or 0), "cost": float(res[-1].get("total_cost_usd") or 0),
+                        "session": str(res[-1].get("session_id") or ""), "source": "result event"}
+        elif method == "hermes-usage":
+            up = ws / f"raw/lane-{s.task}-{s.agent}.usage.json"
+            if up.exists():
+                d = json.loads(up.read_text(encoding="utf-8"))
+                flat = {k.lower(): v for k, v in (d.items() if isinstance(d, dict) else [])}
+                tok = next((int(v) for k, v in flat.items() if "total" in k and "token" in k and str(v).isdigit()), 0) or \
+                    sum(int(v) for k, v in flat.items() if k.endswith("_tokens") and str(v).isdigit())
+                cost = next((float(v) for k, v in flat.items() if "cost" in k and isinstance(v, (int, float))), 0.0)
+                calls = next((int(v) for k, v in flat.items() if "call" in k and str(v).isdigit()), 0)
+                if tok or cost:
+                    return {"tokens": tok, "calls": calls, "cost": cost, "source": "--usage-file"}
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    return {}
+
+
+def deliver(ws: Path, agent: str) -> None:
+    """Piggyback delivery: any board call a worker makes also hands over its unread mail (and acks it)."""
+    if not agent or agent == "controller":
+        return
+    st = load(ws)
+    items = st.unread(agent)
+    if not items:
+        return
+    print(f"mail for {agent}:")
+    print(render_inbox(st, agent)[0])
+    append_event(ws, actor="worker", ev="ack", agent=agent, upto=max(m.seq for m in items), count=len(items))
+
+
+def follow(ws: Path, since: int, kinds: set[str] | None, for_: str, timeout: int) -> int:
+    """A filtered journal tail for controllers and hooks: one line per new event; ends on `finish` (0) or timeout (124)."""
+    deadline = time.time() + timeout if timeout else None
+    seen = since
+    while True:
+        evs, _ = read_events(ws)
+        for e in evs:
+            seq = int(e.get("seq", 0))
+            if seq <= seen:
+                continue
+            seen = seq
+            ev = str(e.get("ev", ""))
+            if kinds and ev not in kinds:
+                continue
+            if for_ and not ((ev == "mail" and str(e.get("to")) in (for_, "all")) or ev in ("return", "exit", "blocked", "gate", "vote", "done", "finish", "escalate")
+                             or (ev == "check" and e.get("status") == "fail")):
+                continue
+            print(render_log([e]), flush=True)
+            if ev == "finish":
+                return 0
+        if deadline and time.time() >= deadline:
+            return 124
+        time.sleep(0.5)
+
+
 # --- commands ------------------------------------------------------------------------
 
 def workspace_shape(ws: Path, st: State) -> tuple[str, str]:
@@ -2386,6 +2579,21 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("vote", help="one reviewer's verdict; the gate is derived by quorum (panel = majority, consensus = any-deny)")
     p.add_argument("task"); p.add_argument("--kind", required=True); p.add_argument("--agent", required=True)
     p.add_argument("--verdict", choices=["ok", "fail", "warn"], required=True); p.add_argument("--why"); p.add_argument("--round", type=int)
+    p = sub.add_parser("launch", help="the lane as one command: wrapper written, session pinned, dispatch journaled, started, receipt on exit")
+    p.add_argument("task"); p.add_argument("--agent", required=True); p.add_argument("--engine", required=True, choices=sorted(ENGINES))
+    p.add_argument("--model", required=True); p.add_argument("--effort"); p.add_argument("--role"); p.add_argument("--owns")
+    p.add_argument("--worktree"); p.add_argument("--cwd", help="the lane's working directory (default: the repo root)")
+    p.add_argument("--extra", default="", help="engine flags appended verbatim, knowingly (approval, sandbox, network): --extra='--always-approve'")
+    p.add_argument("--fg", action="store_true", help="run in the foreground (blocks; exit code passes through)")
+    p.add_argument("--dry-run", action="store_true", help="print the wrapper, journal nothing, launch nothing")
+    p.add_argument("--msg"); p.add_argument("spec", nargs="*", help="the brief/spec file (after --)")
+    p = sub.add_parser("lane-exit"); p.add_argument("task"); p.add_argument("--agent", required=True); p.add_argument("--exit", type=int, required=True)
+    p = sub.add_parser("receipt", help="journal a lane's usage: fetched per engine, or given explicitly")
+    p.add_argument("task"); p.add_argument("--agent", required=True); p.add_argument("--tokens"); p.add_argument("--calls", type=int)
+    p.add_argument("--cost", type=float); p.add_argument("--session")
+    p = sub.add_parser("follow", help="filtered journal tail: one line per new event; ends on finish")
+    p.add_argument("--kinds", help="comma list: mail,return,exit,check,vote,note,…"); p.add_argument("--for", dest="for_", help="controller: only what needs you")
+    p.add_argument("--since", type=int, help="journal seq to start after (default: now)"); p.add_argument("--timeout", type=int, default=0)
     p = sub.add_parser("exec", help="run a check THROUGH the journal: board exec N --name tests [--agent you] -- npm test")
     p.add_argument("task"); p.add_argument("--name", required=True); p.add_argument("--agent", help="a worker running its own check")
     p.add_argument("command", nargs="*")
@@ -2440,11 +2648,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str]) -> int:
     tail: list[str] = []
-    if argv and argv[0] == "exec" and "--" in argv:  # everything after -- is the command, verbatim
+    if argv and argv[0] in ("exec", "launch") and "--" in argv:  # everything after -- is verbatim
         tail, argv = argv[argv.index("--") + 1:], argv[:argv.index("--")]
     args = build_parser().parse_args(argv)
-    if tail:
+    if tail and argv and argv[0] == "exec":
         args.command = tail
+    elif tail:
+        args.spec = tail
     if args.selftest:
         return selftest()
     ws = workspace()
@@ -2495,6 +2705,66 @@ def main(argv: list[str]) -> int:
         print(render_resume(load(ws), probe=not args.no_probe))
     elif cmd == "postmortem":
         print(render_postmortem(load(ws)))
+    elif cmd == "launch":
+        spec_args = [a for a in (args.spec or []) if a != "--"]
+        if len(spec_args) != 1:
+            sys.exit("board: launch needs exactly one spec file after --  (board launch N --agent A --engine grok --model M -- .orchestrate/task-N-brief.md)")
+        spec = Path(spec_args[0]).resolve()
+        if not spec.exists():
+            sys.exit(f"board: spec {spec} does not exist")
+        cwd = Path(args.cwd).resolve() if args.cwd else Path(git("rev-parse", "--show-toplevel") or os.getcwd())
+        tpl = ENGINES[args.engine]
+        session = str(__import__("uuid").uuid4()) if tpl["session"] == "pin" else ""
+        agent = clean(args.agent)
+        script, log, usage = render_wrapper(ws, str(args.task), agent, args.engine, args.model, args.effort or "", session, spec, cwd,
+                                            shlex.split(args.extra or ""))
+        if args.dry_run:
+            print(script, end="")
+            return 0
+        (ws / "raw").mkdir(parents=True, exist_ok=True)
+        cmd_file = f"raw/lane-{args.task}-{agent}.sh"
+        (ws / cmd_file).write_text(script, encoding="utf-8")
+        (ws / cmd_file).chmod(0o755)
+        if args.fg:
+            append_event(ws, task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
+                         effort=args.effort, worktree=args.worktree, session=session, log=log, cmd_file=cmd_file, owns=args.owns, msg=args.msg)
+            rc = subprocess.run(["/bin/sh", str(ws / cmd_file)]).returncode
+            print(f"board: lane {agent} finished rc={rc} — read .orchestrate/task-{args.task}-report.md, then board return")
+            return rc
+        proc = subprocess.Popen(["/bin/sh", str(ws / cmd_file)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, start_new_session=True)
+        append_event(ws, task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
+                     effort=args.effort, worktree=args.worktree, session=session, log=log, cmd_file=cmd_file, owns=args.owns,
+                     pid=proc.pid, msg=args.msg)
+        print(f"board: lane {agent} launched (pid {proc.pid}, {args.engine} {args.model} @ {args.effort or 'high'})" +
+              (f" · session {session}" if session else "") + f"\n       log .orchestrate/{log} · wrapper .orchestrate/{cmd_file} · exit and receipt are journaled when it ends")
+    elif cmd == "lane-exit":
+        agent = clean(args.agent)
+        append_event(ws, task=args.task, ev="exit", agent=agent, exit=args.exit)
+        st = load(ws)
+        s = st.stint_of(agent)
+        r = fetch_receipt(ws, s) if s else {}
+        if r:
+            append_event(ws, task=args.task, ev="receipt", agent=agent, tokens=r.get("tokens"), calls=r.get("calls"),
+                         cost=r.get("cost"), session=r.get("session"), source=r.get("source"))
+        print(f"board: lane {agent} exit {args.exit}" + (f" · receipt {fmt_tokens(int(r.get('tokens') or 0))} via {r.get('source')}" if r else " · receipt NOT_PROVEN (engine offers none, or fetch failed)"))
+    elif cmd == "receipt":
+        agent = clean(args.agent)
+        st = load(ws)
+        s = st.stint_of(agent)
+        if not s:
+            sys.exit(f"board: {agent} has no stint")
+        r = {"tokens": args.tokens, "calls": args.calls, "cost": args.cost, "session": args.session, "source": "controller"} if \
+            (args.tokens or args.calls or args.cost or args.session) else fetch_receipt(ws, s)
+        if not r:
+            sys.exit(f"board: no receipt for {agent} — the engine offers none here; pass --tokens explicitly")
+        append_event(ws, task=args.task, ev="receipt", agent=agent, tokens=r.get("tokens"), calls=r.get("calls"),
+                     cost=r.get("cost"), session=r.get("session"), source=r.get("source"))
+        print(f"board: receipt for {agent}: {r.get('tokens') or '?'} tokens" + (f", {r['calls']} calls" if r.get("calls") else "") + f" ({r.get('source')})")
+    elif cmd == "follow":
+        kinds = {k.strip() for k in args.kinds.split(",") if k.strip()} if args.kinds else None
+        since = args.since if args.since is not None else load(ws).run.last_seq
+        return follow(ws, since, kinds, args.for_ or "", args.timeout)
     elif cmd == "send":
         st = load(ws)
         sender, to, msg = clean(args.sender), clean(args.to), clean(args.msg)
@@ -2531,6 +2801,7 @@ def main(argv: list[str]) -> int:
                 print(f"push: {RESUME_CMD[s_to.engine or 'claude'].format(id=s_to.session)}   (between turns only — never `codex queue`)")
             else:
                 print("push: NOT_PROVEN — no session id journaled for the recipient; it reads at its next checkpoint")
+        deliver(ws, sender)
     elif cmd == "inbox":
         st = load(ws)
         agent = clean(args.agent)
@@ -2562,12 +2833,14 @@ def main(argv: list[str]) -> int:
         print(json.dumps([vars(m) for m in st.mail], ensure_ascii=False, indent=1, default=str) if args.json else render_mail(st, args.task or ""))
     elif cmd == "peers":
         print(render_peers(load(ws), clean(args.agent)))
+        deliver(ws, clean(args.agent))
     elif cmd == "vote":
         append_event(ws, actor="worker", task=args.task, ev="vote", kind=args.kind, agent=args.agent, verdict=args.verdict,
                      why=args.why, round=args.round)
         st = load(ws)
         t = st.tasks.get(str(args.task))
         print(f"board: vote {args.verdict} by {args.agent} on task {args.task} {args.kind} — gate now: {t.gates.get(args.kind, '?') if t else '?'}")
+        deliver(ws, clean(args.agent))
     elif cmd == "exec":
         argv_cmd = [a for a in args.command if a != "--"] if args.command else []
         if not argv_cmd:
@@ -2589,12 +2862,14 @@ def main(argv: list[str]) -> int:
         append_event(ws, actor=actor, task=args.task, ev="check", name=name, status="ok" if rc == 0 else "fail", exit=rc,
                      dur=dur, log=rel, agent=args.agent)
         print(f"board: check {name} {'ok' if rc == 0 else 'FAIL'} (exit {rc}, {dur}) -> .orchestrate/{rel}")
+        deliver(ws, clean(args.agent or ""))
         return rc
     elif cmd == "result":
         append_event(ws, actor="worker" if args.agent else "controller", task=args.task, ev="check",
                      name=re.sub(r"[^\w.-]+", "-", args.name).strip("-") or "check", status="ok" if args.exit == 0 else "fail",
                      exit=args.exit, dur=args.dur, log=args.log, msg=args.msg, agent=args.agent)
         print(f"board: check {args.name} {'ok' if args.exit == 0 else 'FAIL'} (exit {args.exit}) journaled")
+        deliver(ws, clean(args.agent or ""))
     elif cmd == "init":
         cmd_init(ws, args)
     elif cmd == "set":
@@ -2627,8 +2902,18 @@ def main(argv: list[str]) -> int:
     elif cmd == "return":
         if not args.agent:
             sys.exit("board: return needs --agent")
+        reported = ""
+        if args.report:
+            rp = ws / args.report if not Path(args.report).is_absolute() else Path(args.report)
+            if rp.exists():
+                reported, _ = report_status(rp)
+                if reported and reported != args.status:
+                    print(f"board: note — the report says Status: {reported}, you are recording {args.status} (your call; journaled as reported={reported})")
+            else:
+                print(f"board: warning — report {args.report} does not exist (recorded anyway; board check will name it)")
         append_event(ws, task=args.task, ev="return", agent=args.agent, status=args.status, commits=args.commits,
-                     report=args.report, observed_model=args.observed_model, tokens=args.tokens, session=args.session, msg=args.msg)
+                     report=args.report, reported=reported, observed_model=args.observed_model, tokens=args.tokens,
+                     session=args.session, msg=args.msg)
         if args.observed_model:
             write_resolved(ws)
     elif cmd == "review":
@@ -2661,6 +2946,7 @@ def main(argv: list[str]) -> int:
         append_event(ws, task=args.task, ev="blocked", msg=args.msg, agent=args.agent)
     elif cmd == "note":
         append_event(ws, actor=args.agent or "worker", task=args.task, ev="note", msg=args.msg, agent=args.agent)
+        deliver(ws, clean(args.agent or ""))
     elif cmd == "decide":
         append_event(ws, ev="decide", id=args.id, msg=args.msg, owner=args.owner, task=args.task)
         ws.mkdir(parents=True, exist_ok=True)
@@ -2931,6 +3217,7 @@ def selftest() -> int:
             run("send", f"fyi {i}", "--from", "task3-b", "--to", "task4-impl") if load(ws).stint_of("task3-b").sent < MAIL_CAP else None
         run("send", "one more", "--from", "task3-b", "--to", "task4-impl", expect_fail=True)   # per-stint cap
         assert any("chatter" in f for f in check(load(ws)))
+        run("send", "before you go: CLI order is greeting then farewell", "--from", "task4-impl", "--to", "task3-b")   # piggyback delivers on the RECIPIENT's calls; a return does not read
         run("return", "3", "--agent", "task3-b", "--status", "DONE")
         run("send", "late", "--from", "task4-impl", "--to", "task3-b", expect_fail=True)       # returned → closed
         assert any("never read" in f for f in check(load(ws))), check(load(ws))
@@ -3005,6 +3292,55 @@ def selftest() -> int:
         assert "lane    codex exec" in plan and "[8] lanes" in plan and "lanes   todo → implement → verify" in plan, plan
         run("set", "strategy=parallel", "isolation=off")
         assert "shared tree (isolation off)" in run("plan") and "wt-1" not in run("plan")
+        assert "never -A" in run("plan") and "never -A" in run("show", "--no-color"), "the shared-tree rail is derived, not journaled"
+
+        # --- launch: the lane as one command, receipt on exit (fake grok on PATH) -------------------------
+        shim = Path(tmp) / "bin"
+        shim.mkdir(exist_ok=True)
+        (shim / "grok").write_text("#!/bin/sh\nif [ \"$1\" = usage ]; then echo '{\"session\":{\"totalTokens\":12345,\"modelCalls\":7}}'; exit 0; fi\n"
+                                   "cat >/dev/null; echo '{\"text\":\"done\",\"stopReason\":\"end_turn\"}'\n")
+        (shim / "grok").chmod(0o755)
+        old_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{shim}:{old_path}"
+        try:
+            dry = run("launch", "3", "--agent", "task3-lane", "--engine", "codex", "--model", "gpt-5.6-terra", "--dry-run", "--", "plan.md")
+            assert "codex exec" in dry and "lane-exit 3" in dry and "< " in dry and not (ws / "raw" / "lane-3-task3-lane.sh").exists(), dry
+            out = run("launch", "3", "--agent", "task3-lane", "--engine", "grok", "--model", "grok-4.6", "--effort", "high",
+                      "--owns", "app.py", "--extra=--always-approve", "--fg", "--", "plan.md")
+            assert "finished rc=0" in out, out
+            st = load(ws)
+            s = st.stint_of("task3-lane")
+            assert s and s.session and s.cmd_file and s.exit_code == 0 and s.tokens == 12345 and s.calls == 7 and s.owns == "app.py", vars(s)
+            assert "--always-approve" in (ws / s.cmd_file).read_text() and (ws / s.log).exists()
+            assert any("exited rc=0 with no return" in why for _, _, why in attention(st, time.time()))
+            run("return", "3", "--agent", "task3-lane", "--status", "DONE")   # no --tokens: the receipt already landed
+            st = load(ws)
+            assert "no usage receipt" not in "\n".join(check(st)) and st.run.tokens >= 12345
+            assert "7 calls" in run("task", "3") and "calls" in run("postmortem")
+        finally:
+            os.environ["PATH"] = old_path
+
+        # --- piggyback delivery: a worker's own board call hands over its mail ---------------------------------
+        run("dispatch", "4", "--agent", "task4-b", "--model", "sonnet")
+        run("send", "heads-up: app.py CLI line moves", "--from", "controller", "--to", "task4-b")
+        out = run("note", "4", "committing", "--agent", "task4-b")
+        assert "mail for task4-b" in out and "[controller] heads-up" in out and not load(ws).unread("task4-b"), out
+        assert "no new mail" in run("inbox", "--agent", "task4-b")
+
+        # --- report ↔ return: disagreement is a note and a field, never a refusal ----------------------------------
+        (ws / "task-4-report.md").write_text("Status: DONE\nall good\n")
+        out = run("return", "4", "--agent", "task4-b", "--status", "DONE_WITH_CONCERNS", "--report", "task-4-report.md")
+        assert "report says Status: DONE" in out and load(ws).stint_of("task4-b").reported == "DONE", out
+        assert "report ≠ return" in run("postmortem")
+
+        # --- follow: a filtered tail that ends on finish or timeout --------------------------------------------------
+        seq0 = load(ws).run.last_seq
+        run("send", "fyi", "--from", "controller", "--to", "all")
+        run("note", "4", "beat", "--agent", "task4-b")
+        out = run("follow", "--since", str(seq0), "--timeout", "1", "--kinds", "mail", expect_fail=True)   # 124 on timeout
+        assert "mail" in out and "beat" not in out, out
+        out = run("follow", "--since", str(seq0), "--timeout", "1", "--for", "controller", expect_fail=True)
+        assert "fyi" in out and "beat" not in out, out
         subprocess.run(["git", "checkout", "-q", "-b", "elsewhere"], check=True)
         assert "(you: elsewhere)" in run("show", "--no-color"), "viewer's branch is named when it differs from the run's"
         subprocess.run(["git", "checkout", "-q", "main"], check=True)

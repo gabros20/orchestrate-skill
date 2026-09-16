@@ -154,7 +154,9 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    re-resolving that dimension and re-asking; record the outcome (`board plan approved`).
 6. Dispatch only ready work — journal each dispatch and each return (`board dispatch N --agent
    --model [--session --log]`, `board return N --agent --status [--tokens]`), each gate (`board
-   review` / `board gate` / `board vote`), each machine check (`board exec N --name tests -- <cmd>`)
+   review` / `board gate` / `board vote`; a subprocess lane is one command, `board launch N
+   --agent --engine --model -- brief.md`, which journals its exit and receipt when it ends), each
+   machine check (`board exec N --name tests -- <cmd>`)
    and each recovery (`board nudge` / `board escalate`). Agents talk through the journal, never
    mid-turn: `board send` / `inbox` / `wait` (information and questions only — the caps make it
    loop-proof); dispatch parallel workers with `--owns` so `board peers` tells each one who else

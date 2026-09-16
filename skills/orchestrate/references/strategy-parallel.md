@@ -50,7 +50,9 @@ Dispatch each card with its ownership on the record (`board dispatch k --agent â
 open workers and what they own, so a worker that must touch a neighbour's area mails that
 neighbour first (`board send --to <peer> "will change src/api/auth.ts â€” import path moves"`),
 and one that needs an interface decision asks the controller (`--ask` + `board wait`) instead of
-guessing. Mail is information; the card and the gate stay the contract.
+guessing. Mail is information; the card and the gate stay the contract. If you chose
+`isolation=off` (two writers in one tree), the brief carries the derived rail the board prints:
+commit by path, never `git add -A`.
 
 ## Flow
 

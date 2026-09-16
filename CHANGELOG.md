@@ -10,6 +10,17 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.19.0] — 2026-09-16
+
+### Added
+- **Dependency rendezvous on the journal.** `board wait --agent A --task N [--task M]` blocks until
+  those tasks have RETURNED (exit 124 on timeout, like the mail wait) and prints each one's
+  status, commits and report path — an integrator waits for its inputs without polling the disk,
+  guessing, or asking a peer to describe work that is already on disk. `board peers` now also
+  lists returned peers with what they delivered ("their work is on disk — read it, don't ask").
+  Rationale (from the team-on-Grok run): zero peer-to-peer mail was the cheapest channel winning
+  — disk first, controller decisions second, mail last — and the only real gap was waiting.
+
 ## [1.18.1] — 2026-09-16
 
 ### Added

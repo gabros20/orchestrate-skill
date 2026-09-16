@@ -304,6 +304,7 @@ board follow --for controller                             # your watch: one line
 board send "will rename src/api/auth.ts" --from task4-impl --to task3-impl   # mail: information, delivered at the recipient's next checkpoint
 board send "which auth header?" --from task4-impl --to controller --ask   # a question — the recipient owes ONE reply; the worker parks in `board wait`
 board inbox --agent task3-impl · board wait --agent task4-impl · board mail   # read (acks), rendezvous, the whole thread
+board wait --agent tm-integrate --task 1 --task 2                # dependency rendezvous: block until those tasks have RETURNED, then read their work from disk
 board vote 3 --kind quality --agent sec-lens --verdict fail --why "leaks a handle"   # panel:N = majority · consensus:N = any-deny → the gate is derived
 board result 3 --name lint --exit 1 --log raw/lint.log    # a check that ran elsewhere
 board nudge 3 --agent task3-impl · board escalate 3 --agent task3-impl --to opus --why "same error x3"

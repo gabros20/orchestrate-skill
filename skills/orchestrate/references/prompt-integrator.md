@@ -15,7 +15,10 @@ Produces:
 - Integrated branch, conflict decisions, combined validation, and integration report.
 
 Agent tool, `model: <REQUIRED — standard tier>`, `effort: <pin if the surface supports it; else
-session effort — record in run.md>`. Runs after workers' branches pass their gates.
+session effort — record in run.md>`. Runs after workers' branches pass their gates. When it must
+start before every input has landed (a file-mail team), the brief names the dependencies and the
+wait: `board wait --agent <you> --task N` blocks until task N has returned — inputs come from the
+disk, never from asking a peer to describe them.
 
 ```
 You are integrating [K] gated branches into [target branch].

@@ -2224,14 +2224,22 @@ def render_inbox(st: State, agent: str) -> tuple[str, list[Mail]]:
 def render_peers(st: State, agent: str) -> str:
     me = st.stint_of(agent)
     others = [s for s in st.open_stints() if s.agent != agent]
-    if not others:
+    if not others and not any(s.returned and s.agent != agent and s.status for s in st.stints):
         return "board: no other agents are open right now — the controller is your only peer"
     L = [f"peers of {agent}" + (f" (task {me.task})" if me else "") + " — open right now:"]
     for s in others:
         t = st.tasks.get(s.task)
         L.append(f"- task {s.task} {t.title if t else ''} · {s.agent} · {s.role} · {s.model or '?'}" +
                  (f" · {s.engine}" if s.engine and s.engine != "claude" else "") + (f" · owns {s.owns}" if s.owns else " · owns (undeclared)"))
-    L.append("before touching a peer's area: board send --from <you> --to <peer> \"<what changes, which files>\"")
+    done = [s for s in st.stints if s.returned and s.agent != agent and s.status]
+    if done:
+        L.append("returned (their work is on disk — read it, don't ask for it):")
+        for s in done[-6:]:
+            t = st.tasks.get(s.task)
+            L.append(f"- task {s.task} {t.title if t else ''} · {s.agent} · {s.status.lower().replace('_', ' ')}" +
+                     (f" · commits {s.commits}" if s.commits else "") + (f" · report .orchestrate/{s.report}" if s.report else ""))
+    L.append("before touching a peer's area: board send --from <you> --to <peer> \"<what changes, which files>\" · "
+             "an input not on disk yet: board wait --agent <you> --task N")
     return "\n".join(L)
 
 
@@ -2657,8 +2665,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--re", type=int, help="seq of the mail this answers"); p.add_argument("--ask", action="store_true", help="a question — the recipient owes ONE reply")
     p.add_argument("--push", action="store_true", help="print the host's native push binding for the recipient (never run)")
     p = sub.add_parser("inbox"); p.add_argument("--agent", required=True); p.add_argument("--peek", action="store_true"); p.add_argument("--json", action="store_true")
-    p = sub.add_parser("wait", help="rendezvous: block until mail arrives (exit 124 on timeout)")
+    p = sub.add_parser("wait", help="rendezvous: block until mail arrives, or until --task N has returned (exit 124 on timeout)")
     p.add_argument("--agent", required=True); p.add_argument("--timeout", type=int, default=WAIT_SLICE)
+    p.add_argument("--task", action="append", help="wait for this task's RETURN instead of for mail (repeatable: all must have returned)")
     p = sub.add_parser("mail"); p.add_argument("--task"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("peers"); p.add_argument("--agent", required=True)
     p = sub.add_parser("vote", help="one reviewer's verdict; the gate is derived by quorum (panel = majority, consensus = any-deny)")
@@ -2920,6 +2929,22 @@ def main(argv: list[str]) -> int:
         deadline = time.time() + max(1, args.timeout)
         while True:
             st = load(ws)
+            if args.task:
+                deps = [st.tasks.get(str(x)) for x in args.task]
+                landed = [d for d in deps if d and (d.returned or d.state == "done")]
+                if len(landed) == len(deps):
+                    for d in landed:
+                        s = next((x for x in reversed(st.stints) if x.task == d.id and x.returned), None)
+                        print(f"task {d.id} {d.title}: {(s.status.lower().replace('_', ' ') if s else d.state)}"
+                              + (f" · commits {s.commits}" if s and s.commits else "") + (f" · report .orchestrate/{d.report}" if d.report else ""))
+                    deliver(ws, agent)
+                    return 0
+                if time.time() >= deadline:
+                    open_ = ", ".join(f"task {x}" for x, d in zip(args.task, deps) if not (d and (d.returned or d.state == "done")))
+                    print(f"board: {open_} not returned after {args.timeout}s — wait again, or return NEEDS_CONTEXT naming the dependency")
+                    return 124
+                time.sleep(0.5)
+                continue
             items = st.unread(agent)
             if items:
                 print(render_inbox(st, agent)[0])
@@ -3445,6 +3470,15 @@ def selftest() -> int:
         assert "mail" in out and "beat" not in out, out
         out = run("follow", "--since", str(seq0), "--timeout", "1", "--for", "controller", expect_fail=True)
         assert "fyi" in out and "beat" not in out, out
+
+        # --- dependency rendezvous: wait on a task's RETURN, peers show what returned ---------------------------
+        run("dispatch", "3", "--agent", "task3-dep", "--model", "sonnet")
+        run("wait", "--agent", "task4-b", "--task", "3", "--timeout", "1", expect_fail=True)      # open → 124
+        run("return", "3", "--agent", "task3-dep", "--status", "DONE", "--commits", f"{base}..{base}")
+        out = run("wait", "--agent", "task4-b", "--task", "3", "--timeout", "1")                   # returned → 0
+        assert "task 3" in out and "done" in out and base in out, out
+        peers = run("peers", "--agent", "task4-b")
+        assert "returned (their work is on disk" in peers and "task3-dep" in peers and "board wait --agent <you> --task N" in peers, peers
         subprocess.run(["git", "checkout", "-q", "-b", "elsewhere"], check=True)
         assert "(you: elsewhere)" in run("show", "--no-color"), "viewer's branch is named when it differs from the run's"
         subprocess.run(["git", "checkout", "-q", "main"], check=True)

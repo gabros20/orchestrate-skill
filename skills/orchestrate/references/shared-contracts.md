@@ -168,8 +168,9 @@ STALE). Workers get two optional observation lines — `board note N "<msg>"` (a
 status and never liveness — liveness is artifact deltas only, `shared-monitoring.md` 3b) and
 `board exec N --name tests --agent <you> -- <cmd>` (their own verification run; an exit code is an
 observation, not a transition) — and **mail**: `board send --from <you> --to <agent|controller|all>
-"…" [--ask] [--re SEQ]` / `board inbox --agent <you>` / `board wait --agent <you>` / `board peers
---agent <you>`. Mail is journaled (`mail`, and an `ack` when read) and delivered at the recipient's
+"…" [--ask] [--re SEQ]` / `board inbox --agent <you>` / `board wait --agent <you> [--task N]` (mail, or a dependency's
+return) / `board peers --agent <you>` (open peers and what they own; returned peers and what
+they delivered). Mail is journaled (`mail`, and an `ack` when read) and delivered at the recipient's
 next board call — every worker-side command (`note`, `exec`, `send`, `peers`, `vote`) hands
 over unread mail, so delivery rides on calls the worker makes anyway; never mid-turn, on any host.
 `board follow [--for controller]` is the controller's filtered tail of the same journal. Controller mail is an INSTRUCTION; peer mail is

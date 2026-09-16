@@ -14,6 +14,13 @@ Inputs:
 Produces:
 - Concurrent worker results, integration sequence, conflicts, and gated merge.
 
+## Contents
+
+- Gate: is parallel actually right?
+- Task cards (narrow contracts) — ownership, peers, mail, dependency waits
+- Flow
+- Limits & failure handling
+
 Preset: `topology=parallel review=dual isolation=worktree workers=3..5`.
 N workers execute independent tasks simultaneously, each in its own git worktree; an integrator
 merges. Physical isolation prevents file conflicts, NOT logical ones — partitioning does that.

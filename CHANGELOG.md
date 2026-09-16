@@ -10,6 +10,16 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.19.2] — 2026-09-16
+
+### Changed
+- **A dependency has landed when its work is on disk.** `board wait --task N` and `board peers`
+  now treat a lane that has exited with its report written as landed, not only a task the
+  controller has returned — observed live: two waiters paid ~10 minutes and ~1M tokens for the
+  controller's return latency although the backend's commit, report and contract mail were
+  already on disk. The wait prints "lane exited rc=0, report on disk (not yet returned by the
+  controller)" so the reader knows which it got.
+
 ## [1.19.1] — 2026-09-16
 
 ### Fixed

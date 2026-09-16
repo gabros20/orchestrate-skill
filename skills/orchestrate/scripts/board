@@ -2224,20 +2224,21 @@ def render_inbox(st: State, agent: str) -> tuple[str, list[Mail]]:
 def render_peers(st: State, agent: str) -> str:
     me = st.stint_of(agent)
     others = [s for s in st.open_stints() if s.agent != agent]
-    if not others and not any(s.returned and s.agent != agent and s.status for s in st.stints):
+    if not others and not any(s.agent != agent and (s.returned and s.status or s.exit_code is not None) for s in st.stints):
         return "board: no other agents are open right now — the controller is your only peer"
     L = [f"peers of {agent}" + (f" (task {me.task})" if me else "") + " — open right now:"]
     for s in others:
         t = st.tasks.get(s.task)
         L.append(f"- task {s.task} {t.title if t else ''} · {s.agent} · {s.role} · {s.model or '?'}" +
                  (f" · {s.engine}" if s.engine and s.engine != "claude" else "") + (f" · owns {s.owns}" if s.owns else " · owns (undeclared)"))
-    done = [s for s in st.stints if s.returned and s.agent != agent and s.status]
+    done = [s for s in st.stints if s.agent != agent and (s.returned and s.status or (s.exit_code is not None and (st.ws / f"task-{s.task}-report.md").exists()))]
     if done:
         L.append("returned (their work is on disk — read it, don't ask for it):")
         for s in done[-6:]:
             t = st.tasks.get(s.task)
-            L.append(f"- task {s.task} {t.title if t else ''} · {s.agent} · {s.status.lower().replace('_', ' ')}" +
-                     (f" · commits {s.commits}" if s.commits else "") + (f" · report .orchestrate/{s.report}" if s.report else ""))
+            state = s.status.lower().replace("_", " ") if s.status else f"lane exited rc={s.exit_code}, report on disk"
+            L.append(f"- task {s.task} {t.title if t else ''} · {s.agent} · {state}" +
+                     (f" · commits {s.commits}" if s.commits else "") + f" · report .orchestrate/{s.report or f'task-{s.task}-report.md'}")
     L.append("before touching a peer's area: board send --from <you> --to <peer> \"<what changes, which files>\" · "
              "an input not on disk yet: board wait --agent <you> --task N")
     return "\n".join(L)
@@ -2506,6 +2507,15 @@ def fetch_receipt(ws: Path, s: Stint) -> dict:
     except (OSError, ValueError, subprocess.SubprocessError):
         pass
     return {}
+
+
+def dep_landed(st: "State", d: Task) -> bool:
+    """A dependency has landed when its work is on disk: returned, done, or its lane exited with a report written.
+    Waiting on the controller's return alone would make every waiter pay for the controller's latency."""
+    if d.returned or d.state == "done":
+        return True
+    exited = [s for s in st.stints if s.task == d.id and s.exit_code is not None and not s.returned]
+    return bool(exited) and (st.ws / f"task-{d.id}-report.md").exists()
 
 
 def deliver(ws: Path, agent: str) -> None:
@@ -2931,16 +2941,18 @@ def main(argv: list[str]) -> int:
             st = load(ws)
             if args.task:
                 deps = [st.tasks.get(str(x)) for x in args.task]
-                landed = [d for d in deps if d and (d.returned or d.state == "done")]
+                landed = [d for d in deps if d and dep_landed(st, d)]
                 if len(landed) == len(deps):
                     for d in landed:
-                        s = next((x for x in reversed(st.stints) if x.task == d.id and x.returned), None)
-                        print(f"task {d.id} {d.title}: {(s.status.lower().replace('_', ' ') if s else d.state)}"
-                              + (f" · commits {s.commits}" if s and s.commits else "") + (f" · report .orchestrate/{d.report}" if d.report else ""))
+                        s = next((x for x in reversed(st.stints) if x.task == d.id and (x.returned or x.exit_code is not None)), None)
+                        state = (s.status.lower().replace("_", " ") if s and s.status else
+                                 f"lane exited rc={s.exit_code}, report on disk (not yet returned by the controller)" if s else d.state)
+                        print(f"task {d.id} {d.title}: {state}" + (f" · commits {s.commits}" if s and s.commits else "")
+                              + (f" · report .orchestrate/{d.report or f'task-{d.id}-report.md'}" if (d.report or (ws / f'task-{d.id}-report.md').exists()) else ""))
                     deliver(ws, agent)
                     return 0
                 if time.time() >= deadline:
-                    open_ = ", ".join(f"task {x}" for x, d in zip(args.task, deps) if not (d and (d.returned or d.state == "done")))
+                    open_ = ", ".join(f"task {x}" for x, d in zip(args.task, deps) if not (d and dep_landed(st, d)))
                     print(f"board: {open_} not returned after {args.timeout}s — wait again, or return NEEDS_CONTEXT naming the dependency")
                     return 124
                 time.sleep(0.5)
@@ -3474,6 +3486,11 @@ def selftest() -> int:
         # --- dependency rendezvous: wait on a task's RETURN, peers show what returned ---------------------------
         run("dispatch", "3", "--agent", "task3-dep", "--model", "sonnet")
         run("wait", "--agent", "task4-b", "--task", "3", "--timeout", "1", expect_fail=True)      # open → 124
+        run("lane-exit", "3", "--agent", "task3-dep", "--exit", "0")                                  # exited, no report yet → still open
+        run("wait", "--agent", "task4-b", "--task", "3", "--timeout", "1", expect_fail=True)
+        (ws / "task-3-report.md").write_text("Status: DONE\n")
+        out = run("wait", "--agent", "task4-b", "--task", "3", "--timeout", "1")                   # exited + report on disk → 0
+        assert "report on disk" in out and "not yet returned" in out, out
         run("return", "3", "--agent", "task3-dep", "--status", "DONE", "--commits", f"{base}..{base}")
         out = run("wait", "--agent", "task4-b", "--task", "3", "--timeout", "1")                   # returned → 0
         assert "task 3" in out and "done" in out and base in out, out

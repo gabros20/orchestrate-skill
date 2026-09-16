@@ -10,6 +10,55 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.15.0] — 2026-09-16
+
+### Added
+- **Journal v2 — hash-chained, run-scoped, self-checking.** Every line is an envelope (`schema`,
+  `run`, monotonic `seq`, `ts`/`ts_utc`, `actor`, `prev`/`hash` sha256 chain); `board check`
+  reports an edited, inserted, removed or reordered line; the board header shows integrity
+  problems; `board init` archives the previous run's whole workspace to `archive/<run-id>/` so one
+  workspace holds one run (`--resume` adds tasks instead); v1 journals and the pre-release
+  `board.jsonl` migrate atomically on first read with `.bak` copies; the `run` record carries
+  branch + base sha (the header shows the run's branch, not the viewer's worktree).
+- **New events and guards.** `board set key=value` re-resolves a dimension (plan back to pending,
+  trail kept in `run.md`); `board gate N --kind --verdict` closes a gate explicitly and outranks the
+  findings-file parse — which now takes the FIRST verdict mark in text order; every implementer
+  dispatch is a new *attempt* that resets the review cycle; `board done` writes the ledger line and
+  is refused over a failed gate; `board finish --gate pass` needs `--evidence`, is refused while
+  `check --finish` is dirty (unless `--force --reason`), binds HEAD + goal hash + journal cursor and
+  is rendered STALE when later work, a moved HEAD or a changed goal invalidates it; `REFUSED`
+  joins the status enum for xcli empty-diff declines; `--model` is required on every dispatch.
+- **Typed liveness.** Artifact time (deliverable mtimes) is the only liveness clock; notes are
+  heartbeats. Stale checks cover every open stint, reviewers included ("reviewer silence").
+- **Views.** `board attention` (what to act on, most urgent first, with the next action), `board
+  task N`, `--json` on show/agents/check/log, `board resume` with open-stint locators, probed
+  pointers, `NOT_PROVEN` marks, cleanup list and a receipt (HEAD · journal cursor · receipt hash).
+- **Renderer.** Attention strip in the header; empty columns collapse to one line and done to the
+  newest three; `j/k` focus + `enter` opens one card's lineage, `e` expands all, `a` attention-only;
+  narrow panes drop model/engine from card meta; red reserved for failures (todo is neutral);
+  truecolor / 256 / 16-colour profiles by capability, `NO_COLOR`, `BOARD_ASCII=1`; titles, notes
+  and decisions sanitised (C0/C1/ESC/bidi) before they reach the terminal; watch polls top-level
+  files only, never the archive.
+- **Engine catalog corrected from live probes (2026-09-16).** Codex 0.154: `gpt-6-astra` (client
+  ≥0.153), `ultra` effort ("automatic task delegation"), `exec` drops `-a` and gains `--worktree`,
+  `resume` takes `-c sandbox_mode` not `--sandbox` and ignores a positional prompt with redirected
+  stdin, `--last` is cwd-hijackable — resume by id; agents TOML fields; `web_search=live`. Grok
+  1.0.25: `grok-4.6`, `--reasoning-effort`, `--prompt-file`, `-w/--worktree`, `--sandbox`. opencode
+  1.18: `--format json`, `--variant`. Hermes 0.18: `--usage-file`, `--worktree`. Claude: `--effort`.
+  Hosts matrix: Codex WORKTREE ✅, DISPATCH row names the TOML fields.
+- **New reference `shared-lane-hygiene.md`** (directly routed): probe flags per session, wrapper
+  launches with explicit redirects, prompts from files, resume by explicit id, quota stall =
+  BLOCKED + resume the same session (97% cache hits observed), journal every failed launch,
+  capture usage receipts. `strategy-xcli.md` journals `REFUSED`; `shared-contracts.md`,
+  `shared-monitoring.md`, `shared-handoff.md`, `shared-review-gates.md`, SKILL.md steps 3/6/8 wired;
+  three new replicated-invariant lines; traversal eval `xcli-resume-after-quota`.
+
+### Source
+- An independent cross-lineage review by Codex `gpt-5.6-sol @ ultra` with five `gpt-5.6-luna`
+  research subagents (web + X), run through this very skill on 2026-09-15/16 — its report and
+  digests drove this release; the run's own stalls (quota, three flag mismatches) drove the lane
+  hygiene reference.
+
 ## [1.14.0] — 2026-09-15
 
 ### Added

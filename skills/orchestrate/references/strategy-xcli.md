@@ -56,6 +56,14 @@ and their stdout lands in YOUR context; the contract is the filter.
 - **No silent vendor fallback.** A cross-vendor lane that quietly becomes a same-vendor lane
   defeats the reason it was chosen — fail loudly and say which engine was unavailable
   (`shared-hosts.md`: degrade, and say so).
+- **`refused` is a journaled status**: `board return N --agent A --status REFUSED --msg "<final
+  message verbatim>"` — the card lands in blocked with the reason, `board check` flags any xcli
+  `DONE` return that carries no commits, and the roster keeps the refusal beside the attempt.
+- **Launch hygiene is a rule set, not folklore** — probe flags per session, wrapper script with
+  explicit redirects, prompt from a file, resume by explicit id, quota stall = BLOCKED + resume
+  the same session after the reset (`shared-lane-hygiene.md`). Observed: three
+  consecutive failed launches (`-a` removed, `resume` rejecting `--sandbox`, positional prompt
+  ignored) cost 40 minutes and zero tokens — every one was a flags fact, journaled as a note.
 
 ## Staged-codex recipe (`strategy=staged engine=codex`)
 

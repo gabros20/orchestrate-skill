@@ -271,49 +271,61 @@ itself is gone (e.g. a `git clean -fdx`), reconstruct state from `git log` alone
 ## The journal: flight plan → board → resume
 
 Every run has a spine: `.orchestrate/journal.jsonl`, one append-only line per fact the disk
-cannot show, written by the **controller** at the step it already performs. Everything else —
-the flight plan, the live board, the agent roster, the reconciliation check, the resume packet —
-is *derived* from it plus the files above. Nothing is a second record: a brief means todo, a
-report or findings file means review, a ledger line means done and always wins.
+cannot show, written by the **controller** at the step it already performs. Every line is an
+envelope — `schema`, `run` id, monotonic `seq`, local + UTC timestamps, `actor`, the event, and a
+`prev`/`hash` sha256 chain — so an edited, inserted, removed or reordered line is detected by
+`board check`, and a resume receipt can name the exact cursor it was generated at. Everything
+else — the flight plan, the live board, the roster, the checks, the resume packet — is *derived*
+from it plus the files above. Nothing is a second record: a brief means todo, a report or
+findings file means review, a ledger line means done and always wins. One workspace holds one
+run: `board init` archives the previous run's whole workspace to `.orchestrate/archive/<run-id>/`.
 
 ```
 board init PLAN --strategy staged --review dual --engine claude --host "Claude Code" \
            --models orchestrator=opus,worker=sonnet,reviewer=opus --effort high \
            --isolation worktree --budget agents=13,tokens=150k-400k --goal "…"
-                                  # kickoff: run record · every '# Task N' queued · run.md Resolved block
+                                  # kickoff: archive previous run · run record (branch, base sha) · every '# Task N' queued · run.md Resolved block
+board set effort=ultra            # re-resolve a dimension (journaled; the plan goes back to pending) — never edit the journal
 board plan --why "…"              # the flight plan, rendered from the record (tree + gates/rails/budget/board/tweak)
 board plan approved               # the gate outcome, appended to run.md
-board dispatch 3 --agent task3-impl --model sonnet [--role --engine codex --worktree wt-3]
+board dispatch 3 --agent task3-impl --model sonnet [--role --engine codex --effort high --worktree wt-3]
+                                  # --model is required (rule 3); every implementer dispatch is a new attempt → review cycle resets
 board return 3 --agent task3-impl --status DONE --commits a1b2c3d..e4f5a6b --report task-3-report.md \
-           [--observed-model haiku --tokens 84k]          # rule 13: what actually ran
-board review 3 --kind spec --round 1                     # per gate; verdict read from the findings file
-board dispatch 3 --agent task3-fix --reset-gates         # fix wave = fresh review cycle
+           [--observed-model haiku --tokens 84k]          # typed return · rule 13 observation · usage receipt
+board review 3 --kind spec --round 1                     # gate opened (verdict read from the findings file, first mark in text order)
+board gate 3 --kind spec --verdict ok --round 1 --findings review-task3-spec-r1.md   # gate closed explicitly (outranks the parse)
 board nudge 3 --agent task3-impl · board escalate 3 --agent task3-impl --to opus --why "same error x3"
 board decide D-04 "cookie, not header" --owner controller --task 3     # also appends decisions.md
 board rail "single-flight: npm publish -> task2-impl"    # degradations, owners
 board blocked 3 --msg "owner: controller · resolve D-04 then re-dispatch"
-board finish --gate pass --evidence raw/final-review.md
+board return 4 --agent task4-codex --status REFUSED --msg "exit 0, empty diff: AGENTS.md rule"   # xcli lanes
+board done 3 --msg "commits a1b2c3d..e4f5a6b, review clean"   # writes the ledger line; refused over a failed gate
+board finish --gate pass --evidence raw/final-review.md  # refused while `check --finish` is dirty (or --force --reason); binds HEAD + goal + cursor
 ```
 
 Workers get one optional heartbeat line in their brief — `board note 3 "tests green, committing"`
-— a note, never a status. Following the invariants (a worker saying "done" is a proposal; the
-gate is the transition), only the controller writes the lines above.
+— a note, never a status, and never liveness (liveness is artifact deltas only). Following the
+invariants (a worker saying "done" is a proposal; the gate is the transition), only the controller
+writes the lines above. Titles, notes and decisions are sanitised before they reach the terminal.
 
 ### Views
 
 | Command | What it shows |
 |---|---|
-| `board` | live vertical kanban in a pane **you** open (a new Ghostty/iTerm/tmux split inherits the cwd; any directory inside the repo or a worktree works). Header: goal · run dims · models with drift (`worker sonnet (observed haiku !)`) · budget `agents 7/13 · tokens 235k/150k-400k` · plan outcome · rails · decisions. Columns: todo · in progress (`> agent · model · elapsed`, `! stale` after 10 min without an artifact delta) · review (`spec ok r1 · quality fail r1`) · done · blocked. `q` quit · `j/k` scroll · `e` expand/contract (each card's agents with model/window/status/tokens, gates, files, decisions, last note) · `r` refresh. |
-| `board show [-x]` | the same, one-shot (`-x` expanded) — cheap for the controller to glance at |
-| `board plan` | the flight plan in the format contract, deterministic per strategy |
-| `board agents` | roster: agent · role · task · model requested→observed · engine · window · duration · status · tokens · nudged/escalated |
-| `board log` | human timeline (`--json` for raw lines) |
-| `board check` | reconciliation, exit 1 on findings: dispatched-never-returned, stale in-progress, report without review, ledger lines naming commits or artifacts that don't exist, tasks skipped while later ones are done, model drift, budget overrun, `finish` with open tasks |
-| `board resume` | the handoff's state layer in `shared-handoff.md`'s order — goal, state per task, decisions, pointers, open work — generated; the controller adds the why |
+| `board` | live kanban in a pane **you** open (a new Ghostty/iTerm/tmux split inherits the cwd; any directory inside the repo or a worktree works). Header: goal · run dims · models with drift (`worker sonnet (observed haiku !)`) · budget `agents 7/13 · tokens 235k/150k-400k` · plan outcome · rails · decisions · an **attention** strip (`x` blocked/failed · `!` stale · `?` pending) · journal integrity. Columns: empty ones collapse to one line, done collapses to the newest 3, in progress (`> agent · model · elapsed`, `! stale` after 10 min without an artifact delta), review (`spec ok r1 · quality fail r1`), blocked (`x` + owner/next action). Keys: `j/k` focus a card · `enter` open the focused card's lineage · `e` expand all · `a` attention-only · arrows scroll · `r` refresh · `q` quit. Truecolor / 256 / 16-colour profiles by terminal capability, `NO_COLOR`, `BOARD_ASCII=1` for ASCII borders. |
+| `board show [-x] [--attention] [--json]` | the same, one-shot — cheap for the controller to glance at; `--json` for tooling |
+| `board plan` | the flight plan in the format contract, deterministic per strategy (nested roles listed, not counted) |
+| `board agents [--json]` | roster: agent · role · task · attempt · model requested→observed · engine · effort · window · duration · status · tokens · nudged/escalated · worktree |
+| `board attention` | what to act on, most urgent first, each with the next action |
+| `board task N` | one card's lineage |
+| `board log [--json]` | human timeline with sequence numbers (`--json` for raw envelopes) |
+| `board check [--finish] [--json]` | reconciliation, exit 1 on findings: journal chain breaks, dispatched-never-returned, stale in-progress, silent reviewers, report without review, ledger lines naming commits or artifacts that don't exist, done over a failed gate, xcli DONE without commits, tasks skipped while later ones are done, model drift, budget overrun, unapproved launch, `finish` with open tasks or invalidated by later work / a moved HEAD / a changed goal. `--finish` is the strict pre-finish gate. |
+| `board resume` | the handoff's state layer in `shared-handoff.md`'s order — goal, state per task, open-stint locators, decisions, probed pointers (`[MISSING]`), open work, cleanup — with `NOT_PROVEN` on every claim no artifact backs and a **receipt** (HEAD · journal seq + hash · receipt hash) |
 
 `install.sh` puts `board` on your PATH (`~/.local/bin`); every run also carries a zero-install
 copy at `.orchestrate/board`, and the flight plan prints the command. CLI-agnostic — the same
 journal and views over a Claude Code, Codex, Grok, opencode or Pi run — stdlib-only python3.
+Pre-v2 journals (`board.jsonl`, schema-less lines) migrate on first read, with a `.bak` kept.
 
 ## Model tiers
 

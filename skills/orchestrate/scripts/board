@@ -1,40 +1,43 @@
 #!/usr/bin/env python3
-"""board — the journal and its views: flight plan, live kanban, roster, checks, resume packet.
+"""board — the journal (v2) and its views: flight plan, live kanban, roster, checks, resume receipt.
 
 Everything is derived from `.orchestrate/` — briefs, reports, review findings, the ledger — plus
-ONE append-only stream, `.orchestrate/journal.jsonl`, that carries the facts the disk cannot:
-what was resolved at kickoff, who was dispatched on what, what came back, which gates ran, what
-was decided. Newest fact wins; a ledger line is final. The board is a VIEW, never a second
-record: transitions are the controller's to record (observation ≠ transition); workers may only
-`note`. Stdlib only. Resolves the workspace through the main worktree, so it works from any pane
-whose cwd is anywhere inside the repo or one of its worktrees.
+ONE append-only, hash-chained stream, `.orchestrate/journal.jsonl`, that carries the facts the
+disk cannot: what was resolved at kickoff, who was dispatched on what, what came back, which
+gates ran, what was decided. Newest fact wins; a ledger line is final. The board is a VIEW,
+never a second record: transitions are the controller's to record (observation ≠ transition);
+workers may only `note`. Stdlib only. Resolves the workspace through the main worktree, so it
+works from any pane whose cwd is anywhere inside the repo or one of its worktrees.
 
-  board                        live kanban in this pane (q quit · j/k scroll · r refresh)
-  board show | agents | log    one-shot kanban · agent roster · human timeline (--json raw)
-  board plan                   render the flight plan from the record (--why "<triage pick>")
-  board check                  reconcile journal vs disk; exit 1 on findings
-  board resume                 the handoff's state layer, ready to paste
+  board                        live kanban (q quit · j/k focus · enter expand card · e expand all ·
+                               a attention only · arrows scroll · r refresh)
+  board show [-x] [--json]     one-shot kanban · agents · log · task N · attention · plan · resume
+  board check [--finish] [--json]   reconcile journal vs disk (chain, gates, liveness, drift, budget)
   board path                   print the journal file
 
-  board init PLAN --strategy S [--review R --engine E --host H --models r=t,.. --effort X
-                  --isolation I --trigger T --workers N --budget agents=9,tokens=.. --confirm
-                  --alias A --goal "..."]        queue every '# Task N'; write run.md Resolved
-  board plan approved|changed|skipped [--msg]    record the flight-plan gate outcome
-  board dispatch N --agent A [--role R --model M --engine E --effort X --worktree W --reset-gates]
-  board return N --agent A --status DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED
+  board init PLAN --strategy S [--review --engine --host --models r=t,.. --effort --isolation
+                  --trigger --workers --budget agents=9,tokens=.. --confirm --alias --goal "…"]
+                  [--resume]    kickoff: archive any previous run, queue every '# Task N',
+                                write run.md's Resolved block. --resume adds tasks to the current run.
+  board set key=value [..]     re-resolve a dimension (journaled; plan goes back to pending)
+  board plan [--why] · board plan approved|changed|skipped [--msg]
+  board dispatch N --agent A --model M [--role R --engine E --effort X --worktree W --msg]
+  board return N --agent A --status DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED
                   [--commits a..b --report PATH --observed-model M --tokens 84k --msg]
-  board review N --kind spec|quality|.. [--round K --agent A --model M]
+  board review N --kind spec|quality|.. [--round K --agent A --model M]     (gate opened)
+  board gate N --kind K --verdict ok|fail|warn [--round K --findings FILE]  (gate closed, explicit)
   board nudge N --agent A · board escalate N --agent A --to MODEL --why ".."
   board decide ID "msg" [--owner O --task N]     also appends decisions.md
   board rail "msg"                               degradation / single-flight owner, one line
-  board blocked N --msg ".." · board done N · board note N "msg" [--agent A]
-  board finish --gate pass|fail [--evidence PATH --msg]
+  board blocked N --msg ".." · board done N [--msg] (writes the ledger line) · board note N "msg"
+  board finish --gate pass|fail --evidence PATH [--msg] [--force --reason ".."]
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -47,16 +50,21 @@ import time
 import unicodedata
 from pathlib import Path
 
+SCHEMA = 2
 COLUMNS = ["todo", "in_progress", "review", "done", "blocked"]
 LABELS = {c: c.upper().replace("_", " ") for c in COLUMNS}
-STALE_AFTER = 10 * 60  # seconds without an artifact delta before an in-progress card is flagged
+STALE_AFTER = 10 * 60  # seconds without an ARTIFACT delta before an open stint is flagged
 JOURNAL = "journal.jsonl"
 LEGACY_JOURNAL = "board.jsonl"
+KEEP_ON_ARCHIVE = {"board", ".gitignore", "toolbox.md", "archive"}
 DIMS = ("strategy", "review", "engine", "host", "models", "effort", "isolation", "trigger",
         "workers", "budget", "confirm", "alias", "goal")
 TIER_DEFAULT = {"orchestrator": "opus-class", "worker": "sonnet-class", "reviewer": "sonnet-class",
                 "advisor": "strongest", "reasoner": "opus-class", "peer": "codex/grok"}
-STATUSES = ("DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED")
+STATUSES = ("DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED", "REFUSED")
+TASK_EVENTS = {"todo", "title", "dispatch", "return", "review", "gate", "nudge", "escalate", "done",
+               "blocked", "note"}
+DONE_SHOW = 3  # done cards shown in contracted mode before "+N more"
 
 
 # --- workspace -----------------------------------------------------------------------
@@ -76,45 +84,153 @@ def workspace() -> Path:
     return common_path.resolve().parent / ".orchestrate"
 
 
-def journal_path(ws: Path) -> Path:
-    path = ws / JOURNAL
-    legacy = ws / LEGACY_JOURNAL
-    if not path.exists() and legacy.exists():  # v1.14 pre-release name
-        legacy.rename(path)
-    return path
+def git(*args: str) -> str:
+    try:
+        return subprocess.run(["git", *args], capture_output=True, text=True).stdout.strip()
+    except FileNotFoundError:
+        return ""
 
 
 def now_iso() -> str:
     return dt.datetime.now().isoformat(timespec="milliseconds")
 
 
-def append_event(ws: Path, **fields: object) -> dict:
+def now_utc() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def new_run_id() -> str:
+    return dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + os.urandom(2).hex()
+
+
+def canonical(env: dict) -> str:
+    return json.dumps({k: v for k, v in env.items() if k != "hash"}, sort_keys=True, ensure_ascii=False,
+                      separators=(",", ":"))
+
+
+def chain_hash(prev: str, env: dict) -> str:
+    return sha(prev + "\n" + canonical(env))
+
+
+def atomic_write(path: Path, text: str) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def journal_path(ws: Path) -> Path:
+    """Locate the journal; migrate the pre-release name and v1 (schema-less) lines atomically."""
+    path = ws / JOURNAL
+    legacy = ws / LEGACY_JOURNAL
+    if not path.exists() and legacy.exists():
+        shutil.copy2(legacy, ws / (LEGACY_JOURNAL + ".bak"))
+        os.replace(legacy, path)
+    if path.exists():
+        migrate_v1(path)
+    return path
+
+
+def migrate_v1(path: Path) -> None:
+    raw = path.read_text(encoding="utf-8")
+    lines = [ln for ln in raw.splitlines() if ln.strip()]
+    if not lines:
+        return
+    try:
+        first = json.loads(lines[0])
+    except json.JSONDecodeError:
+        first = {}
+    if first.get("schema") == SCHEMA:
+        return
+    shutil.copy2(path, path.with_name("journal.jsonl.v1.bak"))
+    run_id = "legacy-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    out, prev = [], ""
+    seq = 0
+    for ln in lines:
+        try:
+            ev = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        seq += 1
+        env = {"schema": SCHEMA, "run": run_id, "seq": seq, "ts": ev.pop("ts", now_iso()), "ts_utc": "",
+               "actor": ev.get("agent") if ev.get("ev") == "note" else "controller", **ev, "prev": prev}
+        env["hash"] = chain_hash(prev, env)
+        prev = env["hash"]
+        out.append(json.dumps(env, ensure_ascii=False))
+    atomic_write(path, "\n".join(out) + "\n")
+
+
+def last_line(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    with path.open("rb") as fh:
+        try:
+            fh.seek(-4096, os.SEEK_END)
+        except OSError:
+            fh.seek(0)
+        tail = fh.read().decode("utf-8", "replace").strip().splitlines()
+    for ln in reversed(tail):
+        try:
+            return json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+    return {}
+
+
+def append_event(ws: Path, actor: str = "controller", **fields: object) -> dict:
     ws.mkdir(parents=True, exist_ok=True)
     gi = ws / ".gitignore"
     if not gi.exists():
         gi.write_text("*\n")
-    payload = {"ts": now_iso(), **{k: v for k, v in fields.items() if v not in (None, "", [], {})}}
-    with journal_path(ws).open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    return payload
+    path = journal_path(ws)
+    last = last_line(path)
+    run_id = str(fields.pop("run_id", "") or last.get("run") or new_run_id())
+    env = {"schema": SCHEMA, "run": run_id, "seq": int(last.get("seq", 0)) + 1, "ts": now_iso(), "ts_utc": now_utc(),
+           "actor": actor, **{k: v for k, v in fields.items() if v not in (None, "", [], {})},
+           "prev": str(last.get("hash", ""))}
+    env["hash"] = chain_hash(env["prev"], env)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(env, ensure_ascii=False) + "\n")
+    return env
 
 
-def read_events(ws: Path) -> list[dict]:
+def read_events(ws: Path) -> tuple[list[dict], list[str]]:
+    """Returns (events, integrity problems). Problems never hide events — views stay usable."""
     if not ws.exists():
-        return []
+        return [], []
     path = journal_path(ws)
     if not path.exists():
-        return []
-    out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+        return [], []
+    out, problems = [], []
+    prev, expect = "", 1
+    for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = line.strip()
         if not line:
             continue
         try:
-            out.append(json.loads(line))
+            ev = json.loads(line)
         except json.JSONDecodeError:
+            problems.append(f"journal line {i}: malformed JSON (skipped)")
             continue
-    return out
+        if ev.get("schema") != SCHEMA:
+            problems.append(f"journal line {i}: schema {ev.get('schema')} (expected {SCHEMA})")
+        seq = ev.get("seq")
+        if seq != expect:
+            problems.append(f"journal line {i}: seq {seq}, expected {expect} (gap or reorder)")
+            expect = int(seq) + 1 if isinstance(seq, int) else expect + 1
+        else:
+            expect += 1
+        if ev.get("prev", "") != prev:
+            problems.append(f"journal line {i}: prev-hash mismatch (line inserted, removed or edited before it)")
+        recomputed = chain_hash(str(ev.get("prev", "")), ev)
+        if ev.get("hash") != recomputed:
+            problems.append(f"journal line {i}: hash mismatch (line edited in place)")
+        prev = recomputed  # the chain continues from what the line SHOULD hash to, so a break propagates
+        out.append(ev)
+    return out, problems
 
 
 # --- derivation ----------------------------------------------------------------------
@@ -126,9 +242,10 @@ class Task:
         self.candidates: list[tuple[float, int, str, str]] = []  # (ts, seq, state, detail) — later seq wins ties
         self.agent = self.model = self.engine = ""
         self.since = 0.0
-        self.last_activity = 0.0
-        self.gate_entries: list[tuple[float, str, str]] = []  # (ts, kind, "ok r1" / "fail r2" / ".. r1")
-        self.gate_reset = 0.0  # a fix-wave re-dispatch starts a fresh review cycle
+        self.artifact_ts = 0.0    # deliverable deltas only (rule 3b)
+        self.heartbeat_ts = 0.0   # notes and events — never liveness
+        self.gate_entries: list[tuple[float, int, str, str]] = []  # (ts, attempt, kind, "ok r1"/"fail r2"/".. r1")
+        self.attempt = 0
         self.note = ""
         self.final = ""
         self.final_note = ""
@@ -136,12 +253,13 @@ class Task:
         self.returned = False
         self.report = ""
         self.findings: list[str] = []
+        self.last_status = ""
 
     @property
     def gates(self) -> dict[str, str]:
         out: dict[str, tuple[float, str]] = {}
-        for ts, kind, text in self.gate_entries:
-            if ts >= self.gate_reset and (kind not in out or ts >= out[kind][0]):
+        for ts, attempt, kind, text in self.gate_entries:
+            if attempt >= self.attempt and (kind not in out or ts >= out[kind][0]):
                 out[kind] = (ts, text)
         return {k: v[1] for k, v in out.items()}
 
@@ -159,14 +277,21 @@ class Task:
             return max(self.candidates, key=lambda c: (c[0], c[1]))[3]
         return ""
 
-    def touch(self, ts: float) -> None:
-        self.last_activity = max(self.last_activity, ts)
+    @property
+    def last_activity(self) -> float:
+        return max(self.artifact_ts, self.since)
+
+    def touch_artifact(self, ts: float) -> None:
+        self.artifact_ts = max(self.artifact_ts, ts)
+
+    def touch_heartbeat(self, ts: float) -> None:
+        self.heartbeat_ts = max(self.heartbeat_ts, ts)
 
 
 class Stint:
     """One dispatched agent, from dispatch to return."""
 
-    def __init__(self, ev: dict, ts: float):
+    def __init__(self, ev: dict, ts: float, attempt: int):
         self.agent = str(ev.get("agent", ""))
         self.task = str(ev.get("task", ""))
         self.role = str(ev.get("role") or "implementer")
@@ -174,6 +299,7 @@ class Stint:
         self.engine = str(ev.get("engine", ""))
         self.effort = str(ev.get("effort", ""))
         self.worktree = str(ev.get("worktree", ""))
+        self.attempt = attempt
         self.started = ts
         self.returned = 0.0
         self.status = ""
@@ -183,24 +309,33 @@ class Stint:
         self.report = ""
         self.nudges = 0
         self.escalated_to = ""
+        self.heartbeat_ts = ts
 
 
 class Run:
     def __init__(self) -> None:
+        self.id = ""
         self.dims: dict[str, object] = {}
         self.kickoff = 0.0
-        self.plan = ""          # approved / changed / skipped
+        self.branch = self.base = ""
+        self.plan = ""          # approved / changed / skipped / pending
         self.plan_ts = 0.0
         self.plan_msg = ""
+        self.plan_trail: list[str] = []
         self.rails: list[str] = []
-        self.observed: dict[str, str] = {}   # role -> observed model (last)
+        self.observed: dict[str, str] = {}    # role tier -> last observed model
+        self.drift: list[str] = []            # every requested≠observed, in order
         self.decisions: list[dict] = []
         self.finish = ""        # pass / fail
         self.finish_evidence = ""
         self.finish_ts = 0.0
+        self.finish_seq = 0
+        self.finish_head = ""
+        self.finish_goal = ""
         self.tokens = 0
-        self.dispatches = 0
         self.cycles = 0
+        self.last_seq = 0
+        self.last_hash = ""
 
     @property
     def models(self) -> dict[str, str]:
@@ -220,6 +355,7 @@ class State:
         self.stints: list[Stint] = []
         self.run = Run()
         self.events: list[dict] = []
+        self.problems: list[str] = []
         self.meta: dict[str, str] = {}
 
     def task(self, tid: str) -> Task:
@@ -233,6 +369,9 @@ class State:
             if s.agent == agent and (not task or s.task == task) and not s.returned:
                 return s
         return None
+
+    def open_stints(self) -> list[Stint]:
+        return [s for s in self.stints if not s.returned]
 
 
 def parse_ts(value: object) -> float:
@@ -249,8 +388,7 @@ def parse_tokens(value: object) -> int:
     m = re.match(r"^(\d+(?:\.\d+)?)\s*([km]?)$", s)
     if not m:
         return 0
-    n = float(m.group(1))
-    return int(n * {"": 1, "k": 1_000, "m": 1_000_000}[m.group(2)])
+    return int(float(m.group(1)) * {"": 1, "k": 1_000, "m": 1_000_000}[m.group(2)])
 
 
 def fmt_tokens(n: int) -> str:
@@ -296,6 +434,14 @@ def natural_key(tid: str):
     return (0, int(tid)) if tid.isdigit() else (1, tid)
 
 
+CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f​-‏ -‮⁦-⁩]")
+
+
+def clean(text: object) -> str:
+    """Untrusted text (titles, notes, decisions) never reaches the terminal raw."""
+    return CONTROL_RE.sub("", str(text)).replace("\n", " ").replace("\t", " ")
+
+
 def title_from(path: Path) -> str:
     try:
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -303,7 +449,7 @@ def title_from(path: Path) -> str:
             if not line:
                 continue
             m = re.match(r"^#+\s*(?:Task\s+\S+\s*[:—-]\s*)?(.+)$", line)
-            return (m.group(1) if m else line).strip()[:80]
+            return clean((m.group(1) if m else line).strip()[:80])
     except OSError:
         pass
     return ""
@@ -314,28 +460,32 @@ def report_status(path: Path) -> tuple[str, str]:
         head = path.read_text(encoding="utf-8", errors="replace")[:2000]
     except OSError:
         return "", ""
-    m = re.search(r"\b(DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|DONE)\b[ \t]*[—:-]?[ \t]*([^\n]*)", head)
-    return (m.group(1), m.group(2).strip()) if m else ("", "")
+    m = re.search(r"\b(DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED|DONE)\b[ \t]*[—:-]?[ \t]*([^\n]*)", head)
+    return (m.group(1), clean(m.group(2).strip())) if m else ("", "")
 
 
 def review_verdict(path: Path) -> str:
+    """The FIRST verdict mark in text order wins — a fail followed by a stray checkmark stays a fail."""
     try:
         head = path.read_text(encoding="utf-8", errors="replace")[:1500]
     except OSError:
         return ".."
-    for mark, token in (("✅", "ok"), ("❌", "fail"), ("⚠", "warn")):
-        if mark in head:
-            return token
-    if re.search(r"\b(pass|clean|approved)\b", head, re.I):
-        return "ok"
-    return "fail" if re.search(r"\b(fail|reject|blocking)\w*", head, re.I) else ".."
+    marks = [(head.find(m), t) for m, t in (("✅", "ok"), ("❌", "fail"), ("⚠", "warn")) if m in head]
+    if marks:
+        return min(marks)[1]
+    words = []
+    for tok, pat in (("ok", r"\b(pass|clean|approved)\b"), ("fail", r"\b(fail|reject|blocking)\w*")):
+        m = re.search(pat, head, re.I)
+        if m:
+            words.append((m.start(), tok))
+    return min(words)[1] if words else ".."
 
 
 def load(ws: Path) -> State:
     st = State(ws)
     get = st.task
 
-    # 1. disk facts
+    # 1. disk facts (artifact deltas are the only liveness signal)
     if ws.exists():
         for p in ws.glob("task-*-brief.md"):
             m = re.match(r"task-(.+)-brief\.md$", p.name)
@@ -344,7 +494,7 @@ def load(ws: Path) -> State:
             t = get(m.group(1))
             t.title = t.title or title_from(p)
             t.candidates.append((p.stat().st_mtime, 0, "todo", "brief ready"))
-            t.touch(p.stat().st_mtime)
+            t.touch_artifact(p.stat().st_mtime)
         for p in ws.glob("card-*.md"):
             m = re.match(r"card-(.+)\.md$", p.name)
             if not m:
@@ -352,7 +502,7 @@ def load(ws: Path) -> State:
             t = get(m.group(1))
             t.title = t.title or title_from(p)
             t.candidates.append((p.stat().st_mtime, 0, "todo", "card ready"))
-            t.touch(p.stat().st_mtime)
+            t.touch_artifact(p.stat().st_mtime)
         for p in ws.glob("task-*-report.md"):
             m = re.match(r"task-(.+)-report\.md$", p.name)
             if not m:
@@ -361,21 +511,11 @@ def load(ws: Path) -> State:
             ts = p.stat().st_mtime
             status, reason = report_status(p)
             t.report = p.name
-            if status in ("BLOCKED", "NEEDS_CONTEXT"):
+            if status in ("BLOCKED", "NEEDS_CONTEXT", "REFUSED"):
                 t.candidates.append((ts, 0, "blocked", reason or status.lower().replace("_", " ")))
             else:
                 t.candidates.append((ts, 0, "review", "report landed" + (" · concerns" if status == "DONE_WITH_CONCERNS" else "")))
-            t.touch(ts)
-        for p in sorted(ws.glob("review-task*-r*.md")):
-            m = re.match(r"review-task(.+?)-(.+)-r(\d+)\.md$", p.name)
-            if not m:
-                continue
-            t = get(m.group(1))
-            ts = p.stat().st_mtime
-            t.candidates.append((ts, 0, "review", "findings filed"))
-            t.gate_entries.append((ts, m.group(2), f"{review_verdict(p)} r{m.group(3)}"))
-            t.findings.append(p.name)
-            t.touch(ts)
+            t.touch_artifact(ts)
         ledger = ws / "progress.md"
         if ledger.exists():
             for line in ledger.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -383,7 +523,7 @@ def load(ws: Path) -> State:
                 if m:
                     t = get(m.group(1))
                     t.final = "done"
-                    t.final_note = m.group(3).strip(" ()") or m.group(2)
+                    t.final_note = clean(m.group(3).strip(" ()") or m.group(2))
                 elif re.match(r"^\s*Cycle\s+\d+\s*:", line, re.I):
                     st.run.cycles += 1
         raw = ws / "raw"
@@ -391,58 +531,70 @@ def load(ws: Path) -> State:
             for p in raw.iterdir():
                 m = re.search(r"task[-_ ]?(\d+)", p.name)
                 if m and m.group(1) in st.tasks:
-                    st.tasks[m.group(1)].touch(p.stat().st_mtime)
+                    st.tasks[m.group(1)].touch_artifact(p.stat().st_mtime)
         dec = ws / "decisions.md"
         if dec.exists():
             for line in dec.read_text(encoding="utf-8", errors="replace").splitlines():
                 m = re.match(r"^\s*[-*]?\s*(D-?\d+|[A-Z]+-\d+)\s*[:—-]\s*(.+)$", line)
                 if m:
-                    st.run.decisions.append({"id": m.group(1), "msg": m.group(2).strip(), "src": "file"})
+                    st.run.decisions.append({"id": m.group(1), "msg": clean(m.group(2).strip()), "src": "file"})
 
     # 2. journal (newest fact wins; ledger stays final)
-    st.events = read_events(ws)
+    st.events, st.problems = read_events(ws)
     run = st.run
-    for seq, ev in enumerate(st.events, start=1):
+    for ev in st.events:
+        seq = int(ev.get("seq", 0))
+        run.last_seq, run.last_hash = seq, str(ev.get("hash", ""))
         ts = parse_ts(ev.get("ts"))
         kind = ev.get("ev", "")
+        run.id = run.id or str(ev.get("run", ""))
         if kind == "run":
             run.dims = {k: ev[k] for k in DIMS if k in ev}
             run.kickoff = run.kickoff or ts
+            run.branch, run.base = str(ev.get("branch", "")), str(ev.get("base", ""))
+            continue
+        if kind == "set":
+            for k, v in (ev.get("dims") or {}).items():
+                run.dims[k] = v
+            run.plan, run.plan_msg = "pending", f"re-resolved {', '.join((ev.get('dims') or {}).keys())}"
+            run.plan_trail.append(f"{hhmm(ts)} set {', '.join(f'{k}={v}' for k, v in (ev.get('dims') or {}).items())}")
             continue
         if kind == "plan":
-            run.plan, run.plan_ts, run.plan_msg = str(ev.get("outcome", "")), ts, str(ev.get("msg", ""))
+            run.plan, run.plan_ts, run.plan_msg = str(ev.get("outcome", "")), ts, clean(ev.get("msg", ""))
+            run.plan_trail.append(f"{hhmm(ts)} {run.plan}" + (f" ({run.plan_msg})" if run.plan_msg else ""))
             continue
         if kind == "rail":
-            run.rails.append(str(ev.get("msg", "")))
+            run.rails.append(clean(ev.get("msg", "")))
             continue
         if kind == "decide":
             run.decisions = [d for d in run.decisions if d["id"] != ev.get("id")]
-            run.decisions.append({"id": str(ev.get("id", "")), "msg": str(ev.get("msg", "")),
+            run.decisions.append({"id": str(ev.get("id", "")), "msg": clean(ev.get("msg", "")),
                                   "owner": str(ev.get("owner", "")), "task": str(ev.get("task", "")), "src": "journal"})
             continue
         if kind == "finish":
             run.finish, run.finish_evidence, run.finish_ts = str(ev.get("gate", "")), str(ev.get("evidence", "")), ts
+            run.finish_seq, run.finish_head, run.finish_goal = seq, str(ev.get("head", "")), str(ev.get("goal_hash", ""))
             continue
         tid = ev.get("task")
         if tid is None:
             continue
         t = get(str(tid))
         if ev.get("title"):
-            t.title = str(ev["title"])[:80]
+            t.title = clean(str(ev["title"])[:80])
         if kind == "todo":
-            t.candidates.append((ts, seq, "todo", ev.get("msg", "queued")))
+            t.candidates.append((ts, seq, "todo", clean(ev.get("msg", "queued"))))
         elif kind == "dispatch":
-            t.candidates.append((ts, seq, "in_progress", ev.get("msg", "")))
+            if role_tier(str(ev.get("role") or "implementer")) == "worker":
+                t.attempt += 1  # a new implementer attempt starts a fresh review cycle
+            t.candidates.append((ts, seq, "in_progress", clean(ev.get("msg", ""))))
             t.agent, t.model, t.engine = ev.get("agent", ""), ev.get("model", ""), ev.get("engine", "")
             t.since, t.dispatched, t.returned = ts, True, False
-            if ev.get("reset_gates"):
-                t.gate_reset = max(t.gate_reset, ts)
-            run.dispatches += 1
-            st.stints.append(Stint(ev, ts))
+            st.stints.append(Stint(ev, ts, t.attempt))
         elif kind == "return":
             status = str(ev.get("status", "DONE"))
-            if status in ("BLOCKED", "NEEDS_CONTEXT"):
-                t.candidates.append((ts, seq, "blocked", ev.get("msg", "") or status.lower().replace("_", " ")))
+            t.last_status = status
+            if status in ("BLOCKED", "NEEDS_CONTEXT", "REFUSED"):
+                t.candidates.append((ts, seq, "blocked", clean(ev.get("msg", "")) or status.lower().replace("_", " ")))
             else:
                 t.candidates.append((ts, seq, "review", "returned" + (" · concerns" if status == "DONE_WITH_CONCERNS" else "")))
             t.returned = True
@@ -455,16 +607,26 @@ def load(ws: Path) -> State:
                 s.commits, s.report = str(ev.get("commits", "")), str(ev.get("report", ""))
                 if s.observed:
                     run.observed[role_tier(s.role)] = s.observed
+                    if s.model and s.observed != s.model:
+                        run.drift.append(f"task {s.task} {s.agent}: requested {s.model}, observed {s.observed}")
                 run.tokens += s.tokens
         elif kind == "review":
-            t.candidates.append((ts, seq, "review", ev.get("msg", "")))
+            t.candidates.append((ts, seq, "review", clean(ev.get("msg", ""))))
             rnd = ev.get("round")
-            t.gate_entries.append((ts, str(ev.get("kind", "review")), f".. r{rnd}" if rnd else ".."))
+            t.gate_entries.append((ts, t.attempt, str(ev.get("kind", "review")), f".. r{rnd}" if rnd else ".."))
             if ev.get("agent"):
                 t.agent, t.model, t.engine = ev.get("agent", ""), ev.get("model", ""), ev.get("engine", "")
                 t.since = ts
                 rev = dict(ev, role=ev.get("role") or f"{ev.get('kind', 'review')} reviewer")
-                st.stints.append(Stint(rev, ts))
+                st.stints.append(Stint(rev, ts, t.attempt))
+        elif kind == "gate":
+            rnd = ev.get("round")
+            t.gate_entries.append((ts, t.attempt, str(ev.get("kind", "review")),
+                                   f"{ev.get('verdict', '..')}" + (f" r{rnd}" if rnd else "")))
+            t.candidates.append((ts, seq, "review", f"{ev.get('kind')} {ev.get('verdict')}"))
+            for s in st.stints:
+                if s.task == str(tid) and not s.returned and s.role.startswith(str(ev.get("kind", "?"))):
+                    s.returned, s.status = ts, str(ev.get("verdict", "")).upper()
         elif kind == "nudge":
             s = st.open_stint(str(ev.get("agent", "")), str(tid))
             if s:
@@ -473,23 +635,37 @@ def load(ws: Path) -> State:
             s = st.open_stint(str(ev.get("agent", "")), str(tid))
             if s:
                 s.escalated_to = str(ev.get("to", ""))
-            t.note = f"escalate -> {ev.get('to', '?')}: {ev.get('why', '')}".strip(": ")
+            t.note = clean(f"escalate -> {ev.get('to', '?')}: {ev.get('why', '')}").strip(": ")
         elif kind == "done":
-            t.candidates.append((ts, seq, "done", ev.get("msg", "")))
+            t.candidates.append((ts, seq, "done", clean(ev.get("msg", ""))))
         elif kind == "blocked":
-            t.candidates.append((ts, seq, "blocked", ev.get("msg", "")))
+            t.candidates.append((ts, seq, "blocked", clean(ev.get("msg", ""))))
         if ev.get("msg") and kind != "escalate":
-            t.note = str(ev["msg"])
-        t.touch(ts)
+            t.note = clean(ev["msg"])
+        t.touch_heartbeat(ts)
+        s = st.open_stint(str(ev.get("agent", "")), str(tid)) if ev.get("agent") else None
+        if s:
+            s.heartbeat_ts = max(s.heartbeat_ts, ts)
 
-    # 3. review stints close when their findings file lands
-    for s in st.stints:
-        if not s.returned and s.role.endswith("reviewer"):
-            kind = s.role.split()[0]
-            t = st.tasks.get(s.task)
-            for ts_, k, text in (t.gate_entries if t else []):
-                if k == kind and ts_ > s.started and not text.startswith(".."):
-                    s.returned, s.status = ts_, text.split()[0].upper()
+    # 3. findings files on disk close review stints and carry verdicts (attempt = current at their mtime)
+    if ws.exists():
+        for p in sorted(ws.glob("review-task*-r*.md")):
+            m = re.match(r"review-task(.+?)-(.+)-r(\d+)\.md$", p.name)
+            if not m:
+                continue
+            t = get(m.group(1))
+            ts = p.stat().st_mtime
+            attempt = max([s.attempt for s in st.stints if s.task == t.id and s.started <= ts] or [1])
+            explicit = any(k == m.group(2) and text.split()[-1] == f"r{m.group(3)}" and not text.startswith("..")
+                           for _, _, k, text in t.gate_entries)
+            if not explicit:
+                t.gate_entries.append((ts, attempt, m.group(2), f"{review_verdict(p)} r{m.group(3)}"))
+            t.candidates.append((ts, 0, "review", "findings filed"))
+            t.findings.append(p.name)
+            t.touch_artifact(ts)
+            for s in st.stints:
+                if s.task == t.id and not s.returned and s.role.startswith(m.group(2)) and s.started <= ts:
+                    s.returned, s.status = ts, review_verdict(p).upper()
                     break
 
     st.meta = run_meta(ws, run)
@@ -513,11 +689,7 @@ def run_meta(ws: Path, run: Run) -> dict:
         meta["started"] = str(run.kickoff)
     elif runmd.exists():
         meta["started"] = str(runmd.stat().st_ctime)
-    try:
-        meta["branch"] = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True,
-                                        text=True).stdout.strip()
-    except FileNotFoundError:
-        pass
+    meta["branch"] = run.branch or git("rev-parse", "--abbrev-ref", "HEAD")
     meta["repo"] = ws.parent.name
     return meta
 
@@ -538,22 +710,28 @@ def resolved_block(st: State) -> str:
     effort = d.get("effort")
     effort = " ".join(f"{k}={v}" for k, v in effort.items()) if isinstance(effort, dict) else (effort or "-")
     budget = " ".join(f"{k}={v}" for k, v in run.budget.items()) or "-"
-    lines = ["## Resolved", f"goal: {d.get('goal') or '-'}", kv("strategy", "review", "engine", "host"),
+    lines = ["## Resolved", f"run: {run.id}" + (f" · branch {run.branch}" if run.branch else "") + (f" · base {run.base[:7]}" if run.base else ""),
+             f"goal: {d.get('goal') or '-'}", kv("strategy", "review", "engine", "host"),
              f"models: {models} · effort: {effort}", kv("isolation", "trigger", "workers", "confirm", "alias"),
              f"budget: {budget}"]
-    if run.plan:
+    if run.plan and run.plan != "pending":
         when = dt.datetime.fromtimestamp(run.plan_ts).isoformat(timespec="minutes") if run.plan_ts else ""
         lines.append(f"plan: {run.plan} {when}" + (f" ({run.plan_msg})" if run.plan_msg else ""))
     else:
-        lines.append("plan: pending")
+        lines.append("plan: pending" + (f" ({run.plan_msg})" if run.plan_msg else ""))
+    if len(run.plan_trail) > 1:
+        lines.append("plan-trail: " + " → ".join(run.plan_trail))
     if run.observed:
         lines.append("observed: " + " ".join(
             f"{role}={obs}" + (f" (requested {run.models[role]})" if run.models.get(role) and run.models[role] != obs else "")
             for role, obs in run.observed.items()))
+    for d_ in run.drift:
+        lines.append(f"drift: {d_}")
     for rail in run.rails:
         lines.append(f"rails: {rail}")
     if run.finish:
-        lines.append(f"finish: final gate {run.finish}" + (f" · evidence {run.finish_evidence}" if run.finish_evidence else ""))
+        lines.append(f"finish: final gate {run.finish}" + (f" · evidence {run.finish_evidence}" if run.finish_evidence else "") +
+                     (f" · head {run.finish_head[:7]}" if run.finish_head else ""))
     if run.kickoff:
         lines.append("kickoff: " + dt.datetime.fromtimestamp(run.kickoff).isoformat(timespec="seconds"))
     return "\n".join(lines)
@@ -572,23 +750,50 @@ def write_resolved(ws: Path) -> None:
         text = pre + block.rstrip("\n") + post
     else:
         text = block + ("\n" + text if text else "")
-    runmd.write_text(text, encoding="utf-8")
+    atomic_write(runmd, text)
 
 
-# --- rendering (raw ANSI, truecolor, stdlib only) ---------------------------------------
+# --- rendering (raw ANSI, capability-aware palette, stdlib only) ---------------------------
 
-RGB = {"todo": (229, 72, 77), "in_progress": (62, 142, 247), "review": (245, 165, 36),
+RGB = {"todo": (128, 138, 156), "in_progress": (62, 142, 247), "review": (245, 165, 36),
        "done": (48, 164, 108), "blocked": (180, 85, 232)}
 OK, WARN, BAD = (48, 164, 108), (245, 165, 36), (229, 72, 77)
+ANSI16 = {"todo": "90", "in_progress": "34", "review": "33", "done": "32", "blocked": "35"}
 MARGIN = 2  # left/right page margin
-
-
-def fg(rgb: tuple[int, int, int]) -> str:
-    return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
-
-
-BOLD, DIM, RESET = "\033[1m", "\033[2m", "\033[0m"
+BOLD, DIM, REV, RESET = "\033[1m", "\033[2m", "\033[7m", "\033[0m"
 Row = list  # list[tuple[str, str]] — (text, sgr) segments; sgr "" = terminal default
+
+
+class Style:
+    """Palette profile: truecolor / 256 / 16 / none, and box glyphs (unicode or ASCII)."""
+
+    def __init__(self, color: bool = True):
+        self.profile = "none"
+        if color:
+            ct = os.environ.get("COLORTERM", "").lower()
+            term = os.environ.get("TERM", "")
+            self.profile = "rgb" if ct in ("truecolor", "24bit") else "256" if "256" in term else "16"
+        loc = (os.environ.get("LC_ALL") or os.environ.get("LC_CTYPE") or os.environ.get("LANG") or "utf").lower()
+        self.ascii = bool(os.environ.get("BOARD_ASCII")) or "utf" not in loc
+        g = self.ascii
+        self.tl, self.tr, self.bl, self.br = ("+", "+", "+", "+") if g else ("╭", "╮", "╰", "╯")
+        self.h, self.v = ("-", "|") if g else ("─", "│")
+        self.arrow, self.dot = ("->", "*") if g else ("→", "·")
+
+    def fg(self, rgb: tuple[int, int, int], col: str = "") -> str:
+        if self.profile == "rgb":
+            return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
+        if self.profile == "256":
+            r, g, b = (round(c / 255 * 5) for c in rgb)
+            return f"\033[38;5;{16 + 36 * r + 6 * g + b}m"
+        if self.profile == "16":
+            if col:
+                return f"\033[{ANSI16.get(col, '0')}m"
+            return "\033[32m" if rgb == OK else "\033[33m" if rgb == WARN else "\033[31m" if rgb == BAD else ""
+        return ""
+
+    def col(self, name: str) -> str:
+        return self.fg(RGB[name], name)
 
 
 def cw(ch: str) -> int:
@@ -631,34 +836,72 @@ def hhmm(ts: float) -> str:
     return dt.datetime.fromtimestamp(ts).strftime("%H:%M") if ts else ""
 
 
-def card_meta(t: Task, now: float) -> Row:
+def is_stale(t: Task, now: float) -> bool:
+    return t.state == "in_progress" and now - t.last_activity > STALE_AFTER
+
+
+def stint_stale(s: Stint, t: Task | None, now: float) -> bool:
+    last = max(s.started, t.artifact_ts if t else 0.0)
+    return not s.returned and now - last > STALE_AFTER
+
+
+def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
+    """(marker, task, why) for every card a controller should act on, most urgent first."""
+    out = []
+    for t in st.ordered():
+        s = t.state
+        if s == "blocked":
+            out.append(("x", t, t.note or t.detail or "blocked — needs owner + next action"))
+        elif s == "in_progress" and is_stale(t, now):
+            out.append(("!", t, f"no artifact delta for {fmt_dur(now - t.last_activity)} — disk check, then ONE nudge"))
+        elif s == "review":
+            pend = [k for k, v in t.gates.items() if v.startswith("..")]
+            failed = [k for k, v in t.gates.items() if v.startswith("fail")]
+            if failed:
+                out.append(("x", t, f"{', '.join(failed)} gate failed — fix wave, then re-review"))
+            elif pend:
+                rs = [x for x in st.open_stints() if x.task == t.id and x.role.endswith("reviewer")]
+                if rs and stint_stale(rs[-1], t, now):
+                    out.append(("!", t, f"{pend[0]} reviewer silent {fmt_dur(now - rs[-1].started)} — findings file missing"))
+                else:
+                    out.append(("?", t, f"{', '.join(pend)} gate pending"))
+            elif not t.gates:
+                out.append(("?", t, "report landed — dispatch the review"))
+        elif s == "in_progress" and t.last_status == "DONE_WITH_CONCERNS":
+            out.append(("?", t, "returned with concerns — read the report first"))
+    order = {"x": 0, "!": 1, "?": 2}
+    return sorted(out, key=lambda x: (order[x[0]], natural_key(x[1].id)))
+
+
+def card_meta(t: Task, now: float, S: Style, narrow: bool) -> Row:
     """Right-hand side of a card as styled segments."""
     st = t.state
-    who = " · ".join(x for x in (t.agent, t.model, t.engine if t.engine and t.engine != "claude" else "") if x)
+    who_parts = [t.agent] if narrow else [t.agent, t.model, t.engine if t.engine and t.engine != "claude" else ""]
+    who = f" {S.dot} ".join(x for x in who_parts if x)
     if st == "in_progress":
-        idle = now - t.last_activity if t.last_activity else 0
+        idle = now - t.last_activity
         stale = idle > STALE_AFTER
-        tail = " · ".join(p for p in (who or "dispatched", fmt_dur(now - t.since) if t.since else "") if p)
+        tail = f" {S.dot} ".join(p for p in (who or "dispatched", fmt_dur(now - t.since) if t.since else "") if p)
         if stale:
-            return [("! ", fg(WARN) + BOLD), (tail, DIM), (f" · stale {fmt_dur(idle)}", fg(WARN))]
-        return [("> ", fg(OK) + BOLD), (tail, DIM)]
+            return [("! ", S.fg(WARN) + BOLD), (tail, DIM), (f" {S.dot} stale {fmt_dur(idle)}", S.fg(WARN))]
+        return [("> ", S.fg(OK) + BOLD), (tail, DIM)]
     if st == "review":
         segs: Row = []
         for k, v in t.gates.items():
             if segs:
-                segs.append((" · ", DIM))
+                segs.append((f" {S.dot} ", DIM))
             mark, _, rnd = v.partition(" ")
-            colour = fg(OK) if mark == "ok" else fg(BAD) if mark == "fail" else fg(WARN) if mark == "warn" else DIM
+            colour = S.fg(OK) if mark == "ok" else S.fg(BAD) if mark == "fail" else S.fg(WARN) if mark == "warn" else DIM
             segs += [(f"{k} ", DIM), (mark, colour), (f" {rnd}" if rnd else "", DIM)]
         if not segs:
             segs = [(t.detail or "awaiting review", DIM)]
         if who and any(v.startswith("..") for v in t.gates.values()):
-            segs.append((f" · {who}", DIM))
+            segs.append((f" {S.dot} {who}", DIM))
         return segs
     if st == "done":
         return [(t.final_note or t.note or t.detail or "complete", DIM)]
     if st == "blocked":
-        return [((t.note or t.detail or "blocked").replace("\n", " "), fg(RGB["blocked"]))]
+        return [("x ", S.fg(BAD) + BOLD), ((t.note or t.detail or "blocked"), S.col("blocked"))]
     return [(t.detail or "", DIM)]
 
 
@@ -672,32 +915,117 @@ def row_render(row: Row, color: bool) -> str:
     return "".join((sgr + t + RESET) if sgr else t for t, sgr in row)
 
 
-def header_rows(st: State, W: int, now: float) -> list[Row]:
-    run, meta, m = st.run, st.meta, " " * MARGIN
+def wrap_segs(segs: Row, width: int, dot: str) -> list[Row]:
+    """Wrap styled segments at separator boundaries into lines no wider than `width`."""
+    sep = f" {dot} "
+    pieces: Row = []
+    for text, sgr in segs:
+        parts = re.split(f"({re.escape(sep)})", text)
+        pieces += [(part, sgr) for part in parts if part]
+    lines: list[Row] = []
+    cur: Row = []
+    used = 0
+    for text, sgr in pieces:
+        w = dw(text)
+        if cur and used + w > width:
+            if cur[-1][0] == sep:
+                cur.pop()
+            lines.append(cur)
+            cur, used = [], 0
+            if text == sep:
+                continue
+        cur.append((clip(text, width) if w > width else text, sgr))
+        used += min(w, width)
+    if cur:
+        lines.append(cur)
+    return lines or [[]]
+
+
+def card_details(t: Task, st: State, now: float, S: Style) -> list[tuple[str, Row]]:
+    """Expanded view: the card's lineage — agents, gates, files, decisions, last note, next action."""
+    out: list[tuple[str, Row]] = []
+    d = S.dot
+    for s in [x for x in st.stints if x.task == t.id]:
+        segs: Row = [(s.agent, BOLD), (f" {d} {s.role} {d} ", DIM), (s.model or "-", "")]
+        if s.observed and s.observed != s.model:
+            segs.append((f" (observed {s.observed} !)", S.fg(WARN)))
+        if s.engine and s.engine != "claude":
+            segs.append((f" {d} {s.engine}", DIM))
+        if s.effort:
+            segs.append((f" @ {s.effort}", DIM))
+        window = f"{hhmm(s.started)} {S.arrow} {hhmm(s.returned) if s.returned else '…'}"
+        segs.append((f" {d} {window} {d} {fmt_dur((s.returned or now) - s.started)}", DIM))
+        if s.status:
+            colour = S.fg(OK) if s.status in ("DONE", "OK") else S.fg(BAD) if s.status in ("BLOCKED", "FAIL", "REFUSED") else S.fg(WARN)
+            segs += [(f" {d} ", DIM), (s.status.lower().replace("_", " "), colour)]
+        elif not s.returned:
+            stale = stint_stale(s, t, now)
+            segs += [(f" {d} ", DIM), ("stale" if stale else "running", S.fg(WARN) if stale else S.fg(OK))]
+        if s.tokens:
+            segs.append((f" {d} {fmt_tokens(s.tokens)}", DIM))
+        if s.nudges:
+            segs.append((f" {d} nudged x{s.nudges}", S.fg(WARN)))
+        if s.escalated_to:
+            segs.append((f" {d} escalated {S.arrow} {s.escalated_to}", S.fg(WARN)))
+        if s.worktree:
+            segs.append((f" {d} {s.worktree}", DIM))
+        out.append(("attempt" if role_tier(s.role) == "worker" else "review", segs))
+    if t.gates:
+        segs = []
+        for k, v in t.gates.items():
+            if segs:
+                segs.append((f" {d} ", DIM))
+            mark, _, rnd = v.partition(" ")
+            colour = S.fg(OK) if mark == "ok" else S.fg(BAD) if mark == "fail" else S.fg(WARN) if mark == "warn" else DIM
+            segs += [(f"{k} ", DIM), (mark if mark != ".." else "pending", colour), (f" {rnd}" if rnd else "", DIM)]
+        if t.attempt > 1:
+            segs.append((f" {d} attempt {t.attempt}", DIM))
+        out.append(("gates", segs))
+    files = ([t.report] if t.report else []) + t.findings
+    if files:
+        out.append(("evidence", [(f" {d} ".join(files), DIM)]))
+    decs = [x for x in st.run.decisions if x.get("task") == t.id]
+    if decs:
+        out.append(("decisions", [(f" {d} ".join(f"{x['id']} {x['msg']}" for x in decs), DIM)]))
+    if t.note and t.state != "blocked":
+        out.append(("last", [(t.note, DIM)]))
+    act = next((why for _, x, why in attention(st, now) if x.id == t.id), "")
+    if act:
+        out.append(("action", [(act, S.fg(WARN))]))
+    return out
+
+
+def header_rows(st: State, W: int, now: float, S: Style) -> list[Row]:
+    run, meta, m, d = st.run, st.meta, " " * MARGIN, S.dot
     rows: list[Row] = [[]]
     counts = {c: 0 for c in COLUMNS}
     for t in st.tasks.values():
         counts[t.state] += 1
     elapsed = fmt_dur(now - float(meta["started"])) if meta.get("started") else ""
-    right = f"{counts['done']}/{len(st.tasks)} done" + (f"  ·  {elapsed}" if elapsed else "")
+    right = f"{counts['done']}/{len(st.tasks)} done" + (f"  {d}  {elapsed}" if elapsed else "")
     where = meta.get("repo", "") + (f" @ {meta['branch']}" if meta.get("branch") else "")
     left = "ORCHESTRATE"
     gap = W - dw(left) - 3 - dw(where) - dw(right)
     rows.append([(m + left, BOLD), ("   " + clip(where, max(0, W - dw(left) - 3 - dw(right) - 2)), ""),
                  (" " * max(2, gap), ""), (right, BOLD)])
     if run.finish:
-        colour = fg(OK) if run.finish == "pass" else fg(BAD)
-        rows.append([(m + "RUN COMPLETE", colour + BOLD), (f"  ·  final gate {run.finish}", colour),
-                     (f"  ·  {run.finish_evidence}" if run.finish_evidence else "", DIM)])
-    lab = 11  # label column
+        invalid = finish_invalid(st)
+        if run.finish == "pass":
+            colour, label = (S.fg(WARN), "RUN COMPLETE (STALE)") if invalid else (S.fg(OK), "RUN COMPLETE")
+        else:
+            colour, label = S.fg(BAD), "RUN FAILED"
+        rows.append([(m + label, colour + BOLD), (f"  {d}  final gate {run.finish}", colour),
+                     (f"  {d}  {run.finish_evidence}" if run.finish_evidence else "", DIM),
+                     (f"  {d}  {invalid}" if invalid else "", S.fg(WARN))])
+    lab = 11
 
     def line(label: str, segs: Row) -> None:
         rows.append([(m + pad(label, lab), DIM)] + segs)
 
-    d = run.dims
-    if d.get("goal"):
-        line("goal", [(clip(str(d["goal"]), W - lab), "")])
-    ctx = "  ·  ".join(x for x in (
+    dims = run.dims
+    if dims.get("goal"):
+        line("goal", [(clip(clean(dims["goal"]), W - lab), "")])
+    ctx = f"  {d}  ".join(x for x in (
         meta.get("strategy", ""),
         f"review {meta['review']}" if meta.get("review") else "",
         f"engine {meta['engine']}" if meta.get("engine") else "",
@@ -710,12 +1038,12 @@ def header_rows(st: State, W: int, now: float) -> list[Row]:
         segs: Row = []
         for role, tier in run.models.items():
             if segs:
-                segs.append(("  ·  ", DIM))
+                segs.append((f"  {d}  ", DIM))
             segs += [(f"{role} ", DIM), (tier, "")]
             obs = run.observed.get(role)
             if obs and obs != tier:
-                segs += [(f" (observed {obs} !)", fg(WARN))]
-        eff = d.get("effort")
+                segs += [(f" (observed {obs} !)", S.fg(WARN))]
+        eff = dims.get("effort")
         if eff:
             eff_s = " ".join(f"{k}={v}" for k, v in eff.items()) if isinstance(eff, dict) else str(eff)
             segs += [(f"  @ {eff_s}", DIM)]
@@ -726,10 +1054,10 @@ def header_rows(st: State, W: int, now: float) -> list[Row]:
 
         def used(label: str, n: int | str, cap: str | None) -> None:
             if parts:
-                parts.append(("  ·  ", DIM))
+                parts.append((f"  {d}  ", DIM))
             over = cap and str(cap).isdigit() and isinstance(n, int) and n > int(cap)
             parts.append((f"{label} ", DIM))
-            parts.append((f"{n}" + (f"/{cap}" if cap else ""), fg(WARN) if over else ""))
+            parts.append((f"{n}" + (f"/{cap}" if cap else ""), S.fg(WARN) if over else ""))
 
         used("agents", len(st.stints), b.get("agents"))
         if b.get("cycles") or run.cycles:
@@ -737,164 +1065,137 @@ def header_rows(st: State, W: int, now: float) -> list[Row]:
         if b.get("tokens") or run.tokens:
             used("tokens", fmt_tokens(run.tokens) if run.tokens else "0", b.get("tokens"))
         line("budget", parts)
-    if run.plan or d.get("alias") or d.get("confirm"):
+    if run.plan or dims.get("alias") or dims.get("confirm"):
         segs = []
         if run.plan:
-            colour = fg(OK) if run.plan == "approved" else fg(WARN)
-            segs += [(run.plan, colour), (f" {hhmm(run.plan_ts)}", DIM)]
-        if d.get("alias"):
-            segs += [("  ·  alias ", DIM), (str(d["alias"]), "")]
-        if d.get("confirm"):
-            segs += [(f"  ·  confirm {d['confirm']}", DIM)]
+            colour = S.fg(OK) if run.plan == "approved" else S.fg(WARN)
+            segs += [(run.plan, colour), (f" {hhmm(run.plan_ts)}" if run.plan_ts and run.plan != "pending" else "", DIM)]
+            if run.plan == "pending" and run.plan_msg:
+                segs.append((f" ({run.plan_msg})", DIM))
+        if dims.get("alias"):
+            segs += [(f"  {d}  alias ", DIM), (str(dims["alias"]), "")]
+        if dims.get("confirm"):
+            segs += [(f"  {d}  confirm {dims['confirm']}", DIM)]
         line("plan", segs)
     for rail in run.rails:
-        line("rails", [(clip(rail, W - lab), fg(WARN))])
+        line("rails", [(clip(rail, W - lab), S.fg(WARN))])
     if run.decisions:
         last = run.decisions[-1]
-        line("decisions", [(f"{len(run.decisions)}", ""), (f"  ·  latest {last['id']} ", DIM), (clip(last["msg"], W - lab - 20), "")])
+        line("decisions", [(f"{len(run.decisions)}", ""), (f"  {d}  latest {last['id']} ", DIM), (clip(last["msg"], W - lab - 20), "")])
+    att = attention(st, now)
+    if att:
+        cnt = {k: sum(1 for mk, _, _ in att if mk == k) for k in ("x", "!", "?")}
+        segs = []
+        for mk, word, colour in (("x", "blocked/failed", S.fg(BAD)), ("!", "stale", S.fg(WARN)), ("?", "pending", DIM)):
+            if cnt[mk]:
+                if segs:
+                    segs.append((f"  {d}  ", DIM))
+                segs += [(f"{mk} {cnt[mk]} ", colour + BOLD), (word, DIM)]
+        line("attention", segs)
+    if st.problems:
+        line("journal", [(f"! {len(st.problems)} integrity problem(s) — board check", S.fg(BAD))])
     rows.append([])
     return rows
 
 
-def card_details(t: Task, st: State, now: float) -> list[tuple[str, Row]]:
-    """Expanded view: the card's lineage — agents, gates, files, last note."""
-    out: list[tuple[str, Row]] = []
-    for s in [x for x in st.stints if x.task == t.id]:
-        model = s.model or "-"
-        segs: Row = [(s.agent, BOLD), (f" · {s.role} · ", DIM), (model, "")]
-        if s.observed and s.observed != s.model:
-            segs.append((f" (observed {s.observed} !)", fg(WARN)))
-        if s.engine and s.engine != "claude":
-            segs.append((f" · {s.engine}", DIM))
-        window = f"{hhmm(s.started)} → {hhmm(s.returned) if s.returned else '…'}"
-        segs.append((f" · {window} · {fmt_dur((s.returned or now) - s.started)}", DIM))
-        if s.status:
-            colour = fg(OK) if s.status in ("DONE", "OK") else fg(BAD) if s.status in ("BLOCKED", "FAIL") else fg(WARN)
-            segs += [(" · ", DIM), (s.status.lower().replace("_", " "), colour)]
-        elif not s.returned:
-            segs += [(" · ", DIM), ("running", fg(OK))]
-        if s.tokens:
-            segs.append((f" · {fmt_tokens(s.tokens)}", DIM))
-        if s.nudges:
-            segs.append((f" · nudged x{s.nudges}", fg(WARN)))
-        if s.escalated_to:
-            segs.append((f" · escalated -> {s.escalated_to}", fg(WARN)))
-        out.append(("agent", segs))
-    if t.gates:
-        segs = []
-        for k, v in t.gates.items():
-            if segs:
-                segs.append((" · ", DIM))
-            mark, _, rnd = v.partition(" ")
-            colour = fg(OK) if mark == "ok" else fg(BAD) if mark == "fail" else fg(WARN) if mark == "warn" else DIM
-            segs += [(f"{k} ", DIM), (mark, colour), (f" {rnd}" if rnd else "", DIM)]
-        out.append(("gates", segs))
-    files = ([t.report] if t.report else []) + t.findings
-    if files:
-        out.append(("files", [(" · ".join(files), DIM)]))
-    decs = [d for d in st.run.decisions if d.get("task") == t.id]
-    if decs:
-        out.append(("decisions", [(" · ".join(f"{d['id']} {d['msg']}" for d in decs), DIM)]))
-    if t.note and t.state != "blocked":
-        out.append(("last", [(t.note.replace("\n", " "), DIM)]))
-    if t.last_activity:
-        out.append(("activity", [(f"{hhmm(t.last_activity)} · {fmt_dur(now - t.last_activity)} ago", DIM)]))
-    return out
+class View:
+    """Rendering options shared by show/watch."""
+
+    def __init__(self, expanded: bool = False, focus: str = "", attention_only: bool = False, S: Style | None = None):
+        self.expanded, self.focus, self.attention_only = expanded, focus, attention_only
+        self.open = ""  # the one card opened with enter
+        self.S = S or Style(False)
 
 
-def wrap_segs(segs: Row, width: int) -> list[Row]:
-    """Wrap styled segments at ' · ' boundaries into lines no wider than `width`."""
-    pieces: Row = []
-    for text, sgr in segs:
-        parts = re.split(r"( · )", text)
-        pieces += [(part, sgr) for part in parts if part]
-    lines: list[Row] = []
-    cur: Row = []
-    used = 0
-    for text, sgr in pieces:
-        w = dw(text)
-        if cur and used + w > width:
-            if cur[-1][0] == " · ":
-                cur.pop()
-            lines.append(cur)
-            cur, used = [], 0
-            if text == " · ":
-                continue
-        cur.append((clip(text, width) if w > width else text, sgr))
-        used += min(w, width)
-    if cur:
-        lines.append(cur)
-    return lines or [[]]
-
-
-def build_rows(st: State, width: int, expanded: bool = False) -> list[Row]:
+def build_rows(st: State, width: int, view: View) -> tuple[list[Row], list[tuple[int, str]]]:
+    """Returns rows and the (row index, task id) anchors of every rendered card (for focus/scroll)."""
     now = time.time()
+    S = view.S
     W = max(40, width) - 2 * MARGIN          # usable width
     inner = W - 6                            # inside a box: "│  " … "  │"
+    narrow = W < 64
     m = " " * MARGIN
-    rows = header_rows(st, W, now)
+    rows = header_rows(st, W, now, S)
+    anchors: list[tuple[int, str]] = []
     ordered = st.ordered()
     idw = max([len(t.id) for t in ordered] + [1])
+    att_ids = {t.id for _, t, _ in attention(st, now)}
     for col in COLUMNS:
         cards = [t for t in ordered if t.state == col]
-        if col == "blocked" and not cards:
-            continue
-        c = fg(RGB[col])
-        title = f" {LABELS[col]} "
-        count = f" {len(cards)} "
-        fill = W - 2 - dw(title) - 1 - dw(count) - 1
-        rows.append([(m + "╭─", c), (title, c + BOLD), ("─" * max(1, fill), c), (count, c + BOLD), ("─╮", c)])
+        if view.attention_only:
+            cards = [t for t in cards if t.id in att_ids]
+        c = S.col(col)
+        edge = [(m + S.v + "  ", c)]
+        tail = [("  " + S.v, c)]
         if not cards:
-            rows.append([(m + "│  ", c), (pad("  -", inner), DIM), ("  │", c)])
+            if col == "blocked" or view.attention_only:
+                continue
+            rows.append([(m + f"{LABELS[col]}  0", c + DIM)])
+            rows.append([])
+            continue
+        hidden = 0
+        if col == "done" and not view.expanded and len(cards) > DONE_SHOW:
+            cards, hidden = cards[-DONE_SHOW:], len(cards) - DONE_SHOW
+        title = f" {LABELS[col]} "
+        count = f" {len(cards) + hidden} "
+        fill = W - 2 - dw(title) - 1 - dw(count) - 1
+        rows.append([(m + S.tl + S.h, c), (title, c + BOLD), (S.h * max(1, fill), c), (count, c + BOLD), (S.h + S.tr, c)])
         for t in cards:
-            metasegs = card_meta(t, now)
+            focused = view.focus == t.id
+            metasegs = card_meta(t, now, S, narrow)
             metatxt = row_text(metasegs)
             head = f"{t.id.rjust(idw)}  "
+            head_sgr = REV if focused else BOLD
             ttl = t.title or "(untitled)"
+            anchors.append((len(rows), t.id))
             if not metatxt:
-                rows.append([(m + "│  ", c), (head, BOLD), (pad(clip(ttl, inner - dw(head)), inner - dw(head)), ""), ("  │", c)])
+                rows.append(edge + [(head, head_sgr), (pad(clip(ttl, inner - dw(head)), inner - dw(head)), ""), *tail])
             elif dw(head) + dw(ttl) + 4 + dw(metatxt) <= inner:
                 space = inner - dw(head) - dw(ttl) - dw(metatxt)
-                rows.append([(m + "│  ", c), (head, BOLD), (ttl, ""), (" " * space, "")] + metasegs + [("  │", c)])
+                rows.append(edge + [(head, head_sgr), (ttl, ""), (" " * space, "")] + metasegs + tail)
             else:  # narrow: meta on its own line beneath the title
-                rows.append([(m + "│  ", c), (head, BOLD), (pad(clip(ttl, inner - dw(head)), inner - dw(head)), ""), ("  │", c)])
+                rows.append(edge + [(head, head_sgr), (pad(clip(ttl, inner - dw(head)), inner - dw(head)), ""), *tail])
                 avail = inner - dw(head)
-                if dw(metatxt) > avail:
-                    metasegs = [(clip(metatxt, avail), metasegs[0][1] if metasegs else DIM)]
-                rows.append([(m + "│  ", c), (" " * dw(head), "")] + metasegs +
-                            [(" " * (avail - dw(row_text(metasegs))), ""), ("  │", c)])
-            if expanded:
-                details = card_details(t, st, now)
+                for line_ in wrap_segs(metasegs, avail, S.dot):
+                    rows.append(edge + [(" " * dw(head), "")] + line_ + [(" " * (avail - dw(row_text(line_))), ""), *tail])
+            if view.expanded or view.open == t.id:
+                details = card_details(t, st, now, S)
                 lab = 10
                 for label, segs in details:
                     avail = inner - dw(head) - lab
-                    for i, line in enumerate(wrap_segs(segs, avail)):
-                        rows.append([(m + "│  ", c), (" " * dw(head), ""), (pad(label if i == 0 else "", lab), DIM)] + line +
-                                    [(" " * (avail - dw(row_text(line))), ""), ("  │", c)])
+                    for i, line_ in enumerate(wrap_segs(segs, avail, S.dot)):
+                        rows.append(edge + [(" " * dw(head), ""), (pad(label if i == 0 else "", lab), DIM)] + line_ +
+                                    [(" " * (avail - dw(row_text(line_))), ""), *tail])
                 if details and t is not cards[-1]:
-                    rows.append([(m + "│  ", c), (" " * inner, ""), ("  │", c)])
-        rows.append([(m + "╰" + "─" * (W - 2) + "╯", c)])
+                    rows.append(edge + [(" " * inner, ""), *tail])
+        if hidden:
+            rows.append(edge + [(pad(f"+{hidden} more (e to expand)", inner), DIM), *tail])
+        rows.append([(m + S.bl + S.h * (W - 2) + S.br, c)])
         rows.append([])
 
     last = next((e for e in reversed(st.events) if e.get("msg") and e.get("ev") in ("note", "return", "escalate", "blocked", "dispatch")), None)
     if last:
         ts = str(last.get("ts", ""))[11:16]
-        who = last.get("agent") or f"task {last.get('task')}"
-        rows.append([(m + ts + "  ", DIM), (f"{who}", BOLD + DIM), (clip(f": {last['msg']}", W - dw(ts) - dw(who) - 2), DIM)])
-    return rows
+        who = clean(last.get("agent") or f"task {last.get('task')}")
+        rows.append([(m + ts + "  ", DIM), (who, BOLD + DIM), (clip(clean(f": {last['msg']}"), W - dw(ts) - dw(who) - 2), DIM)])
+    return rows, anchors
 
 
 def signature(ws: Path) -> tuple:
+    """Change detector for watch: top-level files + raw/, never the archive."""
     if not ws.exists():
         return ()
     sig = []
-    for p in sorted(ws.rglob("*")):
+    entries = list(ws.iterdir()) + (list((ws / "raw").iterdir()) if (ws / "raw").is_dir() else [])
+    for p in entries:
+        if p.name == "archive":
+            continue
         try:
             s = p.stat()
             sig.append((p.name, s.st_mtime_ns, s.st_size))
         except OSError:
             continue
-    return tuple(sig)
+    return tuple(sorted(sig))
 
 
 def term_size() -> tuple[int, int]:
@@ -916,10 +1217,10 @@ def cmd_watch(ws: Path) -> None:
     out = sys.stdout
     out.write("\033[?1049h\033[?25l")  # alt screen, hide cursor
     out.flush()
+    view = View(S=Style(not os.environ.get("NO_COLOR")))
     try:
         tty.setcbreak(fd)
-        offset, last_sig, rows, tick = 0, None, [], 0
-        expanded = False
+        offset, last_sig, rows, anchors, tick = 0, None, [], [], 0
         cols, lines = term_size()
         while True:
             if resized["flag"]:
@@ -929,7 +1230,7 @@ def cmd_watch(ws: Path) -> None:
             sig = signature(ws)
             tick += 1
             if sig != last_sig or tick % 4 == 0:  # on change, plus every ~2s for the timers
-                rows = build_rows(load(ws), cols, expanded)
+                rows, anchors = build_rows(load(ws), cols, view)
                 last_sig = sig
             body = max(1, lines - 1)
             offset = max(0, min(offset, max(0, len(rows) - body)))
@@ -939,8 +1240,11 @@ def cmd_watch(ws: Path) -> None:
             for _ in range(body - min(body, len(rows) - offset)):
                 frame.append("\033[K\n")
             below = len(rows) - offset - body
-            hint = ("q quit  ·  j/k scroll  ·  " + ("e contract" if expanded else "e expand") + "  ·  r refresh" +
-                    (f"  ·  +{below} below" if below > 0 else ""))
+            dot = view.S.dot
+            hint = (f"q quit  {dot}  j/k focus  {dot}  enter card  {dot}  " +
+                    ("e contract" if view.expanded else "e expand") + f"  {dot}  " +
+                    ("a all" if view.attention_only else "a attention") + f"  {dot}  r refresh" +
+                    (f"  {dot}  +{below} below" if below > 0 else ""))
             frame.append(DIM + " " * max(0, cols - dw(hint) - MARGIN) + hint + RESET + "\033[K")
             out.write("".join(frame))
             out.flush()
@@ -948,21 +1252,36 @@ def cmd_watch(ws: Path) -> None:
             if not r:
                 continue
             buf = os.read(fd, 64).decode("utf-8", "ignore")
-            for key in re.findall(r"\x1b\[[A-Za-z]|.", buf):  # arrow sequences or single keys
+            ids = [tid for _, tid in anchors]
+            for key in re.findall(r"\x1b\[[A-Za-z]|.", buf, re.S):  # arrow sequences or single keys
                 if key in ("q", "\x03"):
                     return
-                if key in ("j", "\x1b[B"):
+                if key in ("j", "k") and ids:
+                    i = ids.index(view.focus) if view.focus in ids else (-1 if key == "j" else len(ids))
+                    i = max(0, min(len(ids) - 1, i + (1 if key == "j" else -1)))
+                    view.focus, last_sig = ids[i], None
+                    rows, anchors = build_rows(load(ws), cols, view)
+                    row_i = next((ri for ri, tid in anchors if tid == view.focus), 0)
+                    if row_i < offset or row_i >= offset + body - 2:
+                        offset = max(0, row_i - 3)
+                elif key in ("\r", "\n"):
+                    if view.focus:
+                        view.open = "" if view.open == view.focus else view.focus
+                        last_sig = None
+                elif key == "\x1b[B":
                     offset += 1
-                elif key in ("k", "\x1b[A"):
+                elif key == "\x1b[A":
                     offset -= 1
                 elif key == "G":
                     offset = len(rows)
                 elif key == "g":
                     offset = 0
+                elif key in ("e", "x", "\t"):
+                    view.expanded, last_sig = not view.expanded, None
+                elif key == "a":
+                    view.attention_only, last_sig = not view.attention_only, None
                 elif key == "r":
                     last_sig = None
-                elif key in ("e", "x", "\t"):
-                    expanded, last_sig = not expanded, None
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         out.write("\033[?25h\033[?1049l")
@@ -1012,6 +1331,7 @@ def render_plan(st: State, why: str = "") -> str:
     lines.append("")
     lines.append(f"controller · orchestrator {tier('orchestrator')}{at('orchestrator')} · {st.meta.get('host', 'host?')}")
     worker_line = f"{tier('worker')}{at('worker')}" + (f" · engine {engine}" if engine != "claude" else "")
+    extra_roles = [r for r in models if r not in ("orchestrator", "worker", "reviewer", "reasoner", "peer", "advisor")]
 
     def gate_lines(prefix: str) -> None:
         nonlocal agents
@@ -1024,15 +1344,17 @@ def render_plan(st: State, why: str = "") -> str:
         if strategy == "advisor":
             lines.append(f"├─ advisor lane · {tier('advisor')} · consults only, out of the hot path")
             agents += 1
+        unit = "worker" if strategy == "xcli" else "implementer"
         lines.append(f"├─ ×{n} tasks ({strategy}), the repeating unit:")
-        lines.append(f"│  ├─ implementer · task N · {worker_line} · {iso}")
+        lines.append(f"│  ├─ {unit} · task N · {worker_line} · {iso}")
         agents += n
         gate_lines("│  │  ")
         agents += len(gates) * max(0, n - 1)  # gates repeat per task
-        lines.append(f"│  └─ fix wave (same contract) → re-review, cap 2–3 rounds per gate")
+        if gates:
+            lines.append("│  └─ fix wave (same contract) → re-review, cap 2–3 rounds per gate")
     elif strategy == "parallel":
         cap = int(d.get("workers") or 0) or n
-        for i, t in enumerate(tasks[:cap]):
+        for t in tasks[:cap]:
             lines.append(f"├─ worker · card {t.id} {t.title} · {worker_line} · worktree wt-{t.id}")
             agents += 1
         if n > cap:
@@ -1077,6 +1399,8 @@ def render_plan(st: State, why: str = "") -> str:
         for role, t_ in models.items():
             lines.append(f"├─ {role} · {t_}{at(role)}")
             agents += 1
+    for role in extra_roles:  # roles the strategy shape does not know (e.g. researcher subagents)
+        lines.append(f"├─ {role} · {models[role]}{at(role)} · nested/delegated — counted by the lane, not this tree")
     lines.append(f"└─ final-deliverable gate · {models.get('reasoner') or models.get('orchestrator') or 'strongest'} · fresh context, judges the goal verbatim")
     agents += 1
     lines.append("")
@@ -1086,10 +1410,10 @@ def render_plan(st: State, why: str = "") -> str:
     lines.append("rails   " + " · ".join(rails))
     b = run.budget
     tok = b.get("tokens")
-    lines.append(f"budget  ~{agents} agents" + (f" (cap {b['agents']})" if b.get("agents") else "") +
+    lines.append(f"budget  ~{agents} agents (from the tree; nested lanes add their own)" + (f" · cap {b['agents']}" if b.get("agents") else "") +
                  (f" · tokens {tok}" if tok else " · tokens: state a range, never a precision you don't have"))
     lines.append("board   open a pane and run  board  (or .orchestrate/board)")
-    lines.append("tweak   [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget")
+    lines.append("tweak   [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget  —  `board set key=value` re-resolves")
     return "\n".join(lines)
 
 
@@ -1112,11 +1436,13 @@ def render_agents(st: State) -> str:
             model = f"{s.model or '?'} -> {s.observed} !"
         end = hhmm(s.returned) if s.returned else "…"
         dur = fmt_dur((s.returned or now) - s.started)
-        status = s.status or ("running" if not s.returned else "")
-        extra = " · ".join(x for x in (f"nudged x{s.nudges}" if s.nudges else "", f"escalated -> {s.escalated_to}" if s.escalated_to else "") if x)
-        rows.append([s.agent, s.role, s.task, model, s.engine or "-", f"{hhmm(s.started)} → {end}", dur, status,
+        t = st.tasks.get(s.task)
+        status = s.status or ("stale" if stint_stale(s, t, now) else "running")
+        extra = " · ".join(x for x in (f"nudged x{s.nudges}" if s.nudges else "", f"escalated -> {s.escalated_to}" if s.escalated_to else "",
+                                       s.worktree) if x)
+        rows.append([s.agent, s.role, s.task, str(s.attempt), model, s.engine or "-", s.effort or "-", f"{hhmm(s.started)} → {end}", dur, status,
                      fmt_tokens(s.tokens) if s.tokens else "-", extra])
-    return table(["agent", "role", "task", "model", "engine", "window", "dur", "status", "tokens", ""], rows)
+    return table(["agent", "role", "task", "att", "model", "engine", "effort", "window", "dur", "status", "tokens", ""], rows)
 
 
 def render_log(events: list[dict]) -> str:
@@ -1125,13 +1451,13 @@ def render_log(events: list[dict]) -> str:
         kind = str(ev.get("ev", ""))
         ts = str(ev.get("ts", ""))[11:19]
         task = str(ev.get("task", ""))
-        agent = str(ev.get("agent", ""))
-        skip = {"ts", "ev", "task", "agent", "title"}
+        agent = clean(ev.get("agent", ""))
+        skip = {"schema", "run", "seq", "ts", "ts_utc", "actor", "prev", "hash", "ev", "task", "agent", "title"}
         detail = " ".join(f"{k}={v}" if k not in ("msg", "why", "goal") else str(v)
                           for k, v in ev.items() if k not in skip and v not in ("", None, False))
         if kind in ("todo", "title"):
             detail = str(ev.get("title", ""))
-        out.append(f"{ts}  {pad(kind, 9)} {pad(task, 4)} {pad(agent, 16)} {detail}".rstrip())
+        out.append(clean(f"{ev.get('seq', '?'):>3} {ts}  {pad(kind, 9)} {pad(task, 4)} {pad(agent, 16)} {detail}").rstrip())
     return "\n".join(out) if out else "board: journal is empty"
 
 
@@ -1142,15 +1468,31 @@ def commit_exists(ref: str) -> bool:
         return True
 
 
-def check(st: State) -> list[str]:
-    findings: list[str] = []
+def finish_invalid(st: State) -> str:
+    """Why a recorded `finish` no longer stands, or ''."""
+    run = st.run
+    if not run.finish:
+        return ""
+    later = [e for e in st.events if int(e.get("seq", 0)) > run.finish_seq and e.get("ev") in TASK_EVENTS - {"note"}]
+    if later:
+        return f"{len(later)} work event(s) after finish"
+    head = git("rev-parse", "HEAD")
+    if run.finish_head and head and head != run.finish_head:
+        return f"HEAD moved {run.finish_head[:7]} → {head[:7]}"
+    if run.finish_goal and sha(str(run.dims.get("goal", ""))) != run.finish_goal:
+        return "goal changed since finish"
+    return ""
+
+
+def check(st: State, finish_mode: bool = False) -> list[str]:
+    findings: list[str] = list(st.problems)
     now = time.time()
     ws = st.ws
     for t in st.ordered():
         s = t.state
-        if s == "in_progress" and t.last_activity and now - t.last_activity > STALE_AFTER:
+        if is_stale(t, now):
             findings.append(f"task {t.id}: in progress, no artifact delta for {fmt_dur(now - t.last_activity)} — disk check, then ONE nudge")
-        if t.dispatched and not t.returned and s != "in_progress" and s != "done":
+        if t.dispatched and not t.returned and s not in ("in_progress", "done"):
             findings.append(f"task {t.id}: dispatched, never returned (state {s}) — silence is not success")
         if t.report and s == "review" and not t.gates and now - t.last_activity > STALE_AFTER:
             findings.append(f"task {t.id}: report landed {fmt_dur(now - t.last_activity)} ago, no review dispatched")
@@ -1159,43 +1501,76 @@ def check(st: State) -> list[str]:
                 for ref in rng:
                     if not commit_exists(ref):
                         findings.append(f"task {t.id}: ledger names commit {ref} that git cannot find")
-            for p in re.findall(r"(?:evidence|report|raw)/\S+", t.final_note):
+            for p in re.findall(r"(?:evidence|report|raw)/[\w./-]+", t.final_note):
+                p = p.rstrip(".,;)")
                 if not (ws / p).exists() and not Path(p).exists():
                     findings.append(f"task {t.id}: ledger names artifact {p} that nobody can ls")
+            failed = [k for k, v in t.gates.items() if v.startswith("fail")]
+            if failed:
+                findings.append(f"task {t.id}: done, but the current attempt's {', '.join(failed)} gate is a fail — ledger outran the gate")
         if s == "blocked" and not (t.note or t.detail):
             findings.append(f"task {t.id}: blocked without owner + next action — that is abandoned, not blocked")
+    for s in st.open_stints():
+        t = st.tasks.get(s.task)
+        if s.role.endswith("reviewer") and stint_stale(s, t, now):
+            findings.append(f"task {s.task}: {s.role} {s.agent} open {fmt_dur(now - s.started)} with no findings file — reviewer silence")
+    for s in [x for x in st.stints if x.returned]:
+        if s.status == "DONE" and s.engine and s.engine != "claude" and not s.commits and role_tier(s.role) == "worker":
+            findings.append(f"task {s.task}: xcli {s.engine} return DONE with no commits — run the empty-diff check (REFUSED?)")
     done_ids = [t.id for t in st.ordered() if t.state == "done"]
     if done_ids:
         last_done = max(natural_key(i) for i in done_ids)
         for t in st.ordered():
             if t.state == "todo" and not t.dispatched and natural_key(t.id) < last_done and t.id.isdigit():
                 findings.append(f"task {t.id}: never dispatched while later tasks are done — skipped or mis-ordered?")
-    for role, obs in st.run.observed.items():
-        req = st.run.models.get(role)
-        if req and req != obs:
-            findings.append(f"model drift: {role} requested {req}, observed {obs} — record the posture or re-pin")
+    for d_ in st.run.drift:
+        findings.append(f"model drift: {d_} — record the posture or re-pin")
     cap = st.run.budget.get("agents")
     if cap and str(cap).isdigit() and len(st.stints) > int(cap):
         findings.append(f"budget: {len(st.stints)} agents dispatched against a cap of {cap}")
+    if st.run.dims and st.run.plan in ("", "pending") and st.stints:
+        findings.append("flight plan never approved (or re-resolved since) yet agents were dispatched — no silent launch")
     if st.run.finish:
         open_ = [t.id for t in st.ordered() if t.state != "done"]
         if open_:
             findings.append(f"finish recorded with non-terminal tasks: {', '.join(open_)}")
+        inv = finish_invalid(st)
+        if inv:
+            findings.append(f"finish invalidated: {inv} — re-run the final gate")
+    if finish_mode:
+        open_ = [t.id for t in st.ordered() if t.state != "done"]
+        if open_:
+            findings.append(f"finish gate: non-terminal tasks {', '.join(open_)}")
+        if st.open_stints():
+            findings.append("finish gate: open stints " + ", ".join(f"{s.agent} (task {s.task})" for s in st.open_stints()))
+        for t in st.ordered():
+            pend = [k for k, v in t.gates.items() if v.startswith("..")]
+            if pend:
+                findings.append(f"finish gate: task {t.id} gate(s) pending: {', '.join(pend)}")
+        if st.run.drift and not any("posture" in r for r in st.run.rails):
+            findings.append("finish gate: model drift observed and no cost-posture rail recorded")
     return findings
 
 
-def render_resume(st: State) -> str:
+def render_resume(st: State, probe: bool = True) -> str:
     now = time.time()
     run, d = st.run, st.run.dims
+    ws = st.ws
+    head = git("rev-parse", "HEAD")
     L: list[str] = []
-    L.append(f"# RESUME · {st.meta.get('repo', '')} @ {st.meta.get('branch', '?')}")
+    L.append(f"# RESUME · {st.meta.get('repo', '')} @ {st.meta.get('branch', '?')} · run {run.id or '?'}")
     L.append("## Goal")
     L.append(str(d.get("goal") or "(not recorded — read run.md)"))
     L.append("## Current state")
+    inv = finish_invalid(st)
     ctx = " · ".join(x for x in (d.get("strategy", ""), f"review {d['review']}" if d.get("review") else "",
-                                  f"plan {run.plan}" if run.plan else "plan pending",
-                                  f"final gate {run.finish}" if run.finish else "") if x)
+                                  f"plan {run.plan or 'pending'}",
+                                  (f"final gate {run.finish}" + (f" (INVALID: {inv})" if inv else "")) if run.finish else "") if x)
     L.append(ctx)
+    b = run.budget
+    if b or st.stints:
+        L.append(f"budget: agents {len(st.stints)}" + (f"/{b['agents']}" if b.get("agents") else "") +
+                 (f" · tokens {fmt_tokens(run.tokens)}" + (f"/{b['tokens']}" if b.get("tokens") else "") if run.tokens or b.get("tokens") else ""))
     for col in ("done", "in_progress", "review", "blocked", "todo"):
         cards = [t for t in st.ordered() if t.state == col]
         if not cards:
@@ -1205,27 +1580,39 @@ def render_resume(st: State) -> str:
             extra = ""
             if col == "in_progress":
                 extra = f" — {t.agent or 'dispatched'}{' · ' + t.model if t.model else ''} · {fmt_dur(now - t.since)}"
-                if t.last_activity and now - t.last_activity > STALE_AFTER:
-                    extra += f" · STALE {fmt_dur(now - t.last_activity)}"
+                if is_stale(t, now):
+                    extra += f" · STALE {fmt_dur(now - t.last_activity)} (NOT_PROVEN alive)"
             elif col == "review":
-                extra = " — " + (" · ".join(f"{k} {v}" for k, v in t.gates.items()) or "awaiting review")
+                extra = " — " + (" · ".join(f"{k} {v if not v.startswith('..') else 'NOT_PROVEN'}" for k, v in t.gates.items()) or "awaiting review")
             elif col == "blocked":
                 extra = f" — {t.note or t.detail}"
             elif col == "done":
                 extra = f" — {t.final_note}"
             L.append(f"  - task {t.id} {t.title}{extra}")
+    if st.open_stints():
+        L.append("## Open stints (locators — verify, never assume alive)")
+        for s in st.open_stints():
+            L.append(f"- {s.agent} · {s.role} · task {s.task} · {s.model or '?'}" + (f" · {s.engine}" if s.engine else "") +
+                     (f" · worktree {s.worktree}" if s.worktree else "") + f" · since {hhmm(s.started)} · heartbeat {hhmm(s.heartbeat_ts)}")
     if run.decisions:
         L.append("## Key decisions")
         for dec in run.decisions[-8:]:
             owner = f" ({dec['owner']})" if dec.get("owner") else ""
             L.append(f"- {dec['id']}{owner}: {dec['msg']}")
-    L.append("## Files & pointers")
+        if len(run.decisions) > 8:
+            L.append(f"- … {len(run.decisions) - 8} more in .orchestrate/decisions.md")
+    L.append("## Files & pointers" + (" (probed)" if probe else ""))
     L.append(f"- ledger: .orchestrate/progress.md · journal: .orchestrate/{JOURNAL} · run: .orchestrate/run.md")
+
+    def mark(p: str) -> str:
+        if not probe:
+            return p
+        return p if (ws / p).exists() else f"{p} [MISSING]"
+
     for t in st.ordered():
-        ptrs = [f".orchestrate/{t.report}" if t.report and not t.report.startswith(".") else t.report] if t.report else []
-        ptrs += [f".orchestrate/{f}" for f in t.findings]
+        ptrs = ([t.report] if t.report else []) + t.findings
         if ptrs:
-            L.append(f"- task {t.id}: " + " · ".join(ptrs))
+            L.append(f"- task {t.id}: " + " · ".join(mark(p) for p in ptrs))
     L.append("## Open work (in order)")
     nxt = [t for t in st.ordered() if t.state in ("blocked", "review", "in_progress", "todo")]
     if not nxt:
@@ -1233,13 +1620,68 @@ def render_resume(st: State) -> str:
     for t in nxt:
         L.append(f"- task {t.id} {t.title}: {t.state.replace('_', ' ')}" +
                  (f" — {t.note or t.detail}" if t.state == "blocked" else ""))
+    wts = sorted({s.worktree for s in st.stints if s.worktree})
+    if wts:
+        L.append("## Cleanup")
+        L.append("- worktrees to account for: " + ", ".join(wts))
+    L.append("## Receipt")
+    receipt = f"head {head[:12] or '?'} · journal seq {run.last_seq} hash {run.last_hash[:12] or '-'} · generated {now_utc()}"
+    L.append(f"- {receipt}")
+    L.append(f"- receipt-hash {sha(receipt)[:16]}  (a resume whose head or journal cursor differs is stale — regenerate)")
     L.append("## Handoff rule")
-    L.append("State above is generated; add the WHY — decisions' reasons, traps & dead ends — then probe-test it "
-             "(shared-handoff.md). Trust the ledger + git log over any summary, this one included.")
+    L.append("State above is generated; NOT_PROVEN marks claims no artifact backs. Add the WHY — decisions' reasons, traps & "
+             "dead ends — then probe-test it (shared-handoff.md). Trust the ledger + git log over any summary, this one included.")
     return "\n".join(L)
 
 
+def render_task(st: State, tid: str, S: Style) -> str:
+    t = st.tasks.get(tid)
+    if not t:
+        return f"board: no task {tid}"
+    now = time.time()
+    lines = [f"task {t.id}  {t.title}  [{t.state.replace('_', ' ')}]"]
+    for label, segs in card_details(t, st, now, S):
+        lines.append(f"  {pad(label, 10)}{row_text(segs)}")
+    return "\n".join(lines)
+
+
+def render_attention(st: State) -> str:
+    att = attention(st, time.time())
+    if not att:
+        return "board: nothing needs attention"
+    return "\n".join(f"{mk} task {t.id} {t.title}: {why}" for mk, t, why in att)
+
+
+def to_json(st: State) -> dict:
+    now = time.time()
+    return {
+        "run": {"id": st.run.id, "dims": st.run.dims, "plan": st.run.plan, "finish": st.run.finish, "branch": st.run.branch,
+                "base": st.run.base, "tokens": st.run.tokens, "agents": len(st.stints), "last_seq": st.run.last_seq},
+        "tasks": [{"id": t.id, "title": t.title, "state": t.state, "agent": t.agent, "model": t.model, "gates": t.gates,
+                   "attempt": t.attempt, "stale": is_stale(t, now), "report": t.report, "findings": t.findings, "note": t.note}
+                  for t in st.ordered()],
+        "stints": [vars(s) for s in st.stints],
+        "attention": [{"mark": mk, "task": t.id, "why": why} for mk, t, why in attention(st, now)],
+        "problems": st.problems,
+    }
+
+
 # --- commands ------------------------------------------------------------------------
+
+def archive_previous_run(ws: Path, run_id: str) -> Path | None:
+    """A new run gets a fresh workspace; the old one moves to archive/<run_id>/ (journal included)."""
+    if not ws.exists():
+        return None
+    dest = ws / "archive" / (run_id or "unknown")
+    moved = False
+    for p in list(ws.iterdir()):
+        if p.name in KEEP_ON_ARCHIVE or p.name.endswith(".bak") or p.name.endswith(".tmp"):
+            continue
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(p), str(dest / p.name))
+        moved = True
+    return dest if moved else None
+
 
 def cmd_init(ws: Path, args: argparse.Namespace) -> None:
     dims: dict[str, object] = {}
@@ -1253,8 +1695,14 @@ def cmd_init(ws: Path, args: argparse.Namespace) -> None:
             dims[key] = parse_kv(val)
         else:
             dims[key] = val
-    if dims:
-        append_event(ws, ev="run", **dims)
+    prev = load(ws)
+    archived = None
+    if prev.events and not args.resume:
+        archived = archive_previous_run(ws, prev.run.id)
+    if dims or not args.resume:
+        run_id = prev.run.id if args.resume and prev.run.id else new_run_id()
+        append_event(ws, ev="run", run_id=run_id, branch=git("rev-parse", "--abbrev-ref", "HEAD"), base=git("rev-parse", "HEAD"),
+                     cli=f"board schema {SCHEMA}", **dims)
     st = load(ws)
     added = 0
     if args.plan:
@@ -1268,7 +1716,7 @@ def cmd_init(ws: Path, args: argparse.Namespace) -> None:
                 continue
             m = re.match(r"^#+\s+Task\s+(\S+?)\s*(?:[:—–-]\s*(.+))?$", line)
             if m:
-                tid, title = m.group(1), (m.group(2) or "").strip()
+                tid, title = m.group(1), clean((m.group(2) or "").strip())
                 if tid not in st.tasks:
                     append_event(ws, task=tid, ev="todo", title=title)
                     added += 1
@@ -1281,6 +1729,8 @@ def cmd_init(ws: Path, args: argparse.Namespace) -> None:
                 append_event(ws, task=t.id, ev="todo", title=t.title)
                 added += 1
     write_resolved(ws)
+    if archived:
+        print(f"board: previous run archived -> {archived}")
     print(f"board: {added} task(s) queued -> {journal_path(ws)}")
     if dims:
         print("board: run.md Resolved block written; next: `board plan` → gate → `board plan approved`")
@@ -1294,19 +1744,24 @@ def build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("watch")
     p = sub.add_parser("show"); p.add_argument("--no-color", action="store_true")
-    p.add_argument("-x", "--expanded", action="store_true", help="show each card's agents, gates, files, last note")
+    p.add_argument("-x", "--expanded", action="store_true", help="every card's lineage: agents, gates, evidence, decisions, action")
+    p.add_argument("--attention", action="store_true", help="only cards that need action")
+    p.add_argument("--json", action="store_true")
     sub.add_parser("path")
-    sub.add_parser("agents")
-    sub.add_parser("check")
-    sub.add_parser("resume")
+    p = sub.add_parser("agents"); p.add_argument("--json", action="store_true")
+    p = sub.add_parser("check"); p.add_argument("--finish", action="store_true", help="the pre-finish gate: strict"); p.add_argument("--json", action="store_true")
+    p = sub.add_parser("resume"); p.add_argument("--no-probe", action="store_true")
+    p = sub.add_parser("task"); p.add_argument("task")
+    sub.add_parser("attention")
     p = sub.add_parser("log"); p.add_argument("-n", type=int, default=40); p.add_argument("--json", action="store_true")
-    p = sub.add_parser("init"); p.add_argument("plan", nargs="?")
+    p = sub.add_parser("init"); p.add_argument("plan", nargs="?"); p.add_argument("--resume", action="store_true", help="add to the current run instead of archiving it")
     for key in DIMS:
         p.add_argument(f"--{key}")
+    p = sub.add_parser("set"); p.add_argument("pairs", nargs="+", metavar="key=value")
     p = sub.add_parser("plan"); p.add_argument("outcome", nargs="?", choices=["approved", "changed", "skipped"])
     p.add_argument("--msg"); p.add_argument("--why")
     p = sub.add_parser("todo"); p.add_argument("task"); p.add_argument("title", nargs="?")
-    for name in ("dispatch", "return", "review", "done", "blocked", "note", "nudge", "escalate"):
+    for name in ("dispatch", "return", "review", "gate", "done", "blocked", "note", "nudge", "escalate"):
         p = sub.add_parser(name)
         p.add_argument("task")
         if name == "note":
@@ -1318,18 +1773,20 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--engine")
         if name == "dispatch":
             p.add_argument("--role"); p.add_argument("--effort"); p.add_argument("--worktree")
-            p.add_argument("--reset-gates", action="store_true", help="fresh review cycle (fix wave)")
+            p.add_argument("--reset-gates", action="store_true", help="(implicit: every implementer dispatch is a new attempt)")
         if name == "return":
-            p.add_argument("--status", choices=STATUSES, default="DONE")
+            p.add_argument("--status", choices=STATUSES, required=True)
             p.add_argument("--commits"); p.add_argument("--report"); p.add_argument("--observed-model"); p.add_argument("--tokens")
-        if name == "review":
-            p.add_argument("--kind", default="review"); p.add_argument("--round", type=int)
+        if name in ("review", "gate"):
+            p.add_argument("--kind", required=True); p.add_argument("--round", type=int)
+        if name == "gate":
+            p.add_argument("--verdict", choices=["ok", "fail", "warn"], required=True); p.add_argument("--findings")
         if name == "escalate":
             p.add_argument("--to", required=True); p.add_argument("--why", required=True)
     p = sub.add_parser("decide"); p.add_argument("id"); p.add_argument("msg"); p.add_argument("--owner"); p.add_argument("--task")
     p = sub.add_parser("rail"); p.add_argument("msg")
     p = sub.add_parser("finish"); p.add_argument("--gate", choices=["pass", "fail"], required=True)
-    p.add_argument("--evidence"); p.add_argument("--msg")
+    p.add_argument("--evidence"); p.add_argument("--msg"); p.add_argument("--force", action="store_true"); p.add_argument("--reason")
     return ap
 
 
@@ -1343,33 +1800,57 @@ def main(argv: list[str]) -> int:
         if sys.stdout.isatty():
             cmd_watch(ws)
             return 0
-        cmd, args.no_color, args.expanded = "show", True, False
+        cmd, args.no_color, args.expanded, args.attention, args.json = "show", True, False, False, False
     if cmd == "watch":
         cmd_watch(ws)
     elif cmd == "show":
+        st = load(ws)
+        if args.json:
+            print(json.dumps(to_json(st), ensure_ascii=False, indent=1, default=str))
+            return 0
         try:
             width = int(os.environ.get("BOARD_WIDTH") or os.get_terminal_size().columns)
         except (OSError, ValueError):
             width = 100
         color = sys.stdout.isatty() and not args.no_color and not os.environ.get("NO_COLOR")
-        print("\n".join(row_render(r, color) for r in build_rows(load(ws), width, args.expanded)))
+        rows, _ = build_rows(st, width, View(args.expanded, "", args.attention, Style(color)))
+        print("\n".join(row_render(r, color) for r in rows))
     elif cmd == "path":
         print(journal_path(ws))
     elif cmd == "agents":
-        print(render_agents(load(ws)))
+        st = load(ws)
+        print(json.dumps([vars(s) for s in st.stints], indent=1, default=str) if args.json else render_agents(st))
+    elif cmd == "task":
+        print(render_task(load(ws), args.task, Style(False)))
+    elif cmd == "attention":
+        print(render_attention(load(ws)))
     elif cmd == "log":
-        evs = read_events(ws)[-args.n:]
+        evs, _ = read_events(ws)
+        evs = evs[-args.n:]
         print("\n".join(json.dumps(e, ensure_ascii=False) for e in evs) if args.json else render_log(evs))
     elif cmd == "check":
-        findings = check(load(ws))
-        for f in findings:
-            print(f"check: {f}")
-        print("board: check OK — journal and disk agree" if not findings else f"board: {len(findings)} finding(s)")
+        findings = check(load(ws), args.finish)
+        if args.json:
+            print(json.dumps({"ok": not findings, "findings": findings}, indent=1))
+        else:
+            for f in findings:
+                print(f"check: {f}")
+            print("board: check OK — journal and disk agree" if not findings else f"board: {len(findings)} finding(s)")
         return 1 if findings else 0
     elif cmd == "resume":
-        print(render_resume(load(ws)))
+        print(render_resume(load(ws), probe=not args.no_probe))
     elif cmd == "init":
         cmd_init(ws, args)
+    elif cmd == "set":
+        dims: dict[str, object] = {}
+        for pair in args.pairs:
+            k, _, v = pair.partition("=")
+            if k not in DIMS or not v:
+                sys.exit(f"board: set expects key=value with key in {', '.join(DIMS)}")
+            dims[k] = parse_kv(v) if k in ("models", "budget") or (k == "effort" and re.search(r"[=:]", v)) else v
+        append_event(ws, ev="set", dims=dims)
+        write_resolved(ws)
+        print(f"board: re-resolved {', '.join(dims)} — plan is pending again: `board plan` → gate → `board plan approved`")
     elif cmd == "plan":
         if args.outcome:
             append_event(ws, ev="plan", outcome=args.outcome, msg=args.msg)
@@ -1382,9 +1863,10 @@ def main(argv: list[str]) -> int:
     elif cmd == "dispatch":
         if not args.agent:
             sys.exit("board: dispatch needs --agent (the real post-spawn identity, never a provisional handle)")
+        if not args.model:
+            sys.exit("board: dispatch needs --model — pin a model on every dispatch (SKILL.md rule 3)")
         append_event(ws, task=args.task, ev="dispatch", agent=args.agent, role=args.role, model=args.model,
-                     engine=args.engine, effort=args.effort, worktree=args.worktree, msg=args.msg,
-                     reset_gates=True if args.reset_gates else None)
+                     engine=args.engine, effort=args.effort, worktree=args.worktree, msg=args.msg)
     elif cmd == "return":
         if not args.agent:
             sys.exit("board: return needs --agent")
@@ -1395,28 +1877,59 @@ def main(argv: list[str]) -> int:
     elif cmd == "review":
         append_event(ws, task=args.task, ev="review", kind=args.kind, round=args.round, agent=args.agent,
                      model=args.model, engine=args.engine, msg=args.msg)
+    elif cmd == "gate":
+        append_event(ws, task=args.task, ev="gate", kind=args.kind, verdict=args.verdict, round=args.round,
+                     findings=args.findings, agent=args.agent, msg=args.msg)
     elif cmd == "nudge":
         append_event(ws, task=args.task, ev="nudge", agent=args.agent, msg=args.msg)
     elif cmd == "escalate":
         append_event(ws, task=args.task, ev="escalate", agent=args.agent, to=args.to, why=args.why)
-    elif cmd in ("done", "blocked"):
-        if cmd == "blocked" and not args.msg:
+    elif cmd == "done":
+        st = load(ws)
+        t = st.tasks.get(str(args.task))
+        failed = [k for k, v in (t.gates if t else {}).items() if v.startswith("fail")]
+        if failed:
+            sys.exit(f"board: task {args.task} has a failed gate ({', '.join(failed)}) — fix wave + re-review first")
+        line = f"Task {args.task}: complete" + (f" ({clean(args.msg)})" if args.msg else "")
+        ws.mkdir(parents=True, exist_ok=True)
+        with (ws / "progress.md").open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+        append_event(ws, task=args.task, ev="done", msg=args.msg, agent=args.agent, ledger=line)
+        print(f"board: ledger ← {line}")
+    elif cmd == "blocked":
+        if not args.msg:
             sys.exit("board: blocked needs --msg (owner + next action, or it's abandoned, not blocked)")
-        append_event(ws, task=args.task, ev=cmd, msg=args.msg, agent=args.agent)
+        append_event(ws, task=args.task, ev="blocked", msg=args.msg, agent=args.agent)
     elif cmd == "note":
-        append_event(ws, task=args.task, ev="note", msg=args.msg, agent=args.agent)
+        append_event(ws, actor=args.agent or "worker", task=args.task, ev="note", msg=args.msg, agent=args.agent)
     elif cmd == "decide":
         append_event(ws, ev="decide", id=args.id, msg=args.msg, owner=args.owner, task=args.task)
         ws.mkdir(parents=True, exist_ok=True)
         with (ws / "decisions.md").open("a", encoding="utf-8") as fh:
-            fh.write(f"- {args.id} — {args.msg}" + (f" (owner: {args.owner})" if args.owner else "") +
+            fh.write(f"- {args.id} — {clean(args.msg)}" + (f" (owner: {args.owner})" if args.owner else "") +
                      (f" [task {args.task}]" if args.task else "") + "\n")
     elif cmd == "rail":
         append_event(ws, ev="rail", msg=args.msg)
         write_resolved(ws)
     elif cmd == "finish":
-        append_event(ws, ev="finish", gate=args.gate, evidence=args.evidence, msg=args.msg)
+        st = load(ws)
+        if args.gate == "pass":
+            strict = check(st, finish_mode=True)
+            if strict and not args.force:
+                for f in strict:
+                    print(f"check: {f}")
+                sys.exit("board: finish --gate pass refused — resolve the findings above, or --force --reason \"…\"")
+            if args.force and not args.reason:
+                sys.exit("board: --force needs --reason")
+            if not args.evidence:
+                sys.exit("board: finish --gate pass needs --evidence PATH (the final-deliverable gate's findings)")
+        ev_path = args.evidence or ""
+        if ev_path and not (ws / ev_path).exists() and not Path(ev_path).exists():
+            sys.exit(f"board: evidence {ev_path} does not exist")
+        append_event(ws, ev="finish", gate=args.gate, evidence=ev_path, msg=args.msg, head=git("rev-parse", "HEAD"),
+                     goal_hash=sha(str(st.run.dims.get("goal", ""))), forced=bool(args.force), reason=args.reason)
         write_resolved(ws)
+        print(f"board: finish recorded — final gate {args.gate}" + (" (forced)" if args.force else ""))
     return 0
 
 
@@ -1426,94 +1939,178 @@ def selftest() -> int:
     import contextlib
     import io
 
-    def run(*argv: str) -> str:
+    def run(*argv: str, expect_fail: bool = False) -> str:
         buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
             try:
-                main(list(argv))
+                rc = main(list(argv))
             except SystemExit as exc:
-                if exc.code not in (0, None):
-                    raise AssertionError(f"{argv}: exit {exc.code}")
+                rc = exc.code if isinstance(exc.code, int) else 1
+        if expect_fail:
+            assert rc not in (0, None), f"{argv}: expected failure, got exit {rc}"
+        else:
+            assert rc in (0, None), f"{argv}: exit {rc}\n{buf.getvalue()}"
         return buf.getvalue()
 
     cwd = os.getcwd()
     env_ws = os.environ.pop("ORCHESTRATE_WS", None)
+    saved_env = {k: os.environ.get(k) for k in ("COLORTERM", "TERM", "NO_COLOR", "BOARD_ASCII")}
+    os.environ["COLORTERM"] = "truecolor"
     tmp = tempfile.mkdtemp(prefix="board-selftest-")
     try:
         os.chdir(tmp)
         subprocess.run(["git", "init", "-q", "-b", "main"], check=True)
-        subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "base"], check=True)
+        gitc = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+        subprocess.run([*gitc, "commit", "-q", "--allow-empty", "-m", "base"], check=True)
         base = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
         Path("plan.md").write_text("# P\n## Task 1: Scaffold\n## Task 2: Auth\n```\n## Task 9: fenced\n```\n## Task 3: Docs\n")
         ws = Path(tmp) / ".orchestrate"
-        run("init", "plan.md", "--strategy", "staged", "--review", "dual", "--host", "Claude Code",
-            "--models", "worker=sonnet,reviewer=opus", "--budget", "agents=6", "--goal", "Ship the thing")
+
+        # --- v1 migration + legacy name -------------------------------------------------
+        ws.mkdir()
+        (ws / LEGACY_JOURNAL).write_text('{"ts":"2026-09-15T10:00:00","task":"7","ev":"todo","title":"Legacy"}\n'
+                                         '{"ts":"2026-09-15T10:01:00","task":"7","ev":"dispatch","agent":"old","model":"x"}\n')
         st = load(ws)
-        assert [t.id for t in st.ordered()] == ["1", "2", "3"], "plan headings → todo (fence ignored)"
-        assert all(t.state == "todo" for t in st.tasks.values())
-        assert "goal: Ship the thing" in (ws / "run.md").read_text() and OPEN in (ws / "run.md").read_text()
+        assert (ws / JOURNAL).exists() and (ws / (LEGACY_JOURNAL + ".bak")).exists() and (ws / "journal.jsonl.v1.bak").exists()
+        assert st.tasks["7"].state == "in_progress" and not st.problems and st.events[0]["schema"] == SCHEMA and st.run.id.startswith("legacy-")
+
+        # --- kickoff archives the legacy run ---------------------------------------------
+        out = run("init", "plan.md", "--strategy", "staged", "--review", "dual", "--host", "Claude Code",
+                  "--models", "worker=sonnet,reviewer=opus", "--budget", "agents=6", "--goal", "Ship the thing")
+        assert "archived" in out and list((ws / "archive").iterdir()), "previous run must be archived on init"
+        st = load(ws)
+        assert [t.id for t in st.ordered()] == ["1", "2", "3"], "plan headings → todo (fence ignored, legacy gone)"
+        assert st.run.branch == "main" and len(st.run.base) == 40 and st.run.id and not st.run.id.startswith("legacy")
+        runmd = (ws / "run.md").read_text()
+        assert "goal: Ship the thing" in runmd and OPEN in runmd and f"run: {st.run.id}" in runmd
+
+        # --- plan, set, approve ----------------------------------------------------------
         plan = run("plan", "--why", "independent tasks")
         assert "strategy=staged — independent tasks" in plan and "spec reviewer" in plan and "tweak" in plan
         run("plan", "approved")
-        assert "plan: approved" in (ws / "run.md").read_text()
-        run("dispatch", "1", "--agent", "task1-impl", "--model", "sonnet")
-        assert load(ws).tasks["1"].state == "in_progress", "same-second dispatch must beat todo"
-        run("note", "1", "tests green", "--agent", "task1-impl")
+        run("set", "effort=high")
+        st = load(ws)
+        assert st.run.plan == "pending" and st.run.dims["effort"] == "high"
+        run("plan", "approved", "--msg", "after effort change")
+        assert "plan: approved" in (ws / "run.md").read_text() and "plan-trail" in (ws / "run.md").read_text()
+
+        # --- dispatch requires a model; same-second dispatch beats todo --------------------
+        run("dispatch", "1", "--agent", "task1-impl", expect_fail=True)
+        run("dispatch", "1", "--agent", "task1-impl", "--model", "sonnet", "--worktree", "wt-1")
+        assert load(ws).tasks["1"].state == "in_progress"
+        run("note", "1", "tests green \x1b[31mINJECT\x1b[0m", "--agent", "task1-impl")
+        show = run("show", "--no-color")
+        assert "\x1b" not in show and "INJECT" in show, "control sequences from notes never reach the terminal"
+        st = load(ws)
+        assert st.tasks["1"].heartbeat_ts > 0 and st.tasks["1"].artifact_ts == 0, "notes are heartbeats, not liveness"
         run("return", "1", "--agent", "task1-impl", "--status", "DONE", "--commits", f"{base}..{base}",
             "--report", "task-1-report.md", "--observed-model", "haiku", "--tokens", "84k")
         st = load(ws)
         assert st.tasks["1"].state == "review" and st.run.tokens == 84000 and st.run.observed["worker"] == "haiku"
-        assert "observed: worker=haiku (requested sonnet)" in (ws / "run.md").read_text()
+        assert st.run.drift and "drift:" in (ws / "run.md").read_text()
+
+        # --- gates: text-order verdict, explicit gate events, attempts ---------------------
         run("review", "1", "--kind", "spec", "--round", "1", "--agent", "task1-spec", "--model", "opus")
-        (ws / "review-task1-spec-r1.md").write_text("✅ clean\n")
+        (ws / "review-task1-spec-r1.md").write_text("❌ 1 Critical — later note: ✅ tests pass\n")
+        assert load(ws).tasks["1"].gates["spec"].startswith("fail"), "first mark in text order wins"
+        run("gate", "1", "--kind", "spec", "--verdict", "ok", "--round", "1", "--findings", "review-task1-spec-r1.md")
+        assert load(ws).tasks["1"].gates["spec"] == "ok r1", "explicit gate event outranks the file parse"
         run("review", "1", "--kind", "quality", "--round", "1", "--agent", "task1-qual")
         (ws / "review-task1-quality-r1.md").write_text("❌ 2 important\n")
-        g = load(ws).tasks["1"].gates
-        assert g["spec"].startswith("ok") and g["quality"].startswith("fail"), g
-        run("dispatch", "1", "--agent", "task1-fix", "--model", "sonnet", "--reset-gates", "--msg", "fix wave")
+        assert load(ws).tasks["1"].gates["quality"].startswith("fail")
+        run("done", "1", expect_fail=True)  # failed gate blocks the ledger
+        run("dispatch", "1", "--agent", "task1-fix", "--model", "sonnet", "--msg", "fix wave")
         st = load(ws)
-        assert st.tasks["1"].state == "in_progress" and st.tasks["1"].gates == {}, "fix wave resets gates"
-        run("return", "1", "--agent", "task1-fix", "--status", "DONE")
+        assert st.tasks["1"].attempt == 2 and st.tasks["1"].gates == {}, "new implementer attempt resets the review cycle"
+        run("return", "1", "--agent", "task1-fix", "--status", "DONE", "--commits", f"{base}..{base}")
         run("review", "1", "--kind", "quality", "--round", "2")
         (ws / "review-task1-quality-r2.md").write_text("✅ clean r2\n")
         assert load(ws).tasks["1"].gates == {"quality": "ok r2"}
-        (ws / "progress.md").write_text(f"Task 1: complete (commits {base}..{base}, review clean)\n")
+        out = run("done", "1", "--msg", f"commits {base}..{base}, review clean")
+        assert "ledger" in out and "Task 1: complete" in (ws / "progress.md").read_text()
+
+        # --- xcli lane: REFUSED, escalation, decisions, rails ------------------------------
         run("dispatch", "2", "--agent", "task2-impl", "--model", "sonnet", "--engine", "codex")
         run("escalate", "2", "--agent", "task2-impl", "--to", "opus", "--why", "same error x3")
-        run("return", "2", "--agent", "task2-impl", "--status", "BLOCKED", "--msg", "owner: controller · needs D-01")
+        run("return", "2", "--agent", "task2-impl", "--status", "REFUSED", "--msg", "empty diff: AGENTS.md rule; owner: controller")
         run("decide", "D-01", "cookie auth, not header", "--owner", "controller", "--task", "2")
         run("rail", "single-flight: npm publish -> task2-impl")
         st = load(ws)
         assert st.tasks["1"].state == "done" and st.tasks["2"].state == "blocked" and st.tasks["3"].state == "todo"
         assert st.run.decisions[-1]["id"] == "D-01" and "D-01" in (ws / "decisions.md").read_text()
-        assert st.run.dispatches == 3 and any(s.escalated_to == "opus" for s in st.stints)
+        assert len(st.stints) == 5 and any(s.escalated_to == "opus" for s in st.stints)
         roster = run("agents")
-        assert "task1-impl" in roster and "sonnet -> haiku !" in roster and "spec reviewer" in roster
+        assert "task1-impl" in roster and "sonnet -> haiku !" in roster and "spec reviewer" in roster and "wt-1" in roster
         show = run("show", "--no-color")
         for needle in ("goal       Ship the thing", "agents 5/6", "worker sonnet (observed haiku !)", "approved", "rails",
-                       "D-01", "1  Scaffold", "2  Auth", "single-flight"):
-            assert needle in show, f"show lacks {needle!r}"
+                       "D-01", "1  Scaffold", "2  Auth", "single-flight", "attention", "x 1", "IN PROGRESS  0", "REVIEW  0"):
+            assert needle in show, f"show lacks {needle!r}\n{show}"
+        wide = run("show", "--no-color", "--expanded")
+        assert "attempt   task1-impl" in wide and "escalated → opus" in wide and "evidence  task-1-report.md" in wide, wide
+        assert "action" in wide
+        att = run("attention")
+        assert "x task 2" in att
+        assert "task 2" in run("task", "2") and "refused" in run("task", "2")
         log = run("log")
-        assert "dispatch" in log and "escalate" in log and "return" in log
+        assert "dispatch" in log and "escalate" in log and "gate" in log
+        js = json.loads(run("show", "--json"))
+        assert js["run"]["id"] == st.run.id and js["tasks"][0]["state"] == "done" and js["attention"]
+        os.environ["BOARD_ASCII"] = "1"
+        ascii_show = run("show", "--no-color")
+        assert "+-" in ascii_show and "│" not in ascii_show
+        os.environ.pop("BOARD_ASCII")
         findings = check(load(ws))
-        assert any("drift" in f for f in findings), findings
+        assert any("drift" in f for f in findings) and not any("journal line" in f for f in findings), findings
         res = run("resume")
-        assert "## Goal" in res and "task 2 Auth" in res and "D-01" in res and "Open work" in res
+        for needle in ("## Goal", "task 2 Auth", "D-01", "Open work", "## Receipt", "receipt-hash", "Cleanup", "wt-1"):
+            assert needle in res, needle
+
+        # --- finish is gated and bound --------------------------------------------------
+        run("finish", "--gate", "pass", "--evidence", "task-1-report.md", expect_fail=True)  # task 2/3 open
+        (ws / "raw").mkdir(exist_ok=True)
+        (ws / "raw" / "final.md").write_text("fail\n")
         run("finish", "--gate", "fail", "--evidence", "raw/final.md", "--msg", "task 2 open")
         st = load(ws)
-        assert st.run.finish == "fail" and any("non-terminal" in f for f in check(st))
+        assert st.run.finish == "fail" and st.run.finish_head and any("non-terminal" in f for f in check(st))
+        assert "RUN FAILED" in run("show", "--no-color")
+        run("finish", "--gate", "pass", "--evidence", "raw/final.md", "--force", "--reason", "selftest", "--msg", "forced")
         assert "RUN COMPLETE" in run("show", "--no-color")
-        wide = run("show", "--no-color", "--expanded")
-        assert "agent     task1-impl" in wide and "escalated -> opus" in wide and "files     task-1-report.md" in wide, wide
-        # legacy name migration
-        (ws / JOURNAL).rename(ws / LEGACY_JOURNAL)
-        assert load(ws).tasks["1"].state == "done" and (ws / JOURNAL).exists() and not (ws / LEGACY_JOURNAL).exists()
+        run("note", "3", "poke")  # a note is not work → still valid
+        assert not finish_invalid(load(ws))
+        run("dispatch", "3", "--agent", "task3-docs", "--model", "haiku")
+        assert "work event" in finish_invalid(load(ws)) and "RUN COMPLETE (STALE)" in run("show", "--no-color")
+        subprocess.run([*gitc, "commit", "-q", "--allow-empty", "-m", "after"], check=True)
+        assert any("finish invalidated" in f for f in check(load(ws)))
+
+        # --- chain integrity: an in-place edit is detected --------------------------------
+        lines = (ws / JOURNAL).read_text().splitlines()
+        ev = json.loads(lines[3])
+        ev["msg"] = "tampered"
+        lines[3] = json.dumps(ev, ensure_ascii=False)
+        (ws / JOURNAL).write_text("\n".join(lines) + "\n")
+        st = load(ws)
+        assert any("hash mismatch" in p for p in st.problems) and any("prev-hash" in p for p in st.problems), st.problems
+        assert "integrity" in run("show", "--no-color")
+        run("check", expect_fail=True)
+
+        # --- second init archives the run; --resume does not --------------------------------
+        run("init", "--resume")
+        assert (ws / "progress.md").exists()
+        out = run("init", "plan.md", "--strategy", "loop", "--goal", "Round two")
+        st = load(ws)
+        assert "archived" in out and st.run.dims["strategy"] == "loop" and not st.problems and st.tasks["1"].state == "todo"
+        assert len(list((ws / "archive").iterdir())) == 2 and not (ws / "progress.md").exists()
         print("board: selftest OK")
         return 0
     finally:
         os.chdir(cwd)
         if env_ws is not None:
             os.environ["ORCHESTRATE_WS"] = env_ws
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
         shutil.rmtree(tmp, ignore_errors=True)
 
 

@@ -52,6 +52,10 @@ non-compliant code is wasted tokens.
   EVERYTHING found, each with severity + confidence; filtering/triage is the CONTROLLER's job at
   the dedup/merge step. Terseness rules apply to a reviewer's prose, never its finding count.
   Findings go to the findings file (`shared-contracts.md`) so inline caps can't truncate them.
+- Every gate is journaled: `board review N --kind K --round R` when dispatched, `board gate N
+  --kind K --verdict ok|fail|warn --findings <file>` when it closes (the explicit verdict outranks
+  the findings-file parse). A fix wave is a new implementer *attempt* — the review cycle resets
+  and the ledger stays closed (`board done` refuses) until the current attempt's gates pass.
 - Findings loop: Critical/Important → fix subagent → RE-REVIEW (no skipping); Minor → ledger,
   batch to final review. ⚠️ "cannot verify from diff" → the CONTROLLER resolves (it holds
   cross-task context), never auto-pass. N failed rounds on the same task (default 2–3) is a

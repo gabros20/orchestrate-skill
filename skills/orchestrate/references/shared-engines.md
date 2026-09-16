@@ -27,7 +27,8 @@ Produces:
 - Pi (`pi -p`)
 
 This is the catalog behind `strategy-xcli.md` — that file holds the rules, lane hardening, and
-division of labor; this one holds the per-engine facts, which grow with every engine and drift
+division of labor; `shared-lane-hygiene.md` holds the launch/resume/quota discipline that every
+subprocess engine shares; this one holds the per-engine facts, which grow with every engine and drift
 with every release. **Verify flags before trusting them** — run `<cli> --help` once per session
 before scripting against it; every verified date below is the day the fact was checked, not a
 guarantee it still holds.
@@ -36,50 +37,70 @@ guarantee it still holds.
 
 ```bash
 codex --version && codex login status          # preflight; not logged in → user runs `codex login`
-OUT=$(mktemp)
+codex exec --help | grep -E '^\s+-'            # flags drift per release — probe once per session
+OUT=$(mktemp); SPEC=$(mktemp -t codex-spec.XXXXXX)   # brief → spec file (never inline quoting)
 codex exec --cd /path/to/repo \
-  -m gpt-5.6-terra -c model_reasoning_effort=high \
-  --sandbox workspace-write \
-  -o "$OUT" \
-  "Full task: goal, constraints, files to touch, definition of done." </dev/null
+  -m gpt-6-astra -c model_reasoning_effort=high \
+  --sandbox workspace-write -c sandbox_workspace_write.network_access=true \
+  -c web_search=live -i screenshot.png \
+  --json -o "$OUT" - < "$SPEC" > events.jsonl 2> stderr.txt
 cat "$OUT"; git -C /path/to/repo status --short   # read result; inspect what it actually changed
 ```
-- `</dev/null` is MANDATORY in scripts — open stdin makes codex wait forever. Long prompt →
-  `codex exec [flags] - < task.md`.
+- Prompt from stdin with `-` (long briefs); a positional prompt needs `</dev/null` or codex waits
+  forever. **Run lanes through a wrapper script** with explicit redirects — a background shell can
+  drop them, and "Reading prompt from stdin…" with no output file is the symptom.
 - Structured output: `--output-schema schema.json` (validated) · events: `--json` (JSONL:
-  `thread.started/turn.completed/item.completed/error`).
-- Models (verified 2026-07-13): `gpt-5.6-sol` (flagship — reasoner/advisor/peer tier),
-  `gpt-5.6-terra` (balanced — standard worker/reviewer), `gpt-5.6-luna` (cheap — mechanical
-  worker); `gpt-5.5`/`gpt-5.4[-mini]` remain available. Re-verify before pinning: model lists
-  drift (`codex exec -m <slug>` errors loudly on an unknown slug).
-- Reasoning effort: `-c model_reasoning_effort=none|minimal|low|medium|high|xhigh|max` (medium
-  default; enum live-verified against codex 0.144.3 on 2026-08-07 — **there is no `ultra`**, an
-  unknown value errors loudly). Effort is the first cost knob (`shared-model-routing.md` rule 8).
-- Approvals: `-a untrusted|on-request|never`; network inside sandbox:
-  `-c sandbox_workspace_write.network_access=true`. NEVER `--dangerously-bypass-approvals-and-sandbox`.
-- Follow-up same session: `codex exec resume --last "…" </dev/null` (cwd-scoped).
+  `thread.started/turn.started/item.completed/turn.completed{usage}/error`) — `turn.completed`
+  carries input/cached/output/reasoning token counts: journal them (`board return --tokens`).
+- Models (live-verified 2026-09-16, codex 0.154.0, ChatGPT account): **`gpt-6-astra`** (flagship —
+  reasoner/advisor/peer; efforts `low..max` + `ultra`), `gpt-5.6-sol` (previous flagship),
+  `gpt-5.6-terra` (balanced — worker/reviewer), `gpt-5.6-luna` (cheap — research/mechanical
+  worker), `gpt-5.5`. Astra needs client ≥0.153 — `-m gpt-6-astra` on 0.149 errors "not supported
+  with a ChatGPT account". Catalog on disk: `~/.codex/models_cache.json` (slugs + effort enums).
+- Reasoning effort: `-c model_reasoning_effort=low|medium|high|xhigh|max|ultra` — **`ultra` =
+  "maximum reasoning with automatic task delegation"** (sol/terra/astra only; luna tops at `max`).
+  An unknown value errors loudly. Effort is the first cost knob (`shared-model-routing.md` rule 8).
+- **Multi-agent**: `[features] multi_agent = true` (stable). Custom agents are TOML files in
+  `~/.codex/agents/<name>.toml`: `name`, `description`, `model`, `model_reasoning_effort`,
+  `developer_instructions`, optional `sandbox_mode` (NOT `sandbox`). The parent spawns them by
+  description; pin cheap research tiers there (luna @ max) and keep the expensive lane reading.
+- Sandbox: `--sandbox read-only|workspace-write`; network inside: `-c sandbox_workspace_write.network_access=true`.
+  **`codex exec` no longer accepts `-a`** (0.149+; approvals are a top-level/TUI concern) — a stale
+  `-a never` fails the launch with "unexpected argument". NEVER `--dangerously-bypass-approvals-and-sandbox`.
+- Worktrees: `codex exec --worktree` (0.154) starts the lane in a fresh git worktree natively.
+- **Resume = same session, cached context** (a quota stall or timeout mid-lane costs no re-prime):
+  `codex exec resume <SESSION_ID> -c model_reasoning_effort=… -c 'sandbox_mode="workspace-write"'
+  -o "$OUT" --json - < nudge.md`. `resume` takes `-c/-m/-i/-o/--json` but **not `--sandbox`** (use
+  the `sandbox_mode` config key), and **ignores a positional prompt when stdin is redirected** —
+  pipe it. **Never `--last` from a controller**: it is cwd-scoped and any probe run in the same repo
+  since (a model check, a luna ping) hijacks it — find the id in `~/.codex/sessions/<y>/<m>/<d>/
+  rollout-*-<id>.jsonl` (grep the brief's title) and resume by id.
+- Quota: ChatGPT-plan usage limits hit mid-lane as `error … usage limit … try again at <time>` —
+  journal `BLOCKED` with the reset time, never retry-loop, resume the session after the reset.
+  Exit 0 + empty diff + a polite decline is `REFUSED`, journaled as such (`strategy-xcli.md`).
 - Monitor/session store: `$CODEX_HOME` (default `~/.codex`). Codex-as-MCP: `codex mcp-server`.
 
 ## Grok (`grok -p`)
 
 ```bash
-grok -p "task" --output-format json          # plain|json|streaming-json
-grok --cwd /path -m <model> -s "$(uuidgen)" -p "task"   # session id MUST be a UUID (CLI ≥0.2.x)
-grok -r <id> -p "follow-up"                  # resume; -c = continue last
+grok -p "task" --output-format json          # -p/--single; plain|json|streaming-json
+grok --cwd /path -m grok-4.6 --reasoning-effort high -s "$(uuidgen)" --prompt-file spec.md
+grok -w wt-name -p "task"                    # -w/--worktree: new git worktree for the session
+grok -r <id> -p "follow-up"                  # resume by id/title; -c = continue last (cwd-scoped — prefer -r <id>)
 ```
-- Models (verified 2026-07-14 API / 2026-07-20 CLI): the flagship is **`grok-4.5`** (500k
-  context, built for coding/agentic work, reasoning effort `low|medium|high`, high default) — grok
-  CLI 0.2.106 now defaults to it as the sole listed model too. Lists drift — run `grok models`
-  before pinning.
-- Approval is all-or-nothing (`--always-approve`) — prefer read-only tasks, or babysit.
+- Models (live-verified 2026-09-16, grok CLI 1.0.25): default and sole listed model **`grok-4.6`**;
+  `grok models` lists what the account sees — run it before pinning.
+- `--reasoning-effort <EFFORT>` exists in the CLI now (1.0.x); `--prompt-file` replaces inline
+  quoting; `--json-schema`, `--agents <JSON>` / `--agent <NAME>`, `--no-subagents`, `--max-turns`,
+  `--sandbox <PROFILE>`, `--permission-mode`, `--allow/--deny` rules, `--disable-web-search`.
+- Approval: `--always-approve` is all-or-nothing — prefer read-only tasks, or babysit.
 - Sessions on disk: `~/.grok/sessions`. Long-lived JSON-RPC: `grok agent stdio` (ACP).
-- No reasoning-effort flag in the CLI; effort is an API-side knob.
 
 ## Claude Code as a subprocess (for symmetry / cross-account)
 
 ```bash
 claude -p --bare --output-format stream-json --max-turns 30 \
-  --model sonnet --permission-mode acceptEdits \
+  --model sonnet --effort high --permission-mode acceptEdits \
   --agents '{"worker":{"description":"…","prompt":"…"}}' "task"
 ```
 - `--bare` for scripts/CI (no auto-discovery; auth via env). `--json-schema` for validated output.
@@ -113,8 +134,12 @@ agy -p "task" --cwd /path/to/repo     # the one vendor-documented headless form
 ## opencode (`opencode run`)
 
 ```bash
-opencode run "task" --model <provider/model> --agent <name>
+opencode run "task" --model <provider/model> --variant high --agent <name> --format json
+opencode run -f spec.md -s <session> "continue"   # -f attaches files; -s resumes by id, -c continues last
 ```
+- (live-verified 2026-09-16, opencode 1.18.27) `--format json` streams raw JSON events;
+  `--variant` is the provider-specific reasoning effort (high/max/minimal); `--auto` auto-approves
+  permissions (dangerous — leave off); `--fork`, `--attach <server-url>`, `--dir`.
 - In-session delegation is synchronous — for N-way parallelism run N `opencode run` processes in
   separate worktrees (or drive `opencode serve` + its SDK from the controller).
 - `.opencode/agents/*.md` pin model + granular permissions per agent; its `question` tool gives
@@ -123,8 +148,12 @@ opencode run "task" --model <provider/model> --agent <name>
 ## Hermes (`hermes -z`)
 
 ```bash
-hermes -z "task"                      # clean stdout one-shot; also: hermes chat -q --quiet
+hermes -z "task" --model <id> --usage-file usage.json   # clean stdout one-shot; also: hermes chat -q
+hermes -z "task" --worktree                              # new git worktree; --resume <id> / --continue [name]
 ```
+- (live-verified 2026-09-16, Hermes 0.18.2) `--usage-file PATH` writes a JSON usage report
+  (estimated cost, token counts, model, api_calls) after a one-shot — journal it
+  (`board return --tokens`). `--worktree`, `--resume SESSION`, `-t TOOLSETS`, `--provider`.
 - Its internal per-task model override is accepted then silently ignored (open upstream bugs) —
   pin the model per PROCESS (`hermes -z --model <id>`), one invocation per tier.
 - `clarify` (its ask-user) times out after ~120s then proceeds on best judgment, and is blocked

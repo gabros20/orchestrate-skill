@@ -77,6 +77,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | Any review-enabled run | [Review gates](references/shared-review-gates.md) | Ordered spec/quality gates and panel behavior |
 | Any role or engine selection | [Model routing](references/shared-model-routing.md) | Explicit model tiers, cost posture, and drift verification |
 | Any external-CLI dispatch | [Engines](references/shared-engines.md) | Verified per-CLI invocation blocks, model slugs, effort enums, and quirks |
+| Any external-CLI launch, resume, or quota stall | [Lane hygiene](references/shared-lane-hygiene.md) | Flag probing, wrapper launches, resume-by-id, stall recovery, usage receipts |
 | More than one writer | [Isolation](references/shared-isolation.md) | Worktree/branch rules and integration ownership |
 | Background, long-running, or external work | [Monitoring](references/shared-monitoring.md) | Polling, liveness, timeout, and recovery rules |
 | Every run | [Safety rails](references/shared-safety-rails.md) | Main-branch, overload, loop, budget, and reward-hacking guards |
@@ -139,21 +140,24 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 1. Inspect the task, plan, repository state, host capabilities, and stop condition.
 2. Resolve strategy, dimensions, roles, models, budget, isolation, review, and degradation.
 3. Initialize `.orchestrate/` with [workspace](scripts/workspace); record the resolved run with
-   [board](scripts/board) — `board init PLAN --strategy … --goal "…"` writes the `## Resolved`
-   block of `run.md` and queues every planned task; prose (the why) goes below the block.
+   [board](scripts/board) — `board init PLAN --strategy … --goal "…"` archives any previous run,
+   writes the `## Resolved` block of `run.md` and queues every planned task; prose (the why) goes
+   below the block. Re-resolve a dimension with `board set key=value`, never by editing.
 4. Create task briefs with [task-brief](scripts/task-brief) and validate them with
    [brief-check](scripts/brief-check).
 5. Render the flight plan from the resolved record (`board plan --why "…"`) and gate on the
    user's approval ([flight plan](references/shared-flight-plan.md)); apply any tweaks by
    re-resolving that dimension and re-asking; record the outcome (`board plan approved`).
 6. Dispatch only ready work — journal each dispatch and each return (`board dispatch N --agent
-   --model`, `board return N --agent --status`). Monitor without duplicating agents and
-   integrate through the selected strategy's owner.
+   --model`, `board return N --agent --status`), each gate (`board review` / `board gate`) and
+   each recovery (`board nudge` / `board escalate`). Monitor without duplicating agents
+   (`board attention`, `board check`) and integrate through the selected strategy's owner.
 7. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
    and send failures back to the correct worker or owner.
-8. Append durable progress (the ledger moves the card to done); `board check` must be clean and
-   `board finish --gate pass|fail` recorded before you finish or hand off (`board resume` is the
-   handoff's state layer). Finish only when the stop condition is verified.
+8. Close each gated unit with `board done N` (it writes the ledger line; refused over a failed
+   gate); `board check --finish` must be clean and `board finish --gate pass|fail --evidence` recorded
+   before you finish or hand off (`board resume` is the handoff's state layer, with a receipt).
+   Finish only when the stop condition is verified.
 
 Use [toolbox](scripts/toolbox) to inventory available tools once and reuse the recorded result.
 The journal (`.orchestrate/journal.jsonl`) is the run's spine and the board is a view over it,

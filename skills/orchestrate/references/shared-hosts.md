@@ -58,12 +58,12 @@ ambiguous, ask the user — a wrong host assumption mis-binds every dispatch aft
 
 | Primitive | Claude Code | Codex | Cursor | Antigravity | opencode | Grok Build | Hermes | Kimi Code CLI | Pi |
 |---|---|---|---|---|---|---|---|---|---|
-| DISPATCH (spawn subagent) | ✅ Agent tool, depth 5 | ✅ agents TOML, 6 threads, depth 1 | ✅ agent files, depth 1 | ✅ `invoke_subagent`, depth 10 | ⚠️ synchronous only | ✅ up to 8, auto-worktree | ⚠️ `delegate_task`, 3, flat | ✅ `Agent` tool, built-ins coder/explore/plan, nesting ≥1; custom defs undocumented | ❌ none built in |
+| DISPATCH (spawn subagent) | ✅ Agent tool, depth 5 | ✅ agents TOML (`model`, `model_reasoning_effort`, `sandbox_mode`, `developer_instructions`), `multi_agent` stable; `ultra` effort = automatic delegation | ✅ agent files, depth 1 | ✅ `invoke_subagent`, depth 10 | ⚠️ synchronous only | ✅ up to 8, auto-worktree | ⚠️ `delegate_task`, 3, flat | ✅ `Agent` tool, built-ins coder/explore/plan, nesting ≥1; custom defs undocumented | ❌ none built in |
 | …with per-dispatch model pin | ✅ | ✅ `model` + effort in TOML | ✅ `model:` frontmatter | ❌ inherits parent | ✅ agent file `model:` | ❌ unconfirmed | ❌ accepted, silently ignored | ❌ undocumented | ✅ per xcli process |
 | PARALLEL (N at once) | ✅ | ✅ (≤6) | ✅ + background | ✅ async by default | ❌ in-session | ✅ (≤8) | ⚠️ (≤3) | ✅ `AgentSwarm`/`/swarm`, cap via `KIMI_CODE_AGENT_SWARM_MAX_CONCURRENCY` (no doc'd limit) | ❌ xcli processes only |
 | MESSAGE (inter-agent) | ✅ SendMessage / teams | ❌ | ❌ | ✅ `send_message` any-to-any | ❌ | ❌ | ❌ | ❌ | ❌ |
 | ASK_USER (structured) | ✅ AskUserQuestion | ⚠️ TUI-only | ⚠️ broken in `-p`; ACP only | ✅ `ask_question` | ✅ `question` tool | ⚠️ free-form via `/plan` | ⚠️ `clarify`, 120s timeout | ✅ `AskUserQuestion` (never asks in auto/`-p`) | ⚠️ free-form chat only |
-| WORKTREE helper | ✅ isolation/EnterWorktree | ❌ plain git | ✅ `--worktree` | ✅ per-subagent option | ❌ plain git | ✅ automatic | ❌ plain git | ❌ plain git (`/fork` = session branch, not filesystem) | ❌ plain git |
+| WORKTREE helper | ✅ isolation/EnterWorktree | ✅ `codex exec --worktree` (0.154) | ✅ `--worktree` | ✅ per-subagent option | ❌ plain git | ✅ automatic | ❌ plain git | ❌ plain git (`/fork` = session branch, not filesystem) | ❌ plain git |
 | BACKGROUND shell tasks | ✅ | ❌ nohup+poll | ✅ | ✅ `/tasks` | ⚠️ | ✅ | ⚠️ | ✅ native (Ctrl+B, `/tasks`, auto-returning subagents) | ❌ nohup+poll |
 | LOOP (native re-feed) | ✅ Stop hook | ❌ | ❌ | ✅ Stop `decision:"continue"` + `/schedule` | ❌ | ✅ `/goal`, `/loop` | ❌ | ✅ `/goal` + blockable Stop hook + Cron tools | ❌ external driver (`--mode rpc` possible) |
 | Workflow-script engine | ✅ Workflow tool | ❌ | ❌ | ❌ (teamwork = paid preview) | ❌ (external SDK) | ❌ | ❌ | ❌ | ❌ |
@@ -139,9 +139,12 @@ Grok subagents auto-worktree · Antigravity per-subagent worktree option.
 
 ## Per-host quirks that bite
 
-- **Codex**: `codex exec` hangs forever on open stdin — always `</dev/null`. No background
-  shells — long processes need `nohup … &` + polling the output file. Tool names differ from
-  Claude's entirely (shell/apply_patch/…): never tell a Codex worker to "use the Edit tool".
+- **Codex**: `codex exec` hangs forever on open stdin — pipe the brief (`- < spec.md`) or
+  `</dev/null`. `exec` no longer takes `-a`; `resume` takes no `--sandbox` (use `-c
+  sandbox_mode=…`) and ignores a positional prompt when stdin is redirected; `--last` is hijacked
+  by any later run in the cwd — resume by id (`shared-engines.md`). No background shells — long
+  processes need `nohup … &` + polling the output file. Tool names differ from Claude's entirely
+  (shell/apply_patch/…): never tell a Codex worker to "use the Edit tool".
 - **Cursor**: headless ask-user is broken (above); custom slash commands don't work in the CLI —
   invoke the skill, not a command file.
 - **Antigravity**: `agy -p` is confirmed but its flag surface (output format, approvals, CI auth)

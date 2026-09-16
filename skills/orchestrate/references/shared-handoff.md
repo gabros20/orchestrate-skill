@@ -56,7 +56,10 @@ measured worst failure mode of compression.
 
 - The ledger (`progress.md`) already carries per-task state — the handoff adds the WHY layer and
   cross-task context the ledger doesn't hold. `board resume` GENERATES the state layer in this
-  template's order (goal, state per task, decisions, pointers, open work) from the journal and
-  the disk — start from it, add the WHY and the traps, then probe-test.
+  template's order (goal, state per task, open-stint locators, decisions, probed pointers, open
+  work, cleanup) from the journal and the disk, marks every claim no artifact backs `NOT_PROVEN`,
+  and ends with a **receipt** — HEAD, the journal cursor (seq + hash) and a receipt hash — so a
+  successor can tell a stale handoff from a current one. Start from it, add the WHY and the
+  traps, then probe-test.
 - Sub-orchestrators and long loop runs should write a handoff at budget exhaustion as part of
   stopping cleanly (`shared-safety-rails.md`).

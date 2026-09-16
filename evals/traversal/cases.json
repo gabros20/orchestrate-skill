@@ -120,5 +120,18 @@
       "references/strategy-workflow.md",
       "references/prompt-planner-debate.md"
     ]
+  },
+  {
+    "id": "xcli-resume-after-quota",
+    "prompt": "The Codex lane hit its usage limit halfway through; pick it up after the reset without re-priming.",
+    "expected_references": [
+      "references/strategy-xcli.md",
+      "references/shared-lane-hygiene.md",
+      "references/shared-engines.md"
+    ],
+    "forbidden_references": [
+      "references/strategy-team.md",
+      "references/prompt-planner-debate.md"
+    ]
   }
 ]

@@ -10,6 +10,18 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.17.1] — 2026-09-16
+
+### Fixed (from the first live two-Grok mail run)
+- **Run-level checks.** `board exec run --name integration -- …` (or a task id nobody planned)
+  attaches to the run — shown as `run: integration ok` on the header's `checks` line — instead
+  of creating a phantom card that then blocks `finish`.
+- **Receipt amendment.** A second `board return` for an already-returned stint with the same
+  status attaches what the first lacked (`--tokens`, `--observed-model`, `--session`) and is
+  never a second transition — the "no usage receipt" finding can be cleared without editing.
+- Header names the viewer's branch when it differs from the run's (`@ feat/x (you: main)`);
+  the parallel flight-plan tree honours `isolation=off` (`shared tree` instead of `wt-N`).
+
 ## [1.17.0] — 2026-09-16
 
 ### Added

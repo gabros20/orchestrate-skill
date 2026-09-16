@@ -25,7 +25,13 @@ Produces:
 - Verification with evidence (the /verify split)
 
 Two DISTINCT gate kinds; don't conflate them. Gates are enforced, not trusted: a gate that can't
-fail the work isn't a gate.
+fail the work isn't a gate. Machine checks (tests, lint, `scripts/check-sync`) are the cheapest
+gate of all: run them through the journal (`board exec N --name tests -- …`) so the exit code is
+on the record and on the card, and `board done` is refused over a failure. The record itself is a
+gate: `board check` fails a task marked done with no review gate ever opened (review on) or with
+quality opened before spec — an output-blind governance floor, judged on roles and order alone.
+Vendor-native review layers (Codex Guardian, Claude Code's auto-mode classifier) are additional
+independent signals; they never replace `board gate`.
 
 ## 1. Plan-veto (before any execution)
 
@@ -52,6 +58,10 @@ non-compliant code is wasted tokens.
   EVERYTHING found, each with severity + confidence; filtering/triage is the CONTROLLER's job at
   the dedup/merge step. Terseness rules apply to a reviewer's prose, never its finding count.
   Findings go to the findings file (`shared-contracts.md`) so inline caps can't truncate them.
+- Every gate is journaled: `board review N --kind K --round R` when dispatched, `board gate N
+  --kind K --verdict ok|fail|warn --findings <file>` when it closes (the explicit verdict outranks
+  the findings-file parse). A fix wave is a new implementer *attempt* — the review cycle resets
+  and the ledger stays closed (`board done` refuses) until the current attempt's gates pass.
 - Findings loop: Critical/Important → fix subagent → RE-REVIEW (no skipping); Minor → ledger,
   batch to final review. ⚠️ "cannot verify from diff" → the CONTROLLER resolves (it holds
   cross-task context), never auto-pass. N failed rounds on the same task (default 2–3) is a

@@ -15,8 +15,11 @@ Produces:
 - A printed flight plan, a recorded approval or skip reason, and possibly re-resolved dimensions.
 
 No silent launch: the user sees the design BEFORE the fleet exists, in the shape they could tweak.
-The flight plan is `run.md` RENDERED, never a second source — every line is read back from the
-resolved record, and the outcome (approved / changed / skipped and why) is appended to `run.md`.
+The flight plan is `run.md` RENDERED, never a second source — `board plan --why "<triage pick>"`
+renders it from the `run` record `board init` wrote (the same record the board's header shows),
+and the outcome is recorded with `board plan approved|changed|skipped [--msg why]`, which
+appends it to `run.md`'s Resolved block. Add lines the renderer cannot know (a domain-specific
+node, a deliberate cost posture) beneath the printed tree — never retype the tree by hand.
 
 ## When the gate fires
 
@@ -40,11 +43,18 @@ resolved record, and the outcome (approved / changed / skipped and why) is appen
 3. **Footer strips**, one line each:
    `gates` — which gates run, and the fan-in expectation (returns counted against dispatches) ·
    `rails` — branch, isolation, PR cap, notable active protections ·
-   `budget` — agent count and an estimated token RANGE (never a precision you don't have) ·
+   `lane` — for a subprocess engine, the launch line pre-configured from the record (model @
+   effort, worktree, spec file, session id journaled) ·
+   `budget` — agent count, the cap, and a token band `p50–p90` computed from the receipts of past
+   runs in `.orchestrate/archive/` (`tokens est 180k–420k (p50–p90 of 12 receipts, 3 past runs)`);
+   with no receipts the line says so and you state a range, never a precision you don't have ·
+   `lanes` — only when declared (`--lanes …`), the board's projected lanes ·
+   `board` — `open a pane and run  board  (or .orchestrate/board)` — the live kanban the user
+   watches; printed every run so nothing has to be remembered ·
    `tweak` — the numbered keys.
 
 Tweak keys number the standard dimensions — `[1] strategy [2] models [3] effort [4] engine
-[5] review [6] isolation [7] budget` — plus strategy-specific extras as `[8]+`. A "change N …"
+[5] review [6] isolation [7] budget [8] lanes` — plus strategy-specific extras as `[9]+`. A "change N …"
 answer re-resolves that dimension, reprints ONLY the changed lines, and re-asks; approval
 dispatches. This block layout is a format contract (like the report line shapes), kept stable so
 users can read any run's plan the same way.
@@ -66,8 +76,10 @@ users can read any run's plan the same way.
 
 ## Honest budget line
 
-Count agents from the actual plan (tasks × roles + gates + integrator/final gate). State tokens
-as a range derived from the multipliers this pack already carries (single tool-using agent ≈ 4×
-a chat interaction, multi-agent ≈ 15× — `shared-token-economy.md`, honest numbers). If the
-estimate crosses a stated budget or an alias cap, say so ON the budget line — the flight plan is
-where cost surprises are supposed to die, not the ledger afterwards.
+Count agents from the actual plan (tasks × roles + gates + integrator/final gate). `board plan`
+prices that tree from receipts — per-tier p50/p90 of every `--tokens` return in archived runs —
+so the band is evidence, not a guess, and improves with every journaled receipt; without
+receipts fall back to the multipliers this pack carries (single tool-using agent ≈ 4× a chat
+interaction, multi-agent ≈ 15× — `shared-token-economy.md`, honest numbers). If the estimate
+crosses a stated budget or an alias cap, say so ON the budget line — the flight plan is where
+cost surprises are supposed to die, not the ledger afterwards.

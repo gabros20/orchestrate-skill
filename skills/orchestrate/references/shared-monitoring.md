@@ -16,6 +16,7 @@ Produces:
 
 ## Contents
 
+- The board (any host)
 - In-session (Claude Code)
 - Background sessions · Session transcripts · Hooks
 - Trajectory stalls — detecting the worker that hasn't noticed
@@ -23,6 +24,32 @@ Produces:
 - Rules
 
 Match the surface to the mechanism; don't poll what notifies you.
+
+## The board (any host)
+
+`scripts/board` renders the journal + `.orchestrate/` as a live kanban in a pane the USER opens
+(`board`; zero-install copy at `.orchestrate/board`). It re-renders on artifact deltas and keeps
+two clocks per card: **artifact time** (deliverable mtimes — the only liveness signal, rule 3b)
+and **heartbeat time** (`board note`, events — never liveness). `! stale` fires after 10 min
+without an artifact delta on ANY open stint, reviewers included; a chatty worker cannot hide a
+missing deliverable. It observes; it never transitions. Keep it honest by journaling every
+dispatch AND return (`board dispatch N --agent <real id> --model M`, `board return N --agent
+--status`) — a dispatch with no return is exactly the silence rule 3 is about. Recovery actions
+are journaled too (`board nudge`, `board escalate N --to MODEL --why`), so the roster shows who was
+nudged or escalated. **Tests and scripts are visible too**: run them THROUGH the journal —
+`board exec N --name tests -- npm test` captures the log under `raw/`, journals exit + duration,
+and the card shows `tests ok 12s` / `lint fail` (a `checks` line in the header counts them; a
+failed check is an `x` in attention and blocks `board done`). Lanes are a projection: `board init
+--lanes todo,implement,verify,review,integrate,done,blocked` shows a verifier's stint under
+VERIFY and an integrator's under INTEGRATE — the state model underneath never changes.
+Controller side: `board attention` lists what to act on, most urgent first (`x` blocked / failed
+gate / failed check, `!` stale, silent reviewer or a third attempt with no escalation, `?`
+pending gate / concerns); run `board check` at every liveness check and before any recovery
+action — it lists journal-chain breaks, dispatched-never-returned, reviewer silence,
+report-without-review, done over a failed gate or check, done with no gate ever opened, quality
+before spec, xcli DONE without commits or without a usage receipt, model drift and budget
+overrun, and exits 1 while any remain; `board check --replay` re-derives every card from the
+journal alone and reports any fact that reached the disk without its journal line.
 
 ## In-session (Claude Code)
 
@@ -103,7 +130,8 @@ never wakes a strong model.**
 1. Every long-running dispatch gets `run_in_background` (Claude Code; hosts without background
    shells — codex — use `nohup … &`) + a deliverable FILE path you can check.
 2. An idle-without-report agent gets the disk check FIRST, then ONE nudge (SendMessage on Claude
-   Code, `send_message` on Antigravity; elsewhere resume its session with a nudge prompt) — if it
+   Code, `send_message` on Antigravity; subprocess lanes by their journaled session id — Codex
+   `queue --thread`, Grok `-r`, opencode `-s`, Hermes `--resume`: `shared-lane-hygiene.md` 10) — if it
    still returns nothing, read its transcript; don't respawn blind. Field note: this is the
    single most common worker failure observed (six occurrences across one skill-family program,
    including finished reviews parked undelivered) — the work is almost always complete and the

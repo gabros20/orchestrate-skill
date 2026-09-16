@@ -55,6 +55,16 @@ measured worst failure mode of compression.
 ## In this skill
 
 - The ledger (`progress.md`) already carries per-task state — the handoff adds the WHY layer and
-  cross-task context the ledger doesn't hold.
+  cross-task context the ledger doesn't hold. `board resume` GENERATES the state layer in this
+  template's order (goal, state per task, open-stint locators, decisions, probed pointers, open
+  work, cleanup) from the journal and the disk, marks every claim no artifact backs `NOT_PROVEN`,
+  prints the engine's resume-by-id line for every open subprocess lane that journaled a session,
+  and ends with a **receipt** — HEAD, the journal cursor (seq + hash), tokens per accepted task
+  and a receipt hash — so a successor can tell a stale handoff from a current one. Start from it,
+  add the WHY and the traps, then probe-test.
+- A successor arriving with a newer skill: `scripts/workspace` refreshes the zero-install
+  `.orchestrate/board`; `board check` names a workspace that predates the journal; `board init
+  PLAN --resume …` adopts it (ledger and reports kept, journal started, pre-journal history
+  `inconclusive` under `--replay`) — never a bare `init`, which is refused over live work.
 - Sub-orchestrators and long loop runs should write a handoff at budget exhaustion as part of
   stopping cleanly (`shared-safety-rails.md`).

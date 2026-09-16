@@ -39,7 +39,8 @@ process exited**, not that the work landed. Source: a long-horizon control plane
 
 ## Status enum (every worker, every strategy)
 
-`DONE` · `DONE_WITH_CONCERNS` · `NEEDS_CONTEXT` · `BLOCKED`
+`DONE` · `DONE_WITH_CONCERNS` · `NEEDS_CONTEXT` · `BLOCKED` · `REFUSED` (xcli lanes only: exit 0,
+empty diff, a polite decline — `strategy-xcli.md`)
 Never silently produce unsure work — that's what DONE_WITH_CONCERNS and BLOCKED are for.
 Controller handling: DONE → gate. CONCERNS → read report; correctness/scope → address first.
 NEEDS_CONTEXT → supply + re-dispatch same model. BLOCKED → ladder (context → stronger model →
@@ -79,10 +80,12 @@ Reviewer "read-only" means the REPO; `.orchestrate/` is the one place a reviewer
 
 ## Workspace files (`.orchestrate/`, via `scripts/workspace`)
 
-- `run.md` — written at kickoff, appended as facts land. It carries: the task + the ORIGINALLY
-  stated goal verbatim (the final-deliverable gate judges against it) · resolved dimensions +
-  budget · host + landed bindings and named degradations (`shared-hosts.md`) · requested AND
-  observed model/effort per role (`shared-model-routing.md` rule 13) · single-flight owners of
+- `run.md` — written at kickoff, appended as facts land. Its `## Resolved` block is GENERATED
+  by `board init` (and kept current by `board plan`/`return`/`rail`) — never hand-edit it; prose
+  goes below. It carries: the task + the ORIGINALLY stated goal verbatim (the final-deliverable
+  gate judges against it) · resolved dimensions + budget · host + landed bindings and named
+  degradations (`shared-hosts.md`, `board rail`) · requested AND observed model/effort per role
+  (`shared-model-routing.md` rule 13, `board return --observed-model`) · single-flight owners of
   shared rate-limited resources (`shared-safety-rails.md`) · deliberately chosen cost postures
   (e.g. mid-tier planner) · the flight-plan outcome (approved / changed / skipped and why,
   `shared-flight-plan.md`) · timestamp
@@ -104,6 +107,9 @@ Reviewer "read-only" means the REPO; `.orchestrate/` is the one place a reviewer
 - `review-task<N>-<kind>-r<round>.md` — reviewer findings files
 - `raw/` — full command/tool output, redirected at execution time (`shared-token-economy.md`)
 - `toolbox.md` — this repo's probed orientation recipes (`scripts/toolbox`; read, don't re-probe)
+- `journal.jsonl` + `board` — the run's append-only, hash-chained journal (schema 2) and a
+  runnable copy of `scripts/board` (the journal section below); `archive/<run-id>/` holds every
+  previous run's whole workspace — one workspace, one run
 - `progress.md` — THE LEDGER (below)
 - `loop-<name>.md` — loop contracts
 
@@ -127,6 +133,55 @@ turn into a permanent check, you will meet again.
 Resume rule: on any restart/compaction, `cat progress.md` + `git log` are the truth; recollection
 is not. The single most expensive observed failure is re-dispatching completed work. `git clean
 -fdx` destroys the workspace → reconstruct from `git log`.
+
+## The journal (`journal.jsonl`, via `scripts/board`)
+
+The run's spine: one append-only line per fact the disk cannot show, written by the CONTROLLER
+at the step it already performs. Every line is an envelope — `schema`, `run` (the run id), `seq`
+(monotonic), `ts`/`ts_utc`, `actor`, the event, `prev`/`hash` (a sha256 chain) — so `board check`
+detects a line edited in place, inserted, removed or reordered, and a resume receipt can name the
+exact cursor it was generated at. **Never edit the journal; re-resolve with `board set`.**
+
+Vocabulary (all through `scripts/board`): `board init PLAN --strategy … --goal` (kickoff: archives
+the previous run's workspace to `archive/<run-id>/`, writes the `run` record with branch + base
+sha, queues every task, generates `run.md`'s Resolved block) · `board set key=value` (re-resolve a
+dimension; the plan goes back to pending; `lanes=todo,implement,verify,review,integrate,done,blocked`
+declares the board's lanes — a projection of state × role, `todo/done/blocked` required) · `board
+plan approved|changed|skipped` · `board dispatch N --agent <real id> --model M [--role --engine
+--effort --worktree --session ID --log raw/lane-N.jsonl --cmd-file]` (`--model` is REQUIRED — rule
+3; every implementer dispatch is a new *attempt*, which resets the review cycle; the session id
+is what `board resume` resumes by) · `board return N --agent A --status
+DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED [--commits --report --observed-model
+--tokens --session]` (the typed return; rule 13's observation; usage receipts) · `board review N
+--kind spec|quality --round K` (gate opened) · `board gate N --kind K --verdict ok|fail|warn
+[--findings FILE]` (gate closed explicitly — outranks the findings-file parse, which takes the FIRST
+verdict mark in text order) · `board exec N --name tests -- <cmd>` (a machine check run THROUGH the
+journal: log under `raw/`, exit + duration journaled; `board result N --name --exit` for one that
+ran elsewhere) · `board nudge` / `board escalate N --to MODEL --why` · `board decide ID
+"…"` (mirrors into `decisions.md`) · `board rail "…"` · `board done N [--msg]` (writes the ledger
+line itself — refused while the current attempt has a failed gate or a failed check) · `board finish --gate pass|fail
+--evidence PATH` (`pass` is refused while `check --finish` is dirty unless `--force --reason`; binds
+HEAD, the goal hash and the journal cursor, so later work, a moved HEAD or a changed goal render it
+STALE). Workers get two optional observation lines — `board note N "<msg>"` (a heartbeat, never a
+status and never liveness — liveness is artifact deltas only, `shared-monitoring.md` 3b) and
+`board exec N --name tests --agent <you> -- <cmd>` (their own verification run; an exit code is an
+observation, not a transition). Parallel writers are serialized by a journal lock.
+
+Views, all derived from the journal plus the files above (briefs → todo, reports and findings →
+review, ledger → done — final, always wins): the kanban the user watches from their own pane
+(`board`; `e` all cards, `enter` one card, `a` attention only), `board plan` (the flight plan),
+`board agents` (roster with attempts, drift, usage), `board log`, `board attention` (what to act on,
+most urgent first), `board task N`, `board check [--finish] [--replay] [--json]` (chain integrity,
+dispatched-never-returned, reviewer silence, ledger lines naming missing commits/artifacts, done
+over a failed gate or check, done with no gate opened, quality before spec, xcli DONE without
+commits or receipt, a third attempt without escalation, drift, budget overrun, unapproved launch,
+finish validity; `--replay` derives every card from the journal alone and diffs the disk view),
+`board postmortem` (per-tier evidence for the evolve pass, recommend-only), and
+`board resume` (the handoff's
+state layer with a receipt: head, journal cursor, probed pointers, resume-by-id line per open
+lane, cost per accepted task, `NOT_PROVEN` on every claim no artifact backs). **The journal never outranks the
+ledger**, and it obeys the invariants: a worker saying "done" is a proposal, so **only the
+controller records transitions**. The user opens and closes the pane; the skill only keeps the record.
 
 ## Task cards (parallel/team writers)
 

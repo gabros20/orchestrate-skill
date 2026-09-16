@@ -10,6 +10,182 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.16.0] — 2026-09-16
+
+### Added
+- **Checks on the board.** `board exec N --name tests -- <cmd>` runs a machine check THROUGH the
+  journal: the log lands under `raw/check-taskN-<name>.log`, start and finish are `check` events
+  with exit code and duration, the card shows `tests ok 12s` / `lint fail`, the header counts
+  `checks 3/4 ok`, a failed check is an `x` in attention and refuses `board done` exactly like a
+  failed gate; `board result N --name --exit` journals a check that ran elsewhere.
+- **Lanes as a projection.** `board init --lanes todo,implement,verify,review,integrate,done,blocked`
+  (or `board set lanes=…`, a run dim) projects each card onto declared lanes by canonical state ×
+  the open stint's role (verifier → VERIFY, integrator → INTEGRATE, reviewers → REVIEW); omitted →
+  the five defaults; the state model underneath never changes; `run.md` records the lanes.
+- **Sessions travel with the stint.** `board dispatch --session <id> --log raw/lane-N.jsonl
+  --cmd-file` (or `board return --session`); the roster gains a `session` column, the expanded card
+  a `lane` row, and `board resume` prints the engine's resume-by-id line for every open lane
+  (Codex `exec resume`, Grok `-r`, Claude `--resume`, opencode `-s`, Hermes `--resume`, Kimi `-S`,
+  Pi `--session`, Cursor, Antigravity) — `NOT_PROVEN` when no id was journaled.
+- **Pre-flight cost band.** `board plan` prices the topology tree from the receipts of archived
+  runs (per-tier p50–p90 of every `--tokens` return): `tokens est 180k–420k (p50–p90 of 12
+  receipts, 3 past runs)`; a `lane` line shows the subprocess engine's launch pre-configured from
+  the record; `[8] lanes` joins the tweak keys.
+- **Governance floor and receipts in `board check`.** New rules: done over a failed check, done
+  with no review gate ever opened (review on), quality gate opened while spec is not ok, xcli
+  DONE without a usage receipt, a third implementer attempt with no `escalate` event (also `!` in
+  attention). `board check --replay` re-derives every card from the journal ALONE and diffs it
+  against the disk view — a fact that reached the disk without its journal line is a finding,
+  `inconclusive` where the pointers are gone.
+- **`board postmortem`** — per-tier dispatches, tasks, models, drift, nudges, escalations, tokens
+  and tokens per dispatch, first-attempt-clean rate, check pass rate, cost per accepted task, and a
+  routing suggestion that is recommended, never applied (one change, repeated evidence only);
+  the loop evolve pass takes it as input. `RUN COMPLETE` and the resume receipt carry tokens per
+  accepted task.
+- **Workers' own test runs are visible.** `board exec … --agent <worker>` (and `board result
+  --agent`) journal a check as the worker's observation — an exit code is not a transition, so the
+  report contract now offers two observation lines (note, exec). A journal lock (`.journal.lock`,
+  flock) serializes parallel writers; the selftest fires 12 concurrent notes and asserts an
+  unbroken chain.
+- **Adoption route for older workspaces.** `board init` detects the workspace shape (empty ·
+  pre-journal · open · finished): over unfinished work a bare `init` is refused with the two
+  routes printed — `--resume` adopts (journal started or continued, ledger/reports kept, an
+  `adopt` line journaled, Resolved block inserted above `run.md`'s prose) and `--fresh` archives on
+  purpose. `board check` names a pre-journal workspace and a stale `.orchestrate/board` copy;
+  `--replay` reports pre-adoption history as `inconclusive`. SKILL.md step 3, the staged setup
+  and the handoff reference carry the note.
+- **One reference file per engine** — `engine-codex.md`, `engine-grok.md`, `engine-claude.md`,
+  `engine-cursor.md`, `engine-agy.md`, `engine-opencode.md`, `engine-hermes.md`, `engine-kimi.md`,
+  `engine-pi.md` (~400 tokens each); `shared-engines.md` becomes the index with the cross-engine
+  session / resume / receipt / lane-cap / hermetic-flag map. A one-engine run loads one block
+  instead of the 2.9k-token catalog.
+
+### Changed
+- **Engine catalog re-verified live (2026-09-16).** Claude: `-p` has no `--max-turns` — the cap
+  is `--max-budget-usd`; `--restricted`, `--session-id`, `--forward-subagent-text`, fleet
+  `stop/rm/respawn` added. Codex: no `codex mcp-server` (removed), no `web_search` config key
+  (removed; `--search` is top-level only), `danger-full-access` sandbox, `--approve-for-me`,
+  `codex queue --thread` (native nudge), `codex agents`, `codex review`, `codex features list`,
+  Guardian, nested-token rollup (journal the root turn only). Grok: `grok-4.5` also listed, `-p`
+  is an alias of `--single` (never renamed), `-s <uuid>` pre-pins the session id, `grok usage`
+  receipts, `streaming-messages-json`, `dashboard/trace/export`. opencode: `stats`, `export
+  --sanitize`, `acp`, `pr`. Hermes: the "OpenAI-compatible server + batch runner" claim dropped
+  (`serve` is a JSON-RPC gateway); `--ignore-rules`/`--safe-mode`, `insights`, `chat --max-turns`,
+  `--yolo` (never), native `hermes kanban` noted as a peer design. Antigravity: headless surface
+  now documented (`--output-format`, `--effort`, `--json-schema`, `--conversation`,
+  `--print-timeout`, `GEMINI_API_KEY` CI auth). Kimi: agent-core-v2 default, subagent pool on by
+  default, fail-fast quota. Cursor: `--mode plan|ask` may supersede the ask-user auto-skip —
+  marked re-verify. Pi: unchanged; reaches `gpt-6-astra`.
+- **Lane hygiene** grows to ten rules: pre-pin or capture the session id and journal it; capture
+  the receipt (root turn only for Codex); cap the lane at the engine; hermetic lane flags per
+  engine; the nudge binding per engine.
+- **Review gates** name machine checks as the cheapest gate and the record itself as an
+  output-blind governance floor; vendor-native review layers (Codex Guardian, Claude auto-mode
+  classifier) are extra signals, never substitutes. Model-routing rule 4 cites `board attention`
+  / `board postmortem` as the escalation evidence; the implementer template asks for a shell, not
+  a typed-tool catalog (TheAgentCompany: bash-only +21–24 points, 19–72% fewer tokens).
+- `SKILL.md` workflow steps 3, 6 and 8 wire `--lanes`, `board exec`, `--session/--tokens` and
+  `board postmortem`; `scripts/check-sync` registry gains `board exec`, `--lanes`, `resume by id`.
+
+### Research
+- `docs/research/2026-09-review-sweep.md` — the review that fed this release: live probes of nine
+  CLIs, an X sweep and a web sweep on agent factories / harness engineering, and a survey of how
+  pipeline dashboards model stages and checks.
+
+## [1.15.0] — 2026-09-16
+
+### Added
+- **Journal v2 — hash-chained, run-scoped, self-checking.** Every line is an envelope (`schema`,
+  `run`, monotonic `seq`, `ts`/`ts_utc`, `actor`, `prev`/`hash` sha256 chain); `board check`
+  reports an edited, inserted, removed or reordered line; the board header shows integrity
+  problems; `board init` archives the previous run's whole workspace to `archive/<run-id>/` so one
+  workspace holds one run (`--resume` adds tasks instead); v1 journals and the pre-release
+  `board.jsonl` migrate atomically on first read with `.bak` copies; the `run` record carries
+  branch + base sha (the header shows the run's branch, not the viewer's worktree).
+- **New events and guards.** `board set key=value` re-resolves a dimension (plan back to pending,
+  trail kept in `run.md`); `board gate N --kind --verdict` closes a gate explicitly and outranks the
+  findings-file parse — which now takes the FIRST verdict mark in text order; every implementer
+  dispatch is a new *attempt* that resets the review cycle; `board done` writes the ledger line and
+  is refused over a failed gate; `board finish --gate pass` needs `--evidence`, is refused while
+  `check --finish` is dirty (unless `--force --reason`), binds HEAD + goal hash + journal cursor and
+  is rendered STALE when later work, a moved HEAD or a changed goal invalidates it; `REFUSED`
+  joins the status enum for xcli empty-diff declines; `--model` is required on every dispatch.
+- **Typed liveness.** Artifact time (deliverable mtimes) is the only liveness clock; notes are
+  heartbeats. Stale checks cover every open stint, reviewers included ("reviewer silence").
+- **Views.** `board attention` (what to act on, most urgent first, with the next action), `board
+  task N`, `--json` on show/agents/check/log, `board resume` with open-stint locators, probed
+  pointers, `NOT_PROVEN` marks, cleanup list and a receipt (HEAD · journal cursor · receipt hash).
+- **Renderer.** Attention strip in the header; empty columns collapse to one line and done to the
+  newest three; `j/k` focus + `enter` opens one card's lineage, `e` expands all, `a` attention-only;
+  narrow panes drop model/engine from card meta; red reserved for failures (todo is neutral);
+  truecolor / 256 / 16-colour profiles by capability, `NO_COLOR`, `BOARD_ASCII=1`; titles, notes
+  and decisions sanitised (C0/C1/ESC/bidi) before they reach the terminal; watch polls top-level
+  files only, never the archive. `r` is a real reload (re-exec from disk, view state carried);
+  a reinstalled script reloads itself; the footer shows a braille-dots spinner (`|/-\\` in ASCII
+  mode) while reloading and beside the `updated` stamp, then a `reloaded HH:MM:SS` stamp.
+- **Engine catalog corrected from live probes (2026-09-16).** Codex 0.154: `gpt-6-astra` (client
+  ≥0.153), `ultra` effort ("automatic task delegation"), `exec` drops `-a` and gains `--worktree`,
+  `resume` takes `-c sandbox_mode` not `--sandbox` and ignores a positional prompt with redirected
+  stdin, `--last` is cwd-hijackable — resume by id; agents TOML fields; `web_search=live`. Grok
+  1.0.25: `grok-4.6`, `--reasoning-effort`, `--prompt-file`, `-w/--worktree`, `--sandbox`. opencode
+  1.18: `--format json`, `--variant`. Hermes 0.18: `--usage-file`, `--worktree`. Claude: `--effort`.
+  Hosts matrix: Codex WORKTREE ✅, DISPATCH row names the TOML fields.
+- **New reference `shared-lane-hygiene.md`** (directly routed): probe flags per session, wrapper
+  launches with explicit redirects, prompts from files, resume by explicit id, quota stall =
+  BLOCKED + resume the same session (97% cache hits observed), journal every failed launch,
+  capture usage receipts. `strategy-xcli.md` journals `REFUSED`; `shared-contracts.md`,
+  `shared-monitoring.md`, `shared-handoff.md`, `shared-review-gates.md`, SKILL.md steps 3/6/8 wired;
+  three new replicated-invariant lines; traversal eval `xcli-resume-after-quota`.
+
+### Source
+- An independent cross-lineage review by Codex `gpt-5.6-sol @ ultra` with five `gpt-5.6-luna`
+  research subagents (web + X), run through this very skill on 2026-09-15/16 — its report and
+  digests drove this release; the run's own stalls (quota, three flag mismatches) drove the lane
+  hygiene reference.
+
+## [1.14.0] — 2026-09-15
+
+### Added
+- **The journal — `.orchestrate/journal.jsonl`, the run's spine.** One append-only line per fact
+  the disk cannot show, written by the CONTROLLER at steps it already performs: `board init PLAN
+  --strategy … --goal` (the `run` record + every task queued), `board plan approved|changed|
+  skipped`, `board dispatch N --agent --model [--role --engine --worktree]`, `board return N
+  --agent --status … [--commits --report --observed-model --tokens]`, `board review N --kind
+  --round`, `board nudge` / `board escalate --to --why`, `board decide ID "…"` (also appends
+  `decisions.md`), `board rail "…"`, `board finish --gate pass|fail`. Workers get one optional
+  heartbeat, `board note`. Per the invariants (observation ≠ transition) only the controller
+  records transitions; the ledger stays final.
+- **`run.md` gains a generated `## Resolved` block** (`<!-- board:resolved -->` markers) —
+  goal, dimensions, models with requested→observed drift, budget, plan outcome, rails, kickoff —
+  written by `board init` and kept current by `plan`/`return`/`rail`; controller prose below it.
+  The flight-plan rule "run.md rendered, never a second source" is now literally true.
+- **`scripts/board` — every view is derived from the journal + disk, CLI-agnostic, stdlib-only
+  python3 (raw-ANSI truecolor painter, no curses):** `board` live kanban in a pane the USER opens
+  (zero-install copy at `.orchestrate/board`, `install.sh` also puts `board` on `~/.local/bin`) —
+  header with goal · run · models (drift flagged `!`) · budget used/cap (agents from dispatches,
+  cycles from the ledger, tokens from returns) · plan · rails · decisions, then todo / in progress
+  (`> agent · model · elapsed`, `! stale` after 10 min without an artifact delta) / review (`spec
+  ok r1 · quality fail r1`) / done / blocked, `e` toggles an expanded view with each card's
+  lineage (agents · model · window · status · tokens, gates, files, decisions, last note);
+  `board plan` renders the flight plan in the format
+  contract, deterministic per strategy; `board agents` roster; `board log` timeline; `board
+  check` reconciliation (dispatched-never-returned, stale, report-without-review, ledger lines
+  naming missing commits/artifacts, skipped tasks, model drift, budget overrun; exit 1); `board
+  resume` generates the handoff's state layer in `shared-handoff.md` order.
+- `board --selftest` replays a staged run in a temp repo and asserts every derivation; wired into
+  `scripts/check-sync` together with two new replicated-invariant lines (`board init`, `board
+  return`). Core workflow steps 3/5/6/8, `shared-contracts.md` ("The journal"), `shared-flight-
+  plan.md`, `shared-monitoring.md`, `shared-handoff.md`, `shared-model-routing.md` rule 13 and
+  `strategy-staged.md` wired; traversal eval `board-watch`; `docs/usage.md` "The journal".
+
+### Deliberately not done
+- No `board open`: Ghostty on macOS exposes no split IPC (`+new-window` is Linux/D-Bus only;
+  community tools fake keystrokes via Accessibility). The user owns the pane; the skill owns the
+  record. A new split inherits the cwd everywhere that matters, and the script resolves the
+  workspace through the main worktree.
+- No hooks, daemon or TUI framework — the journal is written with bash by the controller, so
+  Codex, Grok, opencode and Pi get exactly the same trace.
+
 ## [1.13.1] — 2026-09-10
 
 ### Site & visual guide

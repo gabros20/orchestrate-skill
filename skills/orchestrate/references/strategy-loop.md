@@ -121,7 +121,8 @@ classes prove their success rate.
 
 ## The evolve pass (loop-improves-loop)
 
-Every N runs, dispatch `prompt-evolve.md`: it reads the last dozen runs' logs + costs (+ session
+Every N runs, dispatch `prompt-evolve.md` with `board postmortem` pasted in (per-tier dispatches,
+attempts, drift, escalations, tokens per accepted task, checks) — it reads the last dozen runs' logs + costs (+ session
 JSONL under `~/.claude/projects/` for the deep record) and pulls four levers, no-op valid and
 common: (1) fix the contract's Goal/SOP drift; (2) distill state — keep durable lessons, condense
 logs to a milestone spine, never drop open items; (3) lift repeated DETERMINISTIC work into a

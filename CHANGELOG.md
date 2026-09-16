@@ -10,6 +10,11 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.19.1] — 2026-09-16
+
+### Fixed
+- `strategy-parallel.md` gained the `## Contents` section the lint requires past 100 lines (v1.19.0 shipped with `check-sync` failing on that rule — the release chain now stops on a failing gate).
+
 ## [1.19.0] — 2026-09-16
 
 ### Added

@@ -480,6 +480,7 @@ class Stint:
         self.log = str(ev.get("log", ""))            # captured event stream / stdout, relative to .orchestrate/
         self.cmd_file = str(ev.get("cmd_file", ""))  # the wrapper script that launched the lane
         self.pid = int(ev.get("pid") or 0)
+        self.after = [x for x in str(ev.get("after") or "").split(",") if x]   # tasks this lane's wrapper waits for before the engine starts
         self.exit_code: int | None = None            # the lane process's exit status (an observation, not a return)
         self.exited = 0.0
         self.calls = 0                                # model calls, from the receipt
@@ -1168,6 +1169,13 @@ def hhmm(ts: float) -> str:
     return dt.datetime.fromtimestamp(ts).strftime("%H:%M") if ts else ""
 
 
+def queued_after(st: "State", t: Task) -> list[str]:
+    for x in st.stints:
+        if x.task == t.id and not x.returned and x.after and not all(dep_landed(st, st.tasks[d]) for d in x.after if d in st.tasks):
+            return x.after
+    return []
+
+
 def is_stale(t: Task, now: float) -> bool:
     return t.state == "in_progress" and now - t.last_activity > STALE_AFTER
 
@@ -1191,6 +1199,8 @@ def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
         elif s == "in_progress" and any(x.task == t.id and not x.returned and x.exit_code is not None for x in st.stints):
             x = next(x for x in st.stints if x.task == t.id and not x.returned and x.exit_code is not None)
             out.append(("!" if x.exit_code == 0 else "x", t, f"lane {x.agent} exited rc={x.exit_code} with no return — read the report, then board return"))
+        elif s == "in_progress" and queued_after(st, t):
+            pass  # the wrapper is waiting for a dependency; the model has not started — nothing to nudge
         elif s == "in_progress" and is_stale(t, now):
             out.append(("!", t, f"no artifact delta for {fmt_dur(now - t.last_activity)} — disk check, then ONE nudge"))
         elif s == "review":
@@ -1257,6 +1267,11 @@ def card_meta(t: Task, now: float, S: Style, narrow: bool, st_: "State | None" =
         idle = now - t.last_activity
         stale = idle > STALE_AFTER
         tail = f" {S.dot} ".join(p for p in (who or "dispatched", fmt_dur(now - t.since) if t.since else "") if p)
+        if st_ is not None:
+            waiting = [x for x in st_.stints if x.task == t.id and not x.returned and x.after
+                       and not all(dep_landed(st_, st_.tasks[d]) for d in x.after if d in st_.tasks)]
+            if waiting:
+                return [("~ ", S.fg(WARN) + BOLD), (tail, DIM), (f" {S.dot} queued after task {', '.join(waiting[0].after)}", S.fg(WARN))] + badges
         if stale:
             return [("! ", S.fg(WARN) + BOLD), (tail, DIM), (f" {S.dot} stale {fmt_dur(idle)}", S.fg(WARN))] + badges
         return [("> ", S.fg(OK) + BOLD), (tail, DIM)] + badges
@@ -2425,7 +2440,7 @@ def to_json(st: State) -> dict:
 # --- lanes: launch · lane-exit · receipt -------------------------------------------------------------
 
 def render_wrapper(ws: Path, task: str, agent: str, engine: str, model: str, effort: str, session: str, spec: Path,
-                   cwd: Path, extra: list[str]) -> tuple[str, str, str]:
+                   cwd: Path, extra: list[str], after: list[str] | None = None) -> tuple[str, str, str]:
     """The lane's wrapper script text plus its log and usage paths (relative to .orchestrate/)."""
     tpl = ENGINES[engine]
     log = f"raw/lane-{task}-{agent}.jsonl"
@@ -2442,10 +2457,16 @@ def render_wrapper(ws: Path, task: str, agent: str, engine: str, model: str, eff
     parts += [shlex.quote(x) for x in extra]
     stdin = f"< {shlex.quote(str(spec))}" if tpl["prompt"] == "stdin" else "</dev/null"
     me = Path(__file__).resolve()
+    gate = ""
+    if after:
+        deps = " ".join(f"--task {shlex.quote(x)}" for x in after)
+        gate = (f"{shlex.quote(str(me))} wait --agent {shlex.quote(agent)} {deps} --timeout 0 > {shlex.quote(str(ws / (log[:-6] + '.wait')))} 2>&1 "
+                f"|| {{ {shlex.quote(str(me))} lane-exit {shlex.quote(task)} --agent {shlex.quote(agent)} --exit 124; exit 124; }}")
     script = "\n".join([
         "#!/bin/sh",
-        f"# board launch · task {task} · {agent} · {engine} {model} @ {effort or 'high'}" + (f" · session {session}" if session else ""),
-        f"cd {shlex.quote(str(cwd))}",
+        f"# board launch · task {task} · {agent} · {engine} {model} @ {effort or 'high'}" + (f" · session {session}" if session else "") +
+        (f" · after task {', '.join(after)}" if after else ""),
+        f"cd {shlex.quote(str(cwd))}"] + ([gate] if gate else []) + [
         f"{' '.join(parts)} {stdin} > {shlex.quote(str(ws / log))} 2> {shlex.quote(str(ws / (log[:-6] + '.err')))}",
         "rc=$?",
         f"{shlex.quote(str(me))} lane-exit {shlex.quote(task)} --agent {shlex.quote(agent)} --exit \"$rc\"",
@@ -2688,6 +2709,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model", required=True); p.add_argument("--effort"); p.add_argument("--role"); p.add_argument("--owns")
     p.add_argument("--worktree"); p.add_argument("--cwd", help="the lane's working directory (default: the repo root)")
     p.add_argument("--extra", default="", help="engine flags appended verbatim, knowingly (approval, sandbox, network): --extra='--always-approve'")
+    p.add_argument("--after", help="comma list of tasks whose work must be on disk before the engine starts — the wrapper waits, the model never does")
     p.add_argument("--fg", action="store_true", help="run in the foreground (blocks; exit code passes through)")
     p.add_argument("--dry-run", action="store_true", help="print the wrapper, journal nothing, launch nothing")
     p.add_argument("--msg"); p.add_argument("spec", nargs="*", help="the brief/spec file (after --)")
@@ -2837,8 +2859,9 @@ def main(argv: list[str]) -> int:
         tpl = ENGINES[args.engine]
         session = str(__import__("uuid").uuid4()) if tpl["session"] == "pin" else ""
         agent = clean(args.agent)
+        after = [x.strip() for x in (args.after or "").split(",") if x.strip()]
         script, log, usage = render_wrapper(ws, str(args.task), agent, args.engine, args.model, args.effort or "", session, spec, cwd,
-                                            shlex.split(args.extra or ""))
+                                            shlex.split(args.extra or ""), after)
         if args.dry_run:
             print(script, end="")
             return 0
@@ -2848,7 +2871,8 @@ def main(argv: list[str]) -> int:
         (ws / cmd_file).chmod(0o755)
         if args.fg:
             append_event(ws, task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
-                         effort=args.effort, worktree=args.worktree, session=session, log=log, cmd_file=cmd_file, owns=args.owns, msg=args.msg)
+                         effort=args.effort, worktree=args.worktree, session=session, log=log, cmd_file=cmd_file, owns=args.owns,
+                         after=",".join(after), msg=args.msg)
             rc = subprocess.run(["/bin/sh", str(ws / cmd_file)]).returncode
             print(f"board: lane {agent} finished rc={rc} — read .orchestrate/task-{args.task}-report.md, then board return")
             return rc
@@ -2856,8 +2880,9 @@ def main(argv: list[str]) -> int:
                                 stderr=subprocess.DEVNULL, start_new_session=True)
         append_event(ws, task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
                      effort=args.effort, worktree=args.worktree, session=session, log=log, cmd_file=cmd_file, owns=args.owns,
-                     pid=proc.pid, msg=args.msg)
+                     pid=proc.pid, after=",".join(after), msg=args.msg)
         print(f"board: lane {agent} launched (pid {proc.pid}, {args.engine} {args.model} @ {args.effort or 'high'})" +
+              (f" · queued after task {', '.join(after)} — the engine starts when their work is on disk" if after else "") +
               (f" · session {session}" if session else "") + f"\n       log .orchestrate/{log} · wrapper .orchestrate/{cmd_file} · exit and receipt are journaled when it ends")
     elif cmd == "lane-exit":
         agent = clean(args.agent)
@@ -2936,7 +2961,7 @@ def main(argv: list[str]) -> int:
                          upto=max(m.seq for m in items), count=len(items))
     elif cmd == "wait":
         agent = clean(args.agent)
-        deadline = time.time() + max(1, args.timeout)
+        deadline = (time.time() + args.timeout) if args.timeout > 0 else float("inf")   # 0 = forever (wrappers)
         while True:
             st = load(ws)
             if args.task:
@@ -3446,6 +3471,8 @@ def selftest() -> int:
         try:
             dry = run("launch", "3", "--agent", "task3-lane", "--engine", "codex", "--model", "gpt-5.6-terra", "--dry-run", "--", "plan.md")
             assert "codex exec" in dry and "lane-exit 3" in dry and "< " in dry and not (ws / "raw" / "lane-3-task3-lane.sh").exists(), dry
+            dry = run("launch", "3", "--agent", "task3-gated", "--engine", "grok", "--model", "grok-4.6", "--after", "1,2", "--dry-run", "--", "plan.md")
+            assert "wait --agent task3-gated --task 1 --task 2 --timeout 0" in dry and dry.index("wait --agent") < dry.index("grok --cwd"), dry
             out = run("launch", "3", "--agent", "task3-lane", "--engine", "grok", "--model", "grok-4.6", "--effort", "high",
                       "--owns", "app.py", "--extra=--always-approve", "--fg", "--", "plan.md")
             assert "finished rc=0" in out, out
@@ -3453,6 +3480,9 @@ def selftest() -> int:
             s = st.stint_of("task3-lane")
             assert s and s.session and s.cmd_file and s.exit_code == 0 and s.tokens == 12345 and s.calls == 7 and s.owns == "app.py", vars(s)
             assert "--always-approve" in (ws / s.cmd_file).read_text() and (ws / s.log).exists()
+            run("done", "1", "--msg", "round two: landed")                                  # task 1 landed → the gate opens at once
+            out = run("launch", "3", "--agent", "task3-after", "--engine", "grok", "--model", "grok-4.6", "--after", "1", "--fg", "--", "plan.md")
+            assert "finished rc=0" in out and load(ws).stint_of("task3-after").after == ["1"], out
             assert any("exited rc=0 with no return" in why for _, _, why in attention(st, time.time()))
             run("return", "3", "--agent", "task3-lane", "--status", "DONE")   # no --tokens: the receipt already landed
             st = load(ws)

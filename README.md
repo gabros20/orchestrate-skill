@@ -154,8 +154,9 @@ board postmortem                        # per-tier evidence for routing, recomme
 
 A subprocess lane is one command — `board launch N --agent A --engine grok --model M -- brief.md`
 — and journals its own exit and usage receipt; `--after N` makes it sleep in the shell until task N's
-work is on disk (zero tokens), and a dependency that cannot land stops it before its engine starts.
-Agents talk through the same journal — `board send`
+work is on disk (zero tokens), and a dependency that cannot land stops it before its engine starts;
+`scripts/brief-check` names the dependencies it can see between briefs, and a lane in a read-only
+sandbox degrades to a printed line instead of failing. Agents talk through the same journal — `board send`
 / `inbox` / `wait` — information and questions only, delivered on the recipient's next board call
 on every host (no server, no host feature), with
 hard caps so two agents can never talk instead of working; `board peers` tells a parallel worker who

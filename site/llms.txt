@@ -12,7 +12,13 @@ forced: it measures task shape (plan present, task count, file-overlap independe
 verifiable stop condition) and states why it picked what it picked. Before the first multi-agent
 dispatch it prints a flight plan — the topology tree with model + reasoning effort per agent,
 gates, and an honest budget range — and gates on the user's approval (confirm=off skips the gate,
-never the print). Claude Code is the reference
+never the print). Every run has a spine: `.orchestrate/journal.jsonl`, an append-only hash-chained record
+written only by the controller; `board` renders it as a live terminal kanban (any host, stdlib
+python3) with a priced flight plan, test checks on cards, an attention strip and a resume receipt.
+Agents talk through the same journal (`board send` / `inbox` / `wait` — information and questions,
+capped, delivered on the recipient's next board call), panels vote, and an external-CLI lane is one
+command (`board launch … --after N`: the wrapper sleeps in the shell until its inputs are on disk
+and never starts the engine if an input cannot land). Claude Code is the reference
 host; the skill is plain Agent Skills format (agentskills.io) with a host-adapter layer
 (references/shared-hosts.md), so it runs on Codex, Cursor, Antigravity, opencode, Grok Build,
 Hermes, Kimi Code CLI, and Pi too — detecting its host at kickoff and degrading honestly where a
@@ -29,13 +35,15 @@ primitive is missing.
 - [README.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/README.md): overview, install, composition presets, saved aliases, repo map.
 - [skills/orchestrate/SKILL.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/skills/orchestrate/SKILL.md): the router — command grammar, strategy catalog, universal rules.
 - [docs/installation.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/installation.md): step-by-step install and verification.
-- [docs/usage.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/usage.md): invocation grammar, dimensions, and resuming runs.
+- [docs/usage.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/usage.md): invocation grammar, dimensions, the journal and board command reference, resuming and upgrading runs.
 - [docs/strategies.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/strategies.md): all nine strategies in depth — when to use each, their mechanics.
 - [docs/recipes.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/recipes.md): composed dimension recipes and saved aliases.
 - [docs/research/foundations.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/research/foundations.md): the evidence and sources behind the design choices.
 - [docs/research/token-optimization.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/research/token-optimization.md): research record on token/context/cost optimization for multi-agent orchestration.
 
 ## Optional
+
+- [docs/designs/v1.21.0-hardening.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.21.0-hardening.md): what five live multi-agent runs said to fix — dependency failure, read-only lanes, the controller's reliable wait.
 
 - [docs/designs/v1.0.0-initial-architecture.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.0.0-initial-architecture.md): implementation design shipped in v1.0.0 — why the skill is shaped the way it is.
 - [Visual guide](https://orchestrate-skill.vercel.app): every strategy, dimension, and alias on one page.

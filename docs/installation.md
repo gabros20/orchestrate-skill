@@ -78,7 +78,9 @@ board --selftest        # replays a whole run in a temp repo: "board: selftest O
 ```bash
 cd orchestrate-skill
 git pull --ff-only
-./install.sh codex
+./install.sh codex        # one client — or:
+./install.sh all          # claude + codex + ~/.agents, plus every other CLI home that already exists
+                          # (cursor, antigravity, opencode, grok, hermes, kimi, pi, jcode) — never creates one
 ```
 
 Or rerun the `npx skills add` command if installed through skills.sh. The transactional installer

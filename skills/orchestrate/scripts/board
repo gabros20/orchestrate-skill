@@ -33,7 +33,7 @@ WORKERS — observations (every one also hands you your unread mail)
   note N "msg" --agent A · exec N --name X --agent A -- <cmd> · result N --name X --exit RC --agent A
   send "msg" --from A --to <agent|controller|lead|all> [--ask] [--re SEQ] · inbox --agent A [--peek]
        (controller/lead resolve to YOUR dispatcher in a tree: a subtree's questions go to its lead)
-  wait --agent A [--timeout S] · wait --agent A --task N · peers --agent A
+  wait --agent A [--timeout S] · wait --agent A --task N [--or-mail: exit 5 when mail comes first] · peers --agent A
   vote N --kind K --agent A --verdict ok|fail|warn [--why ".."]
 
 VIEWS
@@ -1300,11 +1300,19 @@ def mail_badge(t: Task, st_: "State", S: Style) -> Row:
     return [(f" {S.dot} ", DIM), (f"m{n_}", S.fg(WARN))] if n_ else []
 
 
+def who_label(t: Task, st_: "State | None", S: Style, narrow: bool) -> str:
+    """`agent · role · model · engine · by lead` — the role when it is not a plain implementer, the lead when there is one."""
+    s = st_.stint_of(t.agent) if (st_ is not None and t.agent) else None
+    role = s.role if s and s.role and s.role != "implementer" else ""
+    lead = f"by {s.by}" if s and s.by and s.by != "controller" else ""
+    parts = [t.agent, role, lead] if narrow else [t.agent, role, t.model, t.engine if t.engine and t.engine != "claude" else "", lead]
+    return f" {S.dot} ".join(x for x in parts if x)
+
+
 def card_meta(t: Task, now: float, S: Style, narrow: bool, st_: "State | None" = None) -> Row:
     """Right-hand side of a card as styled segments."""
     st = t.state
-    who_parts = [t.agent] if narrow else [t.agent, t.model, t.engine if t.engine and t.engine != "claude" else ""]
-    who = f" {S.dot} ".join(x for x in who_parts if x)
+    who = who_label(t, st_, S, narrow)
     badges = check_badges(t, S) if st in ("todo", "in_progress", "review") else []
     if st_ is not None:
         badges = badges + mail_badge(t, st_, S)
@@ -1330,11 +1338,11 @@ def card_meta(t: Task, now: float, S: Style, narrow: bool, st_: "State | None" =
             segs += [(f"{k} ", DIM), (mark, colour), (f" {rnd}" if rnd else "", DIM)]
         if not segs:
             segs = [(t.detail or "awaiting review", DIM)]
-        if who and any(v.startswith("..") for v in t.gates.values()):
+        if who:
             segs.append((f" {S.dot} {who}", DIM))
         return segs + badges
     if st == "done":
-        return [(t.final_note or t.note or t.detail or "complete", DIM)]
+        return [(t.final_note or t.note or t.detail or "complete", DIM)] + ([(f" {S.dot} {who}", DIM)] if who and not narrow else [])
     if st == "blocked":
         return [("x ", S.fg(BAD) + BOLD), ((t.note or t.detail or "blocked"), S.col("blocked"))]
     if badges:
@@ -1653,7 +1661,8 @@ def build_rows(st: State, width: int, view: View) -> tuple[list[Row], list[tuple
             metatxt = row_text(metasegs)
             head = f"{t.id.rjust(idw)}  "
             head_sgr = REV if focused else BOLD
-            ttl = t.title or "(untitled)"
+            parent = t.id.rsplit(".", 1)[0] if "." in t.id else ""
+            ttl = (("↳ " if not S.ascii else "> ") if parent and parent in st.tasks else "") + (t.title or "(untitled)")
             anchors.append((len(rows), t.id))
             if not metatxt:
                 rows.append(edge + [(head, head_sgr), (pad(clip(ttl, inner - dw(head)), inner - dw(head)), ""), *tail])
@@ -2314,7 +2323,7 @@ def render_peers(st: State, agent: str) -> str:
             t = st.tasks.get(s.task)
             state = s.status.lower().replace("_", " ") if s.status else f"lane exited rc={s.exit_code}, report on disk"
             L.append(f"- task {s.task} {t.title if t else ''} · {s.agent} · {state}" +
-                     (f" · commits {s.commits}" if s.commits else "") + f" · report .orchestrate/{s.report or f'task-{s.task}-report.md'}")
+                     (f" · commits {s.commits}" if s.commits else "") + f" · report {(rp if rp.startswith('/') else '.orchestrate/' + rp) if (rp := s.report or f'task-{s.task}-report.md') else ''}")
     L.append("before touching a peer's area: board send --from <you> --to <peer> \"<what changes, which files>\" · "
              "an input not on disk yet: board wait --agent <you> --task N")
     return "\n".join(L)
@@ -2748,7 +2757,7 @@ def cmd_init(ws: Path, args: argparse.Namespace) -> None:
                 if tid not in st.tasks:
                     append_event(ws, task=tid, ev="todo", title=title)
                     added += 1
-                elif title and not st.tasks[tid].title:
+                elif title and st.tasks[tid].title != title:   # a plan heading outranks a brief's first line
                     append_event(ws, task=tid, ev="title", title=title)
     else:
         seen = {str(e.get("task")) for e in st.events if e.get("task") is not None}
@@ -2792,6 +2801,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("wait", help="rendezvous: block until mail arrives, or until --task N's work is on disk (exit 3: it cannot land, 124: timeout)")
     p.add_argument("--agent", default="controller"); p.add_argument("--timeout", type=int, default=WAIT_SLICE, help="seconds; 0 = no deadline")
     p.add_argument("--task", action="append", help="wait for this task's work instead of for mail (repeatable: all must have landed)")
+    p.add_argument("--or-mail", action="store_true", help="with --task: return 5 as soon as mail for --agent arrives (a lead waiting on its workers must answer their asks)")
     p = sub.add_parser("mail"); p.add_argument("--task"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("peers"); p.add_argument("--agent", required=True)
     p = sub.add_parser("vote", help="one reviewer's verdict; the gate is derived by quorum (panel = majority, consensus = any-deny)")
@@ -3078,6 +3088,12 @@ def main(argv: list[str]) -> int:
                 if unknown:
                     print(f"board: no such task {', '.join(unknown)} — nothing to wait for (planned tasks: {', '.join(t.id for t in st.ordered()) or 'none'})")
                     return 2
+                if args.or_mail and st.unread(agent):   # a lead waiting on its workers wakes for their questions
+                    print(render_inbox(st, agent)[0])
+                    observe(ws, "", actor="controller" if agent == "controller" else "worker", ev="ack", agent=agent,
+                            upto=max(m.seq for m in st.unread(agent)), count=len(st.unread(agent)))
+                    print("board: mail arrived while you waited — answer it (reply ONLY to an ask), then wait again")
+                    return 5
                 failed = [(d, dep_failed(st, d)) for d in deps if dep_failed(st, d)]
                 if failed:
                     for d, why in failed:
@@ -3092,7 +3108,7 @@ def main(argv: list[str]) -> int:
                         state = (s.status.lower().replace("_", " ") if s and s.status else
                                  f"lane exited rc={s.exit_code}, report on disk (not yet returned by the controller)" if s else d.state)
                         print(f"task {d.id} {d.title}: {state}" + (f" · commits {s.commits}" if s and s.commits else "")
-                              + (f" · report .orchestrate/{d.report or f'task-{d.id}-report.md'}" if (d.report or (ws / f'task-{d.id}-report.md').exists()) else ""))
+                              + (f" · report {rp if rp.startswith('/') else '.orchestrate/' + rp}" if (rp := d.report or (f'task-{d.id}-report.md' if (ws / f'task-{d.id}-report.md').exists() else '')) else ""))
                     deliver(ws, agent)
                     return 0
                 if time.time() >= deadline:
@@ -3664,6 +3680,9 @@ def selftest() -> int:
         assert "src/auth" not in peers.split("elsewhere")[1] or True
         run("send", "lead-level question", "--from", "w31", "--to", "lead", "--ask")
         assert load(ws).mail[-1].to == "dom-lead"
+        out = run("wait", "--agent", "dom-lead", "--task", "3.1", "--or-mail", "--timeout", "1", expect_fail=True)   # 5: a worker's ask wakes the lead
+        assert "lead-level question" in out and "mail arrived while you waited" in out, out
+        run("wait", "--agent", "dom-lead", "--task", "3.1", "--or-mail", "--timeout", "1", expect_fail=True)         # 124: nothing new
         run("return", "3", "--agent", "dom-lead", "--status", "DONE")             # the lead is gone → controller is the fallback
         out = run("send", "orphan question", "--from", "w31", "--to", "controller", "--ask")
         assert "w31 -> controller" in out, out
@@ -3671,6 +3690,12 @@ def selftest() -> int:
         run("return", "4", "--agent", "task4-other", "--status", "DONE")
         run("inbox", "--agent", "controller")   # ack the orphan ask so later checks stay quiet about it
         run("done", "3.1")
+        show = run("show", "--no-color", "-x")
+        assert "↳ auth worker slice" in show and "by dom-lead" in show and "sub-orchestrator" in show, show
+        (ws / "task-5-brief.md").write_text("You are implementing Task 5: do the thing. Repo root: /x\n")
+        Path("plan.md").write_text(Path("plan.md").read_text() + "## Task 5: Fifth\n")
+        run("init", "plan.md", "--resume")
+        assert load(ws).tasks["5"].title == "Fifth", "a plan heading outranks a brief's first line"
 
         # --- a read-only lane: observations degrade to a printed line, never a traceback ---------------------------
         run("dispatch", "4", "--agent", "task4-ro", "--model", "sonnet")

@@ -10,6 +10,24 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.22.1] — 2026-09-16
+
+### Added
+- `board wait --task N --or-mail` returns **5** the moment mail for `--agent` arrives, so a lead
+  blocked on its workers wakes for their questions (observed need in the live hierarchical run).
+
+### Fixed
+- **Cards say who did what for whom**: agent · role (when not a plain implementer) · model ·
+  engine · `by <lead>`, on review and done cards too; subtasks carry `↳` under their parent
+  (screenshot feedback: "hard to figure out who does what").
+- A plan heading outranks a brief's first line as the card title (briefs written before
+  `board init --resume` used to win with "You are the sub-orchestrator for…").
+- Absolute report paths render as given, not as `.orchestrate//…`.
+- Live hierarchical run on Codex (luna @ max): nested `codex exec` is blocked by the sandbox —
+  `engine-codex.md` and the hierarchical strategy now say the lead plans and the controller
+  launches `--by` it; the sub-orchestrator prompt says the controller records the lead's own
+  return.
+
 ## [1.22.0] — 2026-09-16
 
 ### Added

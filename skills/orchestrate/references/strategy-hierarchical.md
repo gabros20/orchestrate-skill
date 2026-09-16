@@ -14,6 +14,13 @@ Inputs:
 Produces:
 - Domain plans, delegated task results, domain summaries, and controller synthesis.
 
+## Contents
+
+- Depth reality (know the runtime before designing the tree)
+- Design rules
+- Flow
+- Mail in a tree (authority is lineage, not a name)
+
 Preset: `topology=hierarchical review=dual models=orchestrator:strong,worker:cheap`.
 Use when the work spans domains that each need real *thinking* plus their own worker fleet, or
 when total context far exceeds one window. Your context is the scarce resource: you hold only
@@ -93,4 +100,11 @@ peers` shows a worker its team first and "elsewhere in the run" after. You see a
 only when its lead leaves it unread past the stale threshold (`!` in attention, `board check`),
 and then you nudge the lead or answer it yourself. A lead that has returned is no lead: its
 workers' questions fall back to you. Inside a `board launch` lane, `--by` defaults to the lane's
-own name, so an engine that dispatches its own workers is their lead without saying so.
+own name, so an engine that dispatches its own workers is their lead without saying so — where the
+engine's sandbox allows it. Where it does not (Codex: nested `codex exec` is blocked by the
+sandbox), the worker-control rule above applies literally: the lead writes the briefs and journals
+the todos, asks you in ONE mail to launch them, and you launch each `--by <lead>`; the lead then
+waits with `board wait --agent <lead> --task N.1 --task N.2 --timeout 540 --or-mail` (5 = a worker
+asked it something first). Observed live: the lead decided the shared interface up front
+(`board decide`), handled a shared-tree scoop by escalating ONE ask to the controller, recorded its
+workers' returns and integrated — 6.7M tokens for 4 accepted tasks on the cheap tier at max effort.

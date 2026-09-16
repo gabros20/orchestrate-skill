@@ -59,6 +59,11 @@ cat "$OUT"; git -C /path/to/repo status --short   # read the result; inspect wha
   | --commit <sha>` is a non-interactive review lane; `codex features list` shows flags live. There
   is **no `codex mcp-server`** — `codex mcp` manages EXTERNAL servers; `codex app-server` is the
   experimental daemon (unverified as an MCP entry point).
+- **A Codex lane cannot launch Codex lanes**: nested `codex exec` inside the workspace-write sandbox
+  fails with `failed to initialize in-process app-server client: Operation not permitted` (observed
+  live 2026-09-16, 0.154). A Codex sub-orchestrator therefore plans, writes its workers' briefs,
+  journals `board todo N.1`, and asks the controller to launch them `--by <lead>`; the controller
+  owns the processes, the lead owns the subtree (`strategy-hierarchical.md`, worker-control rule).
 - Quota: `error … usage limit … try again at <time>` → `BLOCKED` with the reset time, resume the
   same session after it (97% cache hits observed); never retry-loop. Exit 0 + empty diff + a
   polite decline = `REFUSED` (`strategy-xcli.md`): the global `~/.codex/AGENTS.md` governs every

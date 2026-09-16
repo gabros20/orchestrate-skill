@@ -129,8 +129,11 @@ Intentional exemptions: none — a dispatch with no block is a defect, not a def
 A quality brief contains, in order:
 
 1. **Objective** — 1–2 sentences, the definition of done.
-2. **Scope** — in / out, explicit. Include **negative constraints** (what must NOT change) and
-   **rejected alternatives with reasons** — code can't show these; the brief must.
+2. **Scope** — in / out, explicit, with a **Must NOT** list: every hard prohibition (files,
+   services, behaviours the worker must not touch, start or change) goes HERE, IN CAPS — never
+   under stop conditions, where it reads as advice (observed twice live: a lane started the
+   service it was told not to). Add **rejected alternatives with reasons** — code can't show
+   these; the brief must.
 3. **Pointers, not payloads** — one per line, machine-checkable:
    `read: <path> — <why>` (optional `@ <commit-sha>`; `(will exist)` marks generated artifacts
    brief-check skips). Paths resolve from the repo root stated at the top of the brief.
@@ -161,7 +164,8 @@ A quality brief contains, in order:
    --agent <you> -- <test cmd>` for the verification run (its exit code lands on the card, the
    log under `raw/`); the controller alone moves cards (`shared-contracts.md`).
 7. **Stop conditions** — when to return BLOCKED / NEEDS_CONTEXT instead of guessing, and which
-   decision classes REQUIRE escalation (security, data, public API).
+   decision classes REQUIRE escalation (security, data, public API). Stop conditions say when to
+   RETURN; what not to do lives in Scope → Must NOT.
 
 **Brief probe-test (controller gate, pre-dispatch):** the brief must answer — *what exactly is
 done? how is it verified? which files, at which revision? what must remain unchanged? can this

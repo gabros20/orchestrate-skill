@@ -88,6 +88,38 @@ if [ "$#" -ge 2 ]; then
     while IFS= read -r c; do err "cross-brief collision: $c"; done <<< "$collisions"
   fi
 
+  # Dependencies (say, never fail): brief B reads a path brief A writes → B's input is A's output.
+  # A hard dependency launches gated (`board launch … --after A`: the wrapper waits, the model never
+  # pays to wait); a soft one builds against the contract and calls `board wait --task A` only before
+  # its verification run. Running it unblocked is a legitimate choice — hence a hint, not an error.
+  task_id() { basename "$1" | sed -E 's/^task-(.+)-brief\.md$/\1/; s/^card-(.+)\.md$/\1/'; }
+  deps="$(
+    for a in "$@"; do
+      [ -f "$a" ] || continue
+      ta="$(task_id "$a")"
+      grep -E '^[[:space:]]*-?[[:space:]]*write:' "$a" 2>/dev/null \
+        | sed -E 's/^[[:space:]]*-?[[:space:]]*write:[[:space:]]*//' | awk '{print $1}' | while IFS= read -r w; do
+        [ -n "$w" ] || continue
+        for b in "$@"; do
+          [ "$b" != "$a" ] && [ -f "$b" ] || continue
+          tb="$(task_id "$b")"
+          grep -E '^[[:space:]]*-?[[:space:]]*read:' "$b" 2>/dev/null \
+            | sed -E 's/^[[:space:]]*-?[[:space:]]*read:[[:space:]]*//' | awk '{print $1}' | while IFS= read -r r; do
+            [ -n "$r" ] || continue
+            # shellcheck disable=SC2053 # unquoted $w on purpose: a write: glob (src/api/**) matches its files
+            if [[ "$r" == "$w" || "$r" == "$w"/* || "$r" == $w ]]; then printf '%s\t%s\t%s\n' "$tb" "$ta" "$r"; fi
+          done
+        done
+      done
+    done | sort -u
+  )"
+  if [ -n "$deps" ]; then
+    while IFS=$'\t' read -r tb ta path; do
+      [ -n "$tb" ] || continue
+      echo "brief-check: dependency: task $tb reads $path, written by task $ta — launch $tb with --after $ta (hard), or have it 'board wait --task $ta' before its verification run (soft)" >&2
+    done <<< "$deps"
+  fi
+
   # One snapshot per batch (warn, not fail): all pinned pointers across a batch should share one
   # repo revision — two workers each correct against a different version of the truth raise no
   # error on their own (shared-token-economy.md). A deliberate mixed batch is a re-dispatch

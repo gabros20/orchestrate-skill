@@ -45,11 +45,16 @@ VERIFY and an integrator's under INTEGRATE — the state model underneath never 
 **Mail** rides the same journal: a worker's `--ask` is a `?` in attention with the reply command
 ready, `mail N unread · M for you` sits in the header, and `board inbox --agent controller` is
 part of every liveness check (an unanswered ask is a worker parked in `board wait`). **The
-controller's own watch is the journal**: `board follow --for controller` prints one line per
-event that needs you (mail to you, returns, lane exits, failed checks, votes, blocks) and ends
-on `finish`; `board wait --agent controller` blocks until the next mail. Lanes started with
+controller's own watch is the journal, and the reliable primitive is a blocking wait that
+exits**: `board wait --task N --timeout 0` in a background shell returns once per landing (0 =
+its work is on disk, 3 = it cannot land: BLOCKED/REFUSED or a dead lane) — one clean
+notification, CLI-agnostic, no stream to lose. A streaming tail (`board follow --for controller`:
+one line per event that needs you, ends on `finish`; or a harness monitor) is a convenience on
+top, never the only signal — observed: a harness stream delivered lane exits 10–17 min late,
+twice. `board wait --agent controller` blocks until the next mail. Lanes started with
 `board launch` journal their `exit` — a lane that exited with no return is `!`/`x` in attention
-before the stale clock would have noticed. Controller
+before the stale clock would have noticed; exit 125 means its dependency cannot land and its
+engine never started (return it BLOCKED, fix the dependency, relaunch). Controller
 side: `board attention` lists what to act on, most urgent first (`x` blocked / failed
 gate / failed check, `!` stale, silent reviewer or a third attempt with no escalation, `?`
 pending gate / concerns / mail for you); run `board check` at every liveness check and before any recovery

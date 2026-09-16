@@ -25,7 +25,10 @@ map); each item generalizes to any subprocess engine.
    dispatch (session, log, wrapper, pid), starts the lane detached, and on exit journals `exit`
    (rc) and `receipt` (tokens · calls · cost, fetched per engine). `--dry-run` prints the wrapper
    to inspect; `--fg` blocks; `--after N` makes the wrapper wait for task N's work before the engine
-   starts — a dependent lane that is not running cannot burn tokens waiting. A hand-written wrapper is still fine (`board dispatch --cmd-file`)
+   starts — a dependent lane that is not running cannot burn tokens waiting; if that work cannot
+   land (N returned BLOCKED/REFUSED, or its lane died with no report) the wrapper exits 125 and
+   the engine never starts. The wrapper exports `ORCHESTRATE_WS` and puts this `board` on PATH,
+   so a lane in any worktree journals to the right run. A hand-written wrapper is still fine (`board dispatch --cmd-file`)
    — the point is that a background shell can silently drop redirects, and a lane that prints
    "Reading prompt from stdin…" into the wrong file is indistinguishable from a hung one.
 3. **Prompt from a file** (`- < spec.md`, `--prompt-file`, `-f`, `@spec.md`); positional prompts +

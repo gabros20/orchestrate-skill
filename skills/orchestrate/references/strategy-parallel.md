@@ -48,7 +48,7 @@ half. Then partition along ONE axis — by layer, by component, by concern, or *
 Each worker gets a card in `.orchestrate/card-<k>.md`:
 ```
 Objective · Owned files (exclusive) · Requirements · Interface contract (what other tasks expect)
-Acceptance criteria · Out of scope · MERGE GATE: <the exact condition allowing integration>
+Acceptance criteria · Out of scope · Must NOT (hard prohibitions, IN CAPS) · MERGE GATE: <the exact condition allowing integration>
 ```
 A card cannot advance without its artifact existing; merge-readiness is judged **by the gate, not
 vibes**. Return contract per worker: verdict first, <1000 tokens, branch/PR ref + report path.
@@ -62,7 +62,12 @@ launch it gated (`board launch … --after N`: the wrapper waits, the model neve
 — and if it is already running, `board wait --agent <you> --task N` blocks until that card's work
 is on disk (returned, or its lane exited with the report written); `board peers` lists landed
 peers with their commits and report. A model waiting in its tool loop costs a full context per
-poll; a wrapper waiting costs nothing. Mail is information; the card and the gate stay the contract. If you chose
+poll; a wrapper waiting costs nothing. **Wait late, not early**: a soft dependency builds against
+the contract (stubs, the agreed shape) and calls `board wait --task N` only right before its
+verification run; `--after` is for hard dependencies only, where nothing can start without the
+input — and a dependency that cannot land (BLOCKED/REFUSED, a dead lane) releases the waiter with
+exit 3 / stops the gated lane before its engine starts (exit 125). `scripts/brief-check` prints
+every read↔write dependency it can see across the batch. Mail is information; the card and the gate stay the contract. If you chose
 `isolation=off` (two writers in one tree), the brief carries the derived rail the board prints:
 commit by path, never `git add -A`.
 

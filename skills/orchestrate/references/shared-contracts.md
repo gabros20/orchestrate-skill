@@ -169,7 +169,7 @@ status and never liveness — liveness is artifact deltas only, `shared-monitori
 `board exec N --name tests --agent <you> -- <cmd>` (their own verification run; an exit code is an
 observation, not a transition) — and **mail**: `board send --from <you> --to <agent|controller|all>
 "…" [--ask] [--re SEQ]` / `board inbox --agent <you>` / `board wait --agent <you> [--task N]` (mail, or a dependency's
-return) / `board peers --agent <you>` (open peers and what they own; returned peers and what
+work on disk — exit 3 when it cannot land) / `board peers --agent <you>` (open peers and what they own; returned peers and what
 they delivered). Mail is journaled (`mail`, and an `ack` when read) and delivered at the recipient's
 next board call — every worker-side command (`note`, `exec`, `send`, `peers`, `vote`) hands
 over unread mail, so delivery rides on calls the worker makes anyway; never mid-turn, on any host.
@@ -178,7 +178,9 @@ INFORMATION. Loop-proof by construction: `MAIL_CAP` sends per stint, `THREAD_CAP
 no duplicates, no mail to a returned agent; `board check` flags chatter, unread-past-stale and
 unanswered asks. Votes: `board vote N --kind K --agent A --verdict ok|fail|warn` — the gate is
 derived by quorum (`panel:N` majority, `consensus:N` any-deny) under the rules in force when the
-vote was cast; an explicit `board gate` outranks. Parallel writers are serialized by a journal lock.
+vote was cast; an explicit `board gate` outranks. Parallel writers are serialized by a journal lock;
+a lane in a read-only sandbox cannot write it, so worker-side commands print the line to carry in
+the inline return instead of failing. `board --help` is grouped by role.
 
 Views, all derived from the journal plus the files above (briefs → todo, reports and findings →
 review, ledger → done — final, always wins): the kanban the user watches from their own pane
@@ -200,7 +202,7 @@ controller records transitions**. The user opens and closes the pane; the skill 
 
 ```
 Objective · Owned files (exclusive) · Requirements · Interface contract ·
-Acceptance criteria · Out of scope · MERGE GATE: <exact integration precondition>
+Acceptance criteria · Out of scope · Must NOT (hard prohibitions, IN CAPS) · MERGE GATE: <exact integration precondition>
 ```
 State advances only when the exit artifact exists; merge-readiness is judged by the gate, not by
 anyone's assessment. Blocked cards carry an owner + next action or they're not "blocked", they're

@@ -24,20 +24,21 @@ per session; every verified date is the day the fact was checked, not a guarante
 
 ## The cross-engine map (what the journal wants from every lane)
 
-| Engine | Session id | Resume by id | Receipt | Lane cap | Hermetic flags |
-|---|---|---|---|---|---|
-| Codex | `thread.started` in `--json` | `codex exec resume <id> - < nudge.md` | `turn.completed.usage` (root turn only) | quota + `--worktree` | spec-preamble opt-out of `~/.codex/AGENTS.md` |
-| Grok | `-s $(uuidgen)` pre-pinned | `grok -r <id> --prompt-file` | `grok usage <id>` | `--max-turns` | `--no-subagents` |
-| Claude | `--session-id $(uuidgen)` | `claude -p --resume <id>` | final `result` event | `--max-budget-usd` | `--bare`, `--restricted` |
-| Cursor | latest only | `cursor-agent --continue` | — (docs) | — | `--trust` fail-closed |
-| Antigravity | `--conversation <id>` | `agy -p --conversation <id>` | — (docs) | `--print-timeout` | — |
-| opencode | printed session id | `opencode run -s <id>` | `opencode stats`, `export --sanitize` | — | `--agent <pinned file>` |
-| Hermes | `--pass-session-id` | `hermes -z … --resume <id>` | `--usage-file`, `insights` | `chat --max-turns` | `--ignore-rules`, `--safe-mode` |
-| Kimi | session store | `kimi -S <id>` | — (`/usage` TUI-only) | — | instruct: no swarm |
-| Pi | `--session <id>` | `pi --session <id>` | — | — | `-nc --no-extensions` |
+| Engine | Session id | Resume by id | Receipt | Lane cap | Hermetic flags | `board launch` template |
+|---|---|---|---|---|---|---|
+| Codex | `thread.started` in `--json` | `codex exec resume <id> - < nudge.md` | `turn.completed.usage` (root turn only) | quota + `--worktree` | spec-preamble opt-out of `~/.codex/AGENTS.md` | **live** 2026-09-16 |
+| Grok | `-s $(uuidgen)` pre-pinned | `grok -r <id> --prompt-file` | `grok usage <id>` | `--max-turns` | `--no-subagents` | **live** 2026-09-16 |
+| Claude | `--session-id $(uuidgen)` | `claude -p --resume <id>` | final `result` event | `--max-budget-usd` | `--bare`, `--restricted` | **live** 2026-09-16 |
+| Cursor | latest only | `cursor-agent --continue` | — (docs) | — | `--trust` fail-closed | dry-run (docs) |
+| Antigravity | `--conversation <id>` | `agy -p --conversation <id>` | — (docs) | `--print-timeout` | — | dry-run (docs) |
+| opencode | printed session id | `opencode run -s <id>` | `opencode stats`, `export --sanitize` | — | `--agent <pinned file>` | dry-run (docs) |
+| Hermes | `--pass-session-id` | `hermes -z … --resume <id>` | `--usage-file`, `insights` | `chat --max-turns` | `--ignore-rules`, `--safe-mode` | dry-run (docs) |
+| Kimi | session store | `kimi -S <id>` | — (`/usage` TUI-only) | — | instruct: no swarm | dry-run (docs) |
+| Pi | `--session <id>` | `pi --session <id>` | — | — | `-nc --no-extensions` | dry-run (docs) |
 
-`board launch N --agent A --engine <e> --model M [--effort E --owns … --extra='<approval flags>'] --
-spec.md` does the whole row for you — wrapper, session pin/capture, dispatch, detached start, `exit`
+`board launch N --agent A --engine <e> --model M [--effort E --owns … --after N --extra='<approval flags>'] --
+spec.md` does the whole row for you (the last column says how far each engine's template is verified —
+`dry-run` means the argv came from docs and a `--dry-run` wrapper, not a live lane: probe `--help` first) — wrapper, session pin/capture, dispatch, detached start, `exit`
 and `receipt` events when it ends (`--dry-run` to look first). By hand: journal the session id at
 dispatch (`board dispatch … --session <id> --log raw/lane-N.jsonl`) or at return (`--session`) —
 `board resume` then prints the engine's resume line for every open lane instead of sending the

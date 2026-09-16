@@ -18,13 +18,17 @@ Live-verified 2026-09-16, Claude Code 2.1.273.
 
 ```bash
 ID=$(uuidgen)
-claude -p --bare --session-id "$ID" --output-format stream-json --include-partial-messages \
+claude -p --session-id "$ID" --output-format stream-json --verbose --include-partial-messages \
   --model sonnet --effort high --permission-mode acceptEdits --max-budget-usd 2.00 \
   --agents '{"worker":{"description":"…","prompt":"…"}}' "$(cat spec.md)" > events.jsonl
 board dispatch N --agent task-N-claude --model sonnet --engine claude --session "$ID" --log raw/lane-N.jsonl
 claude -p --resume "$ID" "<nudge>"             # resume by id (bare --continue is cwd-scoped)
 ```
-- `--bare` for scripts/CI (no auto-discovery; auth via env). `--json-schema` for validated output.
+- `-p --output-format stream-json` REQUIRES `--verbose` (exit 1 otherwise — observed live 2026-09-16 on
+  2.1.273; `board launch` passes it). `--bare` is for CI with `ANTHROPIC_API_KEY` in the env ONLY: it
+  also skips the login credential, so under a subscription login the lane returns "Not logged in ·
+  Please run /login" as a one-turn `result` (observed live 2026-09-16) — `board launch` never passes
+  it; add `--extra='--bare'` knowingly. `--json-schema` for validated output.
   `--effort low|medium|high|xhigh|max` (no `ultra`). There is **no `--max-turns` on `-p`** — the
   lane cap is `--max-budget-usd` (a hard dollar ceiling). `--restricted` strips Bash/code-exec/
   WebFetch and confines file tools to `--add-dir` — the containment tier above `acceptEdits`.

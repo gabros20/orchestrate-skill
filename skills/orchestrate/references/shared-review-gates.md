@@ -48,7 +48,10 @@ asked — nothing missing, nothing extra"; quality answers "is it well-built". Q
 non-compliant code is wasted tokens.
 
 - Reviewers are **read-only** and get: the brief, the implementer's report, the diff package, and
-  the plan's Global Constraints VERBATIM (exact values, formats, relationships).
+  the plan's Global Constraints VERBATIM (exact values, formats, relationships). A reviewer lane
+  in a read-only sandbox (Codex `--sandbox read-only`, Claude `--restricted`) cannot write the
+  journal: `board vote` there prints the exact vote line instead of failing — the verdict travels
+  in the inline return and YOU record it (`board vote N --kind K --agent <reviewer> --verdict …`).
 - **Do-not-trust-the-report**: reviewers verify by reading code, never by believing claims.
   Implementer rationale never downgrades a severity.
 - **Never pre-judge findings** in a reviewer prompt ("don't flag X", "at most Minor", "the plan

@@ -10,6 +10,43 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.21.0] — 2026-09-16
+
+### Added
+- **A dependency that cannot land is a third outcome.** `board wait --task N` exits **3** (0 =
+  landed, 124 = timeout) when task N returned BLOCKED/NEEDS_CONTEXT/REFUSED, was blocked by the
+  controller, or its latest lane died with no report; a gated `board launch … --after N` wrapper
+  then exits **125** and the engine never starts (attention: `x … never started — dependency
+  task N cannot land`). Before this a BLOCKED dependency *released* the waiter and the engine
+  started on a missing input. `--agent` defaults to `controller` for dependency waits.
+- **Read-only lanes degrade, never crash.** Worker-side commands (`note`, `exec`, `result`,
+  `send`, `inbox`, `wait`, `peers`, `vote`) in a sandbox that cannot write the journal print the
+  exact line to carry in the inline return instead of a traceback; `exec` logs to a temp file.
+- **`brief-check` names dependencies**: in multi-brief mode, a brief that reads a path another
+  brief writes gets `dependency: task B reads … written by task A — launch B with --after A
+  (hard) or wait --task A before verification (soft)`. A hint, never a failure.
+- `scripts/release <version> [--dry-run]` — the release chain as one script that refuses at the
+  first gate that is not true; `install.sh all` now installs to every CLI home that exists on
+  the machine (and `install.sh jcode`).
+
+### Changed
+- `board --help` is grouped by role (controller loop · lanes · workers · views) and the selftest
+  fails if any subcommand is missing from it; SKILL.md step 6 points at it instead of listing.
+- The launch wrapper exports `ORCHESTRATE_WS` and puts `board` on PATH, so a lane in any
+  worktree journals to the right run. Gate exits (124/125) never fetch a receipt.
+- `board exec` keeps one log per run (`raw/check-taskN-<name>-<seq>.log`); `wait` re-reads the
+  journal only when the workspace changes; a launched Claude lane owes a receipt like any other.
+- **Claude lane template live-verified and fixed**: `-p --output-format stream-json` requires
+  `--verbose` (exit 1 otherwise), and `--bare` skips the subscription login ("Not logged in" as a
+  one-turn `result`) — `board launch` now passes `--verbose` and never `--bare` (CI with an API
+  key adds `--extra='--bare'`). Codex and Claude templates are marked **live** in the engine map;
+  the other six stay `dry-run` until a lane proves them. Attention names the worktree trap: a
+  lane that exits 0 with no report in the workspace wrote a relative report path into its cwd.
+- Priming anatomy: hard prohibitions go under **Scope → Must NOT, IN CAPS**; stop conditions say
+  when to return. Parallel: **wait late, not early**. Monitoring: the controller's reliable wait
+  is a blocking `board wait --task N --timeout 0`, streams are a convenience. Engine map: a
+  column saying how far each `board launch` template is verified.
+
 ## [1.20.1] — 2026-09-16
 
 ### Fixed

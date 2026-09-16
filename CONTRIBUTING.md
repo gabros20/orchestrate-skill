@@ -20,5 +20,9 @@ coordination efficiency without absorbing domain workflows or digital-product li
    repository invariants change.
 7. Record user-visible behavior in `CHANGELOG.md`.
 
-Use semantic versioning. Synchronize `.codex-plugin/plugin.json`, the newest changelog release,
-tag `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
+Use semantic versioning. Release with `scripts/release <version>` (`--dry-run` first): it refuses
+unless the tree is clean on a feature branch, `scripts/check-sync` passes, `CHANGELOG.md` has the
+`## [<version>]` entry and `.codex-plugin/plugin.json` matches, and the tag does not exist — then
+pushes, opens and merges the PR, tags `v<version>`, creates the GitHub Release from the changelog
+section and reinstalls every local copy (`./install.sh all`). It stops at the first failing step;
+never release by hand-chaining those commands. Runtime `SKILL.md` contains no version metadata.

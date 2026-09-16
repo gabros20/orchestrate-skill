@@ -133,6 +133,74 @@ LAUNCH_CMD = {
 
 # --- workspace -----------------------------------------------------------------------
 
+def runs_dir() -> Path:
+    """The machine-wide run registry: one small pointer file per workspace, touched on every journal write."""
+    return Path(os.environ.get("ORCHESTRATE_HOME") or (Path.home() / ".orchestrate")) / "runs"
+
+
+def touch_registry(ws: Path, run_id: str) -> None:
+    try:
+        d = runs_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{sha(str(ws.resolve()))[:16]}.json").write_text(json.dumps(
+            {"ws": str(ws.resolve()), "run": run_id, "repo": ws.resolve().parent.name, "last": time.time()}), encoding="utf-8")
+    except OSError:
+        pass  # the registry is a convenience for the pane, never a record
+
+
+def registry_runs() -> list[dict]:
+    """Known runs, newest activity first; pointers to vanished workspaces are dropped."""
+    out = []
+    try:
+        for p in runs_dir().glob("*.json"):
+            try:
+                r = json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not Path(r.get("ws", "")).exists():
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+                continue
+            out.append(r)
+    except OSError:
+        pass
+    return sorted(out, key=lambda r: -float(r.get("last", 0)))
+
+
+def latest_run_ws(here: Path | None) -> Path | None:
+    """The pane's default: the workspace with the newest journal activity on this machine, `here` on ties."""
+    if os.environ.get("ORCHESTRATE_WS"):
+        return here
+    here_last = 0.0
+    if here and (here / JOURNAL).exists():
+        here_last = (here / JOURNAL).stat().st_mtime
+        key = sha(str(here.resolve()))[:16]
+        if not (runs_dir() / f"{key}.json").exists():   # backfill: a run journaled before the registry existed
+            touch_registry(here, last_line(here / JOURNAL).get("run", ""))
+            try:
+                os.utime(runs_dir() / f"{key}.json", (here_last, here_last))
+                (runs_dir() / f"{key}.json").write_text(json.dumps({"ws": str(here.resolve()), "run": last_line(here / JOURNAL).get("run", ""),
+                                                                    "repo": here.resolve().parent.name, "last": here_last}), encoding="utf-8")
+            except OSError:
+                pass
+    best = None
+    for r in registry_runs():
+        if here and Path(r["ws"]).resolve() == here.resolve():
+            continue
+        if float(r.get("last", 0)) > here_last + 1 and (best is None or r["last"] > best["last"]):
+            best = r
+    return Path(best["ws"]) if best else here
+
+
+def workspace_or_none() -> Path | None:
+    try:
+        return workspace()
+    except SystemExit:
+        return None
+
+
 def workspace() -> Path:
     env = os.environ.get("ORCHESTRATE_WS")
     if env:
@@ -265,6 +333,7 @@ def append_event(ws: Path, actor: str = "controller", **fields: object) -> dict:
         env["hash"] = chain_hash(env["prev"], env)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(env, ensure_ascii=False) + "\n")
+    touch_registry(ws, run_id)
     return env
 
 
@@ -837,7 +906,7 @@ def load(ws: Path, journal_only: bool = False) -> State:
                 s.commits, s.report = str(ev.get("commits", "")), str(ev.get("report", ""))
                 s.reported = str(ev.get("reported", ""))
                 if s.observed:
-                    run.observed[role_tier(s.role)] = s.observed
+                    run.observed[s.role if s.role in run.models else role_tier(s.role)] = s.observed
                     if s.model and s.observed != s.model:
                         run.drift.append(f"task {s.task} {s.agent}: requested {s.model}, observed {s.observed}")
         elif kind == "review":
@@ -1598,6 +1667,7 @@ def cmd_watch(ws: Path) -> None:
     view = View(S=Style(not os.environ.get("NO_COLOR")))
     offset = 0
     reloaded_at = 0.0
+    others: list[dict] = []   # other registered runs (for `n` and the "newer run" hint)
     carried = os.environ.pop("BOARD_VIEW", "")  # state carried across a reload (r key / script update)
     if carried:
         try:
@@ -1628,6 +1698,10 @@ def cmd_watch(ws: Path) -> None:
                                                "attention": view.attention_only, "offset": offset, "reloaded": time.time()})
         os.execv(sys.executable, [sys.executable, str(script), "watch"])
 
+    def switch(to: Path, reason: str) -> None:
+        os.environ["ORCHESTRATE_WS"] = str(to)
+        reload(reason)
+
     out.write("\033[?1049h\033[?25l")  # alt screen, hide cursor
     out.flush()
     try:
@@ -1650,8 +1724,14 @@ def cmd_watch(ws: Path) -> None:
             if sig != last_sig or tick % 4 == 0:  # on change, plus every ~2s for the timers
                 if last_sig is not None and sig != last_sig:
                     updated_at = time.time()
-                rows, anchors = build_rows(load(ws), cols, view)
+                st_now = load(ws)
+                rows, anchors = build_rows(st_now, cols, view)
                 last_sig = sig
+                others = [r for r in registry_runs() if Path(r["ws"]).resolve() != ws.resolve()]
+                mine = (ws / JOURNAL).stat().st_mtime if (ws / JOURNAL).exists() else 0.0
+                newer = [r for r in others if float(r.get("last", 0)) > mine and time.time() - float(r.get("last", 0)) < 30]
+                if newer and st_now.run.finish and not os.environ.get("BOARD_PINNED"):
+                    switch(Path(newer[0]["ws"]), f"following {newer[0]['repo']}")  # this run is over; another one is live
             body = max(1, lines - 1)
             offset = max(0, min(offset, max(0, len(rows) - body)))
             frame = ["\033[H"]
@@ -1668,9 +1748,11 @@ def cmd_watch(ws: Path) -> None:
             elif now - updated_at < 3:
                 spin = SPIN_FRAMES_ASCII if view.S.ascii else SPIN_FRAMES
                 status = spin[tick % len(spin)] + " " + f"updated {dt.datetime.fromtimestamp(updated_at).strftime('%H:%M:%S')}"
+            live = [r for r in others if time.time() - float(r.get("last", 0)) < 30]
             hint = (f"q quit  {dot}  j/k focus  {dot}  enter card  {dot}  " +
                     ("e contract" if view.expanded else "e expand") + f"  {dot}  " +
                     ("a all" if view.attention_only else "a attention") + f"  {dot}  r reload" +
+                    (f"  {dot}  n next run" + (f" ({live[0]['repo']} is live)" if live else f" ({len(others)} more)") if others else "") +
                     (f"  {dot}  +{below} below" if below > 0 else ""))
             left = (" " * MARGIN + (view.S.fg(OK) if status else "") + status + RESET) if status else ""
             frame.append(left + DIM + " " * max(1, cols - dw(hint) - dw(status) - 2 * MARGIN) + hint + RESET + "\033[K")
@@ -1710,6 +1792,8 @@ def cmd_watch(ws: Path) -> None:
                     view.attention_only, last_sig = not view.attention_only, None
                 elif key == "r":
                     reload("r")
+                elif key == "n" and others:
+                    switch(Path(others[0]["ws"]), f"→ {others[0]['repo']}")
     finally:
         restore()
 
@@ -2557,7 +2641,8 @@ def build_parser() -> argparse.ArgumentParser:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
     sub = ap.add_subparsers(dest="cmd")
-    sub.add_parser("watch")
+    p = sub.add_parser("watch"); p.add_argument("--here", action="store_true", help="this repo's run only — never follow another active run")
+    sub.add_parser("runs", help="every run this machine knows about, newest activity first")
     p = sub.add_parser("show"); p.add_argument("--no-color", action="store_true")
     p.add_argument("-x", "--expanded", action="store_true", help="every card's lineage: agents, gates, evidence, decisions, action")
     p.add_argument("--attention", action="store_true", help="only cards that need action")
@@ -2657,13 +2742,30 @@ def main(argv: list[str]) -> int:
         args.spec = tail
     if args.selftest:
         return selftest()
-    ws = workspace()
     cmd = args.cmd
-    if cmd is None:
-        if sys.stdout.isatty():
-            cmd_watch(ws)
+    if cmd in (None, "watch", "runs"):
+        # The pane follows the machine's most recently active run (any repo) unless pinned with --here.
+        here = workspace_or_none()
+        pinned = bool(getattr(args, "here", False))
+        if pinned:
+            os.environ["BOARD_PINNED"] = "1"
+        ws_ = here if pinned else latest_run_ws(here)
+        if cmd == "runs":
+            rows_ = []
+            for r in registry_runs():
+                age = fmt_dur(time.time() - float(r.get("last", 0)))
+                rows_.append([r.get("repo", "?"), str(r.get("run", ""))[:22], f"{age} ago", "← here" if here and Path(r["ws"]).resolve() == here.resolve() else "", r["ws"]])
+            print(table(["repo", "run", "last activity", "", "workspace"], rows_) if rows_ else "board: no runs registered yet")
             return 0
-        cmd, args.no_color, args.expanded, args.attention, args.json = "show", True, False, False, False
+        if ws_ is None:
+            sys.exit("board: not inside a git repository and no run is registered yet")
+        if cmd is None and not sys.stdout.isatty():
+            ws, cmd, args.no_color, args.expanded, args.attention, args.json = workspace(), "show", True, False, False, False
+        else:
+            cmd_watch(ws_)
+            return 0
+    else:
+        ws = workspace()
     if cmd == "watch":
         cmd_watch(ws)
     elif cmd == "show":
@@ -2999,9 +3101,11 @@ def selftest() -> int:
 
     cwd = os.getcwd()
     env_ws = os.environ.pop("ORCHESTRATE_WS", None)
+    env_home = os.environ.get("ORCHESTRATE_HOME")
     saved_env = {k: os.environ.get(k) for k in ("COLORTERM", "TERM", "NO_COLOR", "BOARD_ASCII")}
     os.environ["COLORTERM"] = "truecolor"
     tmp = tempfile.mkdtemp(prefix="board-selftest-")
+    os.environ["ORCHESTRATE_HOME"] = str(Path(tmp) / "home")   # never touch the user's real registry
     try:
         os.chdir(tmp)
         subprocess.run(["git", "init", "-q", "-b", "main"], check=True)
@@ -3345,6 +3449,25 @@ def selftest() -> int:
         assert "(you: elsewhere)" in run("show", "--no-color"), "viewer's branch is named when it differs from the run's"
         subprocess.run(["git", "checkout", "-q", "main"], check=True)
 
+        # --- the pane follows the active run: registry, latest-run policy, runs listing ---------------------------
+        regs = registry_runs()
+        assert regs and Path(regs[0]["ws"]).resolve() == ws.resolve() and regs[0]["repo"] == Path(tmp).name, regs
+        elsewhere = Path(tmp) / "elsewhere"
+        elsewhere.mkdir()
+        assert latest_run_ws(elsewhere / ".orchestrate").resolve() == ws.resolve(), "a repo with no run follows the live one"
+        assert latest_run_ws(ws).resolve() == ws.resolve()
+        assert Path(tmp).name in run("runs") and "← here" in run("runs")
+        os.environ["ORCHESTRATE_WS"] = str(ws)
+        assert latest_run_ws(elsewhere).resolve() == elsewhere.resolve(), "an explicit ORCHESTRATE_WS is never overridden"
+        os.environ.pop("ORCHESTRATE_WS")
+        # observed model keyed by the NAMED role when the models map has it
+        run("set", "models=worker=sonnet,integrator=opus")
+        run("plan", "approved")
+        run("dispatch", "4", "--agent", "task4-int", "--model", "opus", "--role", "integrator")
+        run("return", "4", "--agent", "task4-int", "--status", "DONE", "--observed-model", "opus")
+        st = load(ws)
+        assert st.run.observed.get("integrator") == "opus" and not any("task4-int" in d for d in st.run.drift), (st.run.observed, st.run.drift)
+
         # --- an older repo: a pre-journal workspace is detected, refused by bare init, adopted by --resume ----
         shutil.rmtree(ws)
         ws.mkdir()
@@ -3375,6 +3498,10 @@ def selftest() -> int:
         os.chdir(cwd)
         if env_ws is not None:
             os.environ["ORCHESTRATE_WS"] = env_ws
+        if env_home is None:
+            os.environ.pop("ORCHESTRATE_HOME", None)
+        else:
+            os.environ["ORCHESTRATE_HOME"] = env_home
         for k, v in saved_env.items():
             if v is None:
                 os.environ.pop(k, None)

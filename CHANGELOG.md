@@ -10,6 +10,20 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.18.1] — 2026-09-16
+
+### Added
+- **The pane follows the active run.** Every journal write touches a pointer under
+  `~/.orchestrate/runs/` (`ORCHESTRATE_HOME` relocates it); a bare `board` opens the workspace
+  with the newest activity on the machine — whichever repo it lives in — and a finished run hands
+  the pane to a live one on its own. `n` cycles between known runs (the footer names the live
+  one), `board watch --here` pins the pane to its own repo, `board runs` lists everything the
+  machine knows. Journal writes still resolve strictly from the cwd — only the pane follows.
+
+### Fixed
+- Observed models are keyed by the named role when the models map names it (`integrator=grok-4.6`
+  is no longer reported as worker drift).
+
 ## [1.18.0] — 2026-09-16
 
 ### Added

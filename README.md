@@ -128,6 +128,34 @@ live-verified against v0.28.0; end-to-end smoke run pending.
 - **No duplicate workers on overload**: resume or nudge the existing worker.
 - **Branch and loop rails stay active**: explicit consent, cycle caps, kill switch, and open-work cap.
 
+## The journal and the board
+
+Every run has a spine: `.orchestrate/journal.jsonl`, an append-only, hash-chained record written
+only by the controller at the steps it already performs — kickoff, flight-plan approval, each
+dispatch and typed return, each review gate, each machine check, each escalation and decision,
+the final gate. Everything else is derived from it and the disk: `run.md`'s resolved block, the
+flight plan, the roster, the reconciliation check, the resume packet. A worker saying "done" is a
+proposal; the gate is the transition.
+
+`board` is the view — a CLI-agnostic terminal kanban you open in a pane of your own (any host,
+stdlib python3): todo · in progress · review · done · blocked, or lanes you declare; each card with
+its agent, model, elapsed time, gate verdicts and check badges (`tests ok 12s · lint fail`); an
+attention strip for what needs you; a header with models (drift marked), budget, checks and the
+plan state.
+
+```bash
+board                                   # live board in your pane · e expand · a attention-only · r reload · q
+board plan                              # the flight plan, priced from past receipts
+board exec 3 --name tests -- npm test   # a check through the journal: exit + duration on the card
+board check --replay                    # reconciliation: chain, gates, receipts, journal vs disk
+board resume                            # the handoff's state layer, with a receipt and resume-by-id lines
+board postmortem                        # per-tier evidence for routing, recommend-only
+```
+
+`install.sh` puts `board` on your PATH; every workspace also carries a zero-install copy. Existing
+`.orchestrate/` folders from older versions are adopted (`board init … --resume`), never restarted.
+Command reference: [docs/usage.md](docs/usage.md#the-journal-flight-plan--board--resume).
+
 ## Runtime resources
 
 ```text

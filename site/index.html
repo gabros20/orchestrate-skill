@@ -367,7 +367,7 @@
 
 <section id="run">
   <h2>How a run works</h2>
-  <p>Every strategy shares the same six-step spine.</p>
+  <p>Every strategy shares the same spine — and every step of it is on the record.</p>
   <div class="steps">
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-file-input"/></svg>invoke</b><span>You point it at a plan file, or just describe the task. Every flag is optional.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-gauge"/></svg>triage</b><span><b>Triage</b> measures the task — size, independence, whether success is checkable — then picks a run shape and says why.</span></div>
@@ -375,6 +375,7 @@
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-bot"/></svg>dispatch</b><span>The controller writes a brief and sends a fresh subagent to do exactly that task, on an explicitly chosen model.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-shield-check"/></svg>gate</b><span><b>Gates</b> review each result — first against the brief, then for quality. Failures loop back until clean.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-scroll-text"/></svg>ledger</b><span>Each finished task becomes one line in the <b>ledger</b>, <code>progress.md</code>. A resumed run trusts the ledger, not memory.</span></div>
+    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-receipt"/></svg>journal&nbsp;+&nbsp;board</b><span>Every step above is one line in a hash-chained <b>journal</b>, written only by the controller. <code>board</code> renders it as a live kanban in a pane you open — cards with agents, gates and test checks (<code>tests ok 12s</code>), an attention strip, a priced flight plan, a resume receipt. Any host, stdlib python3; older workspaces are adopted, not restarted.</span></div>
   </div>
 </section>
 

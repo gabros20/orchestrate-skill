@@ -67,6 +67,12 @@ head -5 "${CODEX_HOME:-$HOME/.codex}/skills/orchestrate/SKILL.md"
 
 It must contain `name: orchestrate` and a valid `description`.
 
+The installer also puts the board on your PATH; verify it in one line:
+
+```bash
+board --selftest        # replays a whole run in a temp repo: "board: selftest OK"
+```
+
 ## Update
 
 ```bash
@@ -77,6 +83,12 @@ git pull --ff-only
 
 Or rerun the `npx skills add` command if installed through skills.sh. The transactional installer
 stages the new runtime first and restores the previous installation if replacement fails.
+
+Repos with an existing `.orchestrate/` need no hand-migration: the skill's `scripts/workspace`
+refreshes the zero-install `.orchestrate/board`, pre-v2 journals migrate on first read, and a
+workspace from before the journal existed is adopted with `board init PLAN --resume …` (ledger and
+reports kept) — `board check` tells the agent which case it is in. See
+[usage.md → Upgrading](usage.md#upgrading-repos-that-already-have-an-older-orchestrate).
 
 ## Uninstall
 

@@ -77,6 +77,15 @@ just a few moments that need real judgment.
 
 ## Scenario recipes
 
+### Watch the run, and put the tests on the board
+
+```bash
+board                                                   # in a second pane, inside the repo (any host)
+board exec 3 --name tests -- npm test                   # exit + duration land on card 3; a failure blocks `board done 3`
+board init plan.md --lanes todo,implement,verify,review,integrate,done,blocked --strategy parallel …   # stages as lanes
+board resume                                            # hand off: state, receipts, resume-by-id per open lane
+```
+
 Copy-paste commands for specific situations that don't map to a saved alias.
 
 **Panel of experts debating a question**

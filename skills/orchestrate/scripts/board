@@ -108,8 +108,8 @@ ENGINES = {
     "codex": {"argv": ["codex", "exec", "--cd", "{repo}", "-m", "{model}", "-c", "model_reasoning_effort={effort}",
                        "--sandbox", "workspace-write", "--json", "-o", "{out}", "-"], "prompt": "stdin", "session": "stream",
               "receipt": "codex-log"},
-    "claude": {"argv": ["claude", "-p", "--bare", "--session-id", "{session}", "--model", "{model}", "--effort", "{effort}",
-                        "--output-format", "stream-json", "--permission-mode", "acceptEdits"], "prompt": "stdin",
+    "claude": {"argv": ["claude", "-p", "--session-id", "{session}", "--model", "{model}", "--effort", "{effort}",
+                        "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"], "prompt": "stdin",
                "session": "pin", "receipt": "claude-log"},
     "opencode": {"argv": ["opencode", "run", "-f", "{spec}", "--model", "{model}", "--variant", "{effort}", "--format", "json",
                           "Execute the attached brief."], "prompt": "flag", "session": "none", "receipt": "none"},
@@ -127,7 +127,7 @@ ENGINES = {
 # Per-engine launch previews for the flight plan (pre-configured from the record; slugs stay the engine file's job).
 LAUNCH_CMD = {
     "codex": "codex exec --cd <repo> -m {model} -c model_reasoning_effort={effort} --sandbox workspace-write --worktree --json -o out.md - < spec.md",
-    "claude": "claude -p --bare --model {model} --effort {effort} --max-budget-usd <cap> --output-format stream-json \"$(cat spec.md)\"",
+    "claude": "claude -p --model {model} --effort {effort} --max-budget-usd <cap> --output-format stream-json --verbose \"$(cat spec.md)\"",
     "grok": "grok --cwd <repo> -m {model} --reasoning-effort {effort} -s $(uuidgen) --prompt-file spec.md --output-format json",
     "opencode": "opencode run -f spec.md --model {model} --variant {effort} --format json",
     "hermes": "hermes -z \"$(cat spec.md)\" --model {model} --usage-file usage.json --worktree --ignore-rules",
@@ -1210,6 +1210,9 @@ def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
             if x.exit_code == 125:
                 out.append(("x", t, f"lane {x.agent} never started — dependency task {', '.join(x.after) or '?'} cannot land; "
                             f"board return {t.id} --agent {x.agent} --status BLOCKED --msg \"dependency failed\", fix it, relaunch"))
+            elif x.exit_code == 0 and not (st.ws / f"task-{t.id}-report.md").exists() and not t.report:
+                out.append(("!", t, f"lane {x.agent} exited rc=0 but no task-{t.id}-report.md here — a worktree lane writes a RELATIVE report path "
+                            f"into its own cwd (observed live); look there, then board return --report <path>; brief report paths must be absolute"))
             else:
                 out.append(("!" if x.exit_code == 0 else "x", t, f"lane {x.agent} exited rc={x.exit_code} with no return — read the report, then board return"))
         elif s == "in_progress" and queued_after(st, t):
@@ -3568,7 +3571,7 @@ def selftest() -> int:
             run("done", "1", "--msg", "round two: landed")                                  # task 1 landed → the gate opens at once
             out = run("launch", "3", "--agent", "task3-after", "--engine", "grok", "--model", "grok-4.6", "--after", "1", "--fg", "--", "plan.md")
             assert "finished rc=0" in out and load(ws).stint_of("task3-after").after == ["1"], out
-            assert any("exited rc=0 with no return" in why for _, _, why in attention(st, time.time()))
+            assert any("exited rc=0 but no task-3-report.md" in why for _, _, why in attention(st, time.time())), "the worktree-report hint"
             assert "export ORCHESTRATE_WS=" in (ws / load(ws).stint_of("task3-after").cmd_file).read_text(), "the lane's env carries the run"
             # a dependency that cannot land: the waiter is released with exit 3; a gated lane exits 125 and NEVER starts its engine
             run("blocked", "2", "--msg", "owner: controller · plan wrong")

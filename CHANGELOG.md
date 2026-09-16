@@ -36,6 +36,12 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, 
   worktree journals to the right run. Gate exits (124/125) never fetch a receipt.
 - `board exec` keeps one log per run (`raw/check-taskN-<name>-<seq>.log`); `wait` re-reads the
   journal only when the workspace changes; a launched Claude lane owes a receipt like any other.
+- **Claude lane template live-verified and fixed**: `-p --output-format stream-json` requires
+  `--verbose` (exit 1 otherwise), and `--bare` skips the subscription login ("Not logged in" as a
+  one-turn `result`) — `board launch` now passes `--verbose` and never `--bare` (CI with an API
+  key adds `--extra='--bare'`). Codex and Claude templates are marked **live** in the engine map;
+  the other six stay `dry-run` until a lane proves them. Attention names the worktree trap: a
+  lane that exits 0 with no report in the workspace wrote a relative report path into its cwd.
 - Priming anatomy: hard prohibitions go under **Scope → Must NOT, IN CAPS**; stop conditions say
   when to return. Parallel: **wait late, not early**. Monitoring: the controller's reliable wait
   is a blocking `board wait --task N --timeout 0`, streams are a convenience. Engine map: a

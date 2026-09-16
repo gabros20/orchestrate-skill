@@ -24,7 +24,8 @@ map); each item generalizes to any subprocess engine.
    renders the engine's argv from one table, pins or captures the session id, journals the
    dispatch (session, log, wrapper, pid), starts the lane detached, and on exit journals `exit`
    (rc) and `receipt` (tokens · calls · cost, fetched per engine). `--dry-run` prints the wrapper
-   to inspect; `--fg` blocks. A hand-written wrapper is still fine (`board dispatch --cmd-file`)
+   to inspect; `--fg` blocks; `--after N` makes the wrapper wait for task N's work before the engine
+   starts — a dependent lane that is not running cannot burn tokens waiting. A hand-written wrapper is still fine (`board dispatch --cmd-file`)
    — the point is that a background shell can silently drop redirects, and a lane that prints
    "Reading prompt from stdin…" into the wrong file is indistinguishable from a hung one.
 3. **Prompt from a file** (`- < spec.md`, `--prompt-file`, `-f`, `@spec.md`); positional prompts +

@@ -49,6 +49,8 @@ node, a deliberate cost posture) beneath the printed tree — never retype the t
    runs in `.orchestrate/archive/` (`tokens est 180k–420k (p50–p90 of 12 receipts, 3 past runs)`);
    with no receipts the line says so and you state a range, never a precision you don't have ·
    `lanes` — only when declared (`--lanes …`), the board's projected lanes ·
+   `mail` — on parallel / team / hierarchical / workflow runs: checkpoint delivery, `board peers`
+   for ownership, asks rendezvous via `board wait` — the latency is stated, never implied ·
    `board` — `open a pane and run  board  (or .orchestrate/board)` — the live kanban the user
    watches; printed every run so nothing has to be remembered ·
    `tweak` — the numbered keys.

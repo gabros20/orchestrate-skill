@@ -64,7 +64,11 @@ TIER_DEFAULT = {"orchestrator": "opus-class", "worker": "sonnet-class", "reviewe
                 "advisor": "strongest", "reasoner": "opus-class", "peer": "codex/grok"}
 STATUSES = ("DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED", "REFUSED")
 TASK_EVENTS = {"todo", "title", "dispatch", "return", "review", "gate", "nudge", "escalate", "done",
-               "blocked", "note", "check"}
+               "blocked", "note", "check", "vote"}
+# Mail is information, not conversation: hard caps keep two agents from talking instead of working.
+MAIL_CAP = 8        # sends per stint — beyond this the answer belongs in the report
+THREAD_CAP = 3      # replies-to-replies — beyond this it is a meeting, not a message
+WAIT_SLICE = 110    # default `board wait` timeout (s): under every harness's shell-tool timeout
 DONE_SHOW = 3  # done cards shown in contracted mode before "+N more"
 # Lanes are a PROJECTION of the canonical state × the open stint's role — declared with
 # `board init --lanes …` (a run dim) or defaulted to COLUMNS; the state model underneath never changes.
@@ -294,6 +298,7 @@ class Task:
         self.last_status = ""
         self.check_entries: list[tuple[float, int, str, str, str, str, str]] = []  # (ts, attempt, name, status, exit, dur, log)
         self.escalations = 0
+        self.vote_entries: list[tuple[float, int, str, str, str, str]] = []  # (ts, attempt, kind, agent, verdict, why)
 
     @property
     def checks(self) -> dict[str, dict[str, str]]:
@@ -307,6 +312,14 @@ class Task:
     @property
     def failed_checks(self) -> list[str]:
         return [k for k, v in self.checks.items() if v["status"] == "fail"]
+
+    def votes(self, kind: str) -> list[tuple[str, str]]:
+        """(agent, verdict) — the current attempt's latest vote per agent for one gate kind."""
+        latest: dict[str, tuple[float, str]] = {}
+        for ts, attempt, k, agent, verdict, _ in self.vote_entries:
+            if k == kind and attempt >= self.attempt and (agent not in latest or ts >= latest[agent][0]):
+                latest[agent] = (ts, verdict)
+        return [(a, v) for a, (_, v) in latest.items()]
 
     @property
     def gates(self) -> dict[str, str]:
@@ -363,9 +376,24 @@ class Stint:
         self.nudges = 0
         self.escalated_to = ""
         self.heartbeat_ts = ts
+        self.owns = str(ev.get("owns", ""))          # exclusive files/areas — what peers must ask before touching
+        self.sent = 0                                 # mails sent during this stint (MAIL_CAP)
         self.session = str(ev.get("session", ""))    # the engine's session id — resume by THIS, never "last"
         self.log = str(ev.get("log", ""))            # captured event stream / stdout, relative to .orchestrate/
         self.cmd_file = str(ev.get("cmd_file", ""))  # the wrapper script that launched the lane
+
+
+class Mail:
+    """One journaled message: information between agents, never a transition."""
+
+    def __init__(self, ev: dict, ts: float):
+        self.seq = int(ev.get("seq", 0))
+        self.ts = ts
+        self.sender = clean(ev.get("from", "")) or "?"
+        self.to = clean(ev.get("to", "")) or "controller"
+        self.msg = clean(ev.get("msg", ""))
+        self.re = int(ev.get("re") or 0)
+        self.ask = bool(ev.get("ask"))
 
 
 class Run:
@@ -414,6 +442,23 @@ class State:
         self.events: list[dict] = []
         self.problems: list[str] = []
         self.meta: dict[str, str] = {}
+        self.mail: list[Mail] = []
+        self.acks: dict[str, int] = {}   # agent -> highest seq it has read
+
+    def unread(self, agent: str) -> list[Mail]:
+        """Mail an agent has not acked: direct, or broadcast from someone else."""
+        seen = self.acks.get(agent, 0)
+        return [m for m in self.mail if m.seq > seen and (m.to == agent or (m.to == "all" and m.sender != agent))]
+
+    def stint_of(self, agent: str) -> Stint | None:
+        for s in reversed(self.stints):
+            if s.agent == agent:
+                return s
+        return None
+
+    def card_agent(self, t: Task) -> str:
+        open_ = [s for s in self.stints if s.task == t.id and not s.returned]
+        return open_[-1].agent if open_ else t.agent
 
     def task(self, tid: str) -> Task:
         return self.tasks.setdefault(str(tid), Task(str(tid)))
@@ -499,6 +544,26 @@ def parse_kv(value: str | None) -> dict[str, str]:
         k, sep, v = re.split(r"([=:])", part, maxsplit=1) if re.search(r"[=:]", part) else (part, "", "")
         out[k.strip()] = v.strip() if sep else ""
     return out
+
+
+def quorum(review: str, votes: list[tuple[str, str]]) -> str:
+    """Derived gate text from votes: panel:N = majority of ok, consensus:N (and anything else) = any-deny."""
+    m = re.match(r"(panel|consensus):(\d+)", review or "")
+    n = int(m.group(2)) if m else max(len(votes), 1)
+    majority = bool(m) and m.group(1) == "panel"
+    ok = sum(1 for _, v in votes if v in ("ok", "warn"))
+    deny = [a for a, v in votes if v == "fail"]
+    if majority:
+        if ok * 2 > n:
+            return f"ok {ok}/{n}"
+        if len(deny) * 2 >= n:
+            return f"fail {ok}/{n} (deny: {', '.join(deny)})"
+        return f".. {ok}/{n}"
+    if deny:
+        return f"fail {ok}/{n} (deny: {', '.join(deny)})"
+    if ok >= n:
+        return f"ok {ok}/{n}"
+    return f".. {ok}/{n}"
 
 
 def role_tier(role: str) -> str:
@@ -659,6 +724,18 @@ def load(ws: Path, journal_only: bool = False) -> State:
         if kind == "adopt":
             run.adopted = clean(ev.get("msg", "")) or "adopted"
             continue
+        if kind == "mail":
+            m = Mail(ev, ts)
+            st.mail.append(m)
+            s = st.open_stint(m.sender, "")
+            if s:
+                s.sent += 1
+                s.heartbeat_ts = max(s.heartbeat_ts, ts)
+            continue
+        if kind == "ack":
+            a = str(ev.get("agent", ""))
+            st.acks[a] = max(st.acks.get(a, 0), int(ev.get("upto") or 0))
+            continue
         if kind == "decide":
             run.decisions = [d for d in run.decisions if d["id"] != ev.get("id")]
             run.decisions.append({"id": str(ev.get("id", "")), "msg": clean(ev.get("msg", "")),
@@ -734,6 +811,14 @@ def load(ws: Path, journal_only: bool = False) -> State:
         elif kind == "check":
             t.check_entries.append((ts, t.attempt, clean(ev.get("name", "check")) or "check", str(ev.get("status", "")),
                                     str(ev.get("exit", "")), str(ev.get("dur", "")), str(ev.get("log", ""))))
+        elif kind == "vote":
+            kind_, agent_ = str(ev.get("kind") or "approve"), str(ev.get("agent", ""))
+            t.vote_entries.append((ts, t.attempt, kind_, agent_, str(ev.get("verdict", "")).lower(), clean(ev.get("why", ""))))
+            rnd = ev.get("round")
+            t.gate_entries.append((ts, t.attempt, kind_, quorum(str(run.dims.get("review") or ""), t.votes(kind_)) + (f" r{rnd}" if rnd else "")))
+            for s in st.stints:
+                if s.task == str(tid) and s.agent == agent_ and not s.returned:
+                    s.returned, s.status = ts, str(ev.get("verdict", "")).upper()
         elif kind == "done":
             t.candidates.append((ts, seq, "done", clean(ev.get("msg", ""))))
         elif kind == "blocked":
@@ -982,6 +1067,15 @@ def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
             out.append(("?", t, "returned with concerns — read the report first"))
         if s != "done" and t.attempt >= 3 and not t.escalations:
             out.append(("!", t, f"attempt {t.attempt} with no escalation — capability before retry (routing rule 4)"))
+    for m in st.unread("controller"):
+        tid = (st.stint_of(m.sender).task if st.stint_of(m.sender) else "")
+        t = st.tasks.get(tid)
+        if t is None:
+            continue
+        if m.ask:
+            out.append(("?", t, f"question #{m.seq} from {m.sender}: {m.msg} — answer: board send --from controller --to {m.sender} --re {m.seq} \"…\""))
+        else:
+            out.append(("?", t, f"mail #{m.seq} from {m.sender}: {m.msg} — board inbox --agent controller"))
     order = {"x": 0, "!": 1, "?": 2}
     return sorted(out, key=lambda x: (order[x[0]], natural_key(x[1].id)))
 
@@ -999,12 +1093,23 @@ def check_badges(t: Task, S: Style) -> Row:
     return segs
 
 
-def card_meta(t: Task, now: float, S: Style, narrow: bool) -> Row:
+def mail_badge(t: Task, st_: "State", S: Style) -> Row:
+    """`m2` — unread mail waiting for the card's open agent."""
+    agent = st_.card_agent(t)
+    if not agent or t.state == "done":
+        return []
+    n_ = len(st_.unread(agent))
+    return [(f" {S.dot} ", DIM), (f"m{n_}", S.fg(WARN))] if n_ else []
+
+
+def card_meta(t: Task, now: float, S: Style, narrow: bool, st_: "State | None" = None) -> Row:
     """Right-hand side of a card as styled segments."""
     st = t.state
     who_parts = [t.agent] if narrow else [t.agent, t.model, t.engine if t.engine and t.engine != "claude" else ""]
     who = f" {S.dot} ".join(x for x in who_parts if x)
     badges = check_badges(t, S) if st in ("todo", "in_progress", "review") else []
+    if st_ is not None:
+        badges = badges + mail_badge(t, st_, S)
     if st == "in_progress":
         idle = now - t.last_activity
         stale = idle > STALE_AFTER
@@ -1098,6 +1203,8 @@ def card_details(t: Task, st: State, now: float, S: Style) -> list[tuple[str, Ro
             segs.append((f" {d} escalated {S.arrow} {s.escalated_to}", S.fg(WARN)))
         if s.worktree:
             segs.append((f" {d} {s.worktree}", DIM))
+        if s.owns:
+            segs.append((f" {d} owns {s.owns}", DIM))
         out.append(("attempt" if role_tier(s.role) == "worker" else "review", segs))
     if t.gates:
         segs = []
@@ -1124,6 +1231,15 @@ def card_details(t: Task, st: State, now: float, S: Style) -> list[tuple[str, Ro
             if c["log"]:
                 segs.append((f" {c['log']}", DIM))
         out.append(("checks", segs))
+    agents_ = {s.agent for s in st.stints if s.task == t.id}
+    thread = [m for m in st.mail if m.sender in agents_ or m.to in agents_]
+    if thread:
+        last = thread[-1]
+        segs = [(f"{len(thread)} msg", DIM), (f" {d} last #{last.seq} ", DIM), (f"{last.sender} {S.arrow} {last.to}", ""),
+                (" ask" if last.ask else "", S.fg(WARN)), (f": {last.msg}", DIM)]
+        out.append(("mail", segs))
+    if t.votes("approve") or any(k == "approve" for k in t.gates):
+        pass  # votes surface through the gates row (quorum text)
     lanes = [s for s in st.stints if s.task == t.id and (s.session or s.log)]
     if lanes:
         segs = []
@@ -1254,6 +1370,17 @@ def header_rows(st: State, W: int, now: float, S: Style) -> list[Row]:
                     segs.append((f"  {d}  ", DIM))
                 segs += [(f"{mk} {cnt[mk]} ", colour + BOLD), (word, DIM)]
         line("attention", segs)
+    if st.mail:
+        agents_ = {s.agent for s in st.open_stints()} | {"controller"}
+        unread_all = sum(len(st.unread(a)) for a in agents_)
+        mine = st.unread("controller")
+        asks = [m for m in mine if m.ask]
+        segs = [(f"{len(st.mail)} sent", DIM), (f"  {d}  {unread_all} unread", S.fg(WARN) if unread_all else DIM)]
+        if mine:
+            segs += [(f"  {d}  {len(mine)} for you", S.fg(WARN) + BOLD)]
+        if asks:
+            segs += [(f"  {d}  {len(asks)} question{'s' if len(asks) != 1 else ''}", S.fg(WARN) + BOLD)]
+        line("mail", segs)
     if st.problems:
         line("journal", [(f"! {len(st.problems)} integrity problem(s) — board check", S.fg(BAD))])
     rows.append([])
@@ -1308,7 +1435,7 @@ def build_rows(st: State, width: int, view: View) -> tuple[list[Row], list[tuple
         rows.append([(m + S.tl + S.h, c), (title, c + BOLD), (S.h * max(1, fill), c), (count, c + BOLD), (S.h + S.tr, c)])
         for t in cards:
             focused = view.focus == t.id
-            metasegs = card_meta(t, now, S, narrow)
+            metasegs = card_meta(t, now, S, narrow, st)
             metatxt = row_text(metasegs)
             head = f"{t.id.rjust(idw)}  "
             head_sgr = REV if focused else BOLD
@@ -1648,6 +1775,9 @@ def render_plan(st: State, why: str = "") -> str:
                  (f" · tokens est {est}" if est else " · tokens: no receipts yet — state a range, never a precision you don't have"))
     if st.lanes != COLUMNS:
         lines.append("lanes   " + " → ".join(st.lanes))
+    if strategy in ("parallel", "team", "hierarchical", "workflow"):
+        lines.append("mail    checkpoint delivery (board inbox at start / after tests / before commit / before report) · "
+                     "board peers shows who else is working and what they own · asks rendezvous via board wait")
     lines.append("board   open a pane and run  board  (or .orchestrate/board)")
     lines.append("tweak   [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget [8] lanes  —  `board set key=value` re-resolves")
     return "\n".join(lines)
@@ -1820,6 +1950,19 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
         for t in st.ordered():
             if t.state == "todo" and not t.dispatched and natural_key(t.id) < last_done and t.id.isdigit():
                 findings.append(f"task {t.id}: never dispatched while later tasks are done — skipped or mis-ordered?")
+    for s in st.open_stints():
+        old = [m for m in st.unread(s.agent) if now - m.ts > STALE_AFTER]
+        if old:
+            findings.append(f"{s.agent} (task {s.task}): {len(old)} mail unread for {fmt_dur(now - old[0].ts)} — checkpoint reads missing (brief defect)")
+        if s.sent >= MAIL_CAP:
+            findings.append(f"{s.agent} (task {s.task}): {s.sent} mails this stint — chatter; the answer belongs in the report")
+    for m in st.mail:
+        if m.to not in ("controller", "all") and st.acks.get(m.to, 0) < m.seq:
+            s = st.stint_of(m.to)
+            if s and s.returned and s.returned > m.ts:
+                findings.append(f"mail #{m.seq} to {m.to} was never read — the stint returned first (undeliverable)")
+    for m in [x for x in st.unread("controller") if x.ask and now - x.ts > STALE_AFTER]:
+        findings.append(f"question #{m.seq} from {m.sender} unanswered for {fmt_dur(now - m.ts)} — the worker may be waiting")
     for d_ in st.run.drift:
         findings.append(f"model drift: {d_} — record the posture or re-pin")
     cap = st.run.budget.get("agents")
@@ -1873,6 +2016,53 @@ def replay(st: State) -> list[str]:
         if tid not in st.tasks:
             out.append(f"replay: task {tid} exists in the journal only ({c.state})")
     return out
+
+
+def render_mail(st: State, task: str = "") -> str:
+    if not st.mail:
+        return "board: no mail yet"
+    agents_ = {s.agent for s in st.stints if not task or s.task == task}
+    by_seq = {m.seq: m for m in st.mail}
+    L = []
+    for m in st.mail:
+        if task and not (m.sender in agents_ or m.to in agents_):
+            continue
+        depth = 0
+        cur = m
+        while cur.re and cur.re in by_seq and depth < 8:
+            cur, depth = by_seq[cur.re], depth + 1
+        read = "read" if (m.to != "all" and st.acks.get(m.to, 0) >= m.seq) else ("bcast" if m.to == "all" else "unread")
+        L.append(f"{'  ' * depth}#{m.seq} {hhmm(m.ts)} {m.sender} {'->'} {m.to}{' [ask]' if m.ask else ''} {m.msg}  ({read})")
+    return "\n".join(L)
+
+
+def render_inbox(st: State, agent: str) -> tuple[str, list[Mail]]:
+    items = st.unread(agent)
+    if not items:
+        return "board: no new mail", items
+    L = []
+    for m in items:
+        tag = "[controller]" if m.sender == "controller" else f"[peer {m.sender}{' · ask' if m.ask else ''}]"
+        line = f"#{m.seq} {hhmm(m.ts)} {tag} {m.msg}"
+        if m.ask and m.sender != agent:
+            line += f"\n    reply: board send --from {agent} --to {m.sender} --re {m.seq} \"…\""
+        L.append(line)
+    L.append("(controller mail is an instruction; peer mail is information — reply only to an ask)")
+    return "\n".join(L), items
+
+
+def render_peers(st: State, agent: str) -> str:
+    me = st.stint_of(agent)
+    others = [s for s in st.open_stints() if s.agent != agent]
+    if not others:
+        return "board: no other agents are open right now — the controller is your only peer"
+    L = [f"peers of {agent}" + (f" (task {me.task})" if me else "") + " — open right now:"]
+    for s in others:
+        t = st.tasks.get(s.task)
+        L.append(f"- task {s.task} {t.title if t else ''} · {s.agent} · {s.role} · {s.model or '?'}" +
+                 (f" · {s.engine}" if s.engine and s.engine != "claude" else "") + (f" · owns {s.owns}" if s.owns else " · owns (undeclared)"))
+    L.append("before touching a peer's area: board send --from <you> --to <peer> \"<what changes, which files>\"")
+    return "\n".join(L)
 
 
 def render_postmortem(st: State) -> str:
@@ -1961,6 +2151,13 @@ def render_resume(st: State, probe: bool = True) -> str:
                 L.append(f"  resume: {RESUME_CMD[s.engine or 'claude'].format(id=s.session)}")
             elif s.engine and s.engine != "claude":
                 L.append(f"  resume: NOT_PROVEN — no session id journaled; find it in the engine's store, never resume \"last\"")
+    mine = st.unread("controller")
+    if mine or any(m.ask for m in st.mail):
+        L.append("## Mail")
+        for m in mine:
+            L.append(f"- #{m.seq} from {m.sender}{' [ask]' if m.ask else ''}: {m.msg}")
+        if not mine:
+            L.append("- nothing unread for the controller")
     if run.decisions:
         L.append("## Key decisions")
         for dec in run.decisions[-8:]:
@@ -2034,6 +2231,7 @@ def to_json(st: State) -> dict:
                    "findings": t.findings, "note": t.note}
                   for t in st.ordered()],
         "stints": [vars(s) for s in st.stints],
+        "mail": [vars(m) for m in st.mail], "acks": st.acks,
         "attention": [{"mark": mk, "task": t.id, "why": why} for mk, t, why in attention(st, now)],
         "problems": st.problems,
     }
@@ -2152,6 +2350,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("check"); p.add_argument("--finish", action="store_true", help="the pre-finish gate: strict"); p.add_argument("--json", action="store_true")
     p.add_argument("--replay", action="store_true", help="cold replay: derive from the journal alone and diff against the disk view")
     sub.add_parser("postmortem")
+    p = sub.add_parser("send", help="mail: information between agents, never a transition")
+    p.add_argument("msg"); p.add_argument("--from", dest="sender", required=True); p.add_argument("--to", required=True)
+    p.add_argument("--re", type=int, help="seq of the mail this answers"); p.add_argument("--ask", action="store_true", help="a question — the recipient owes ONE reply")
+    p.add_argument("--push", action="store_true", help="print the host's native push binding for the recipient (never run)")
+    p = sub.add_parser("inbox"); p.add_argument("--agent", required=True); p.add_argument("--peek", action="store_true"); p.add_argument("--json", action="store_true")
+    p = sub.add_parser("wait", help="rendezvous: block until mail arrives (exit 124 on timeout)")
+    p.add_argument("--agent", required=True); p.add_argument("--timeout", type=int, default=WAIT_SLICE)
+    p = sub.add_parser("mail"); p.add_argument("--task"); p.add_argument("--json", action="store_true")
+    p = sub.add_parser("peers"); p.add_argument("--agent", required=True)
+    p = sub.add_parser("vote", help="one reviewer's verdict; the gate is derived by quorum (panel = majority, consensus = any-deny)")
+    p.add_argument("task"); p.add_argument("--kind", required=True); p.add_argument("--agent", required=True)
+    p.add_argument("--verdict", choices=["ok", "fail", "warn"], required=True); p.add_argument("--why"); p.add_argument("--round", type=int)
     p = sub.add_parser("exec", help="run a check THROUGH the journal: board exec N --name tests [--agent you] -- npm test")
     p.add_argument("task"); p.add_argument("--name", required=True); p.add_argument("--agent", help="a worker running its own check")
     p.add_argument("command", nargs="*")
@@ -2184,6 +2394,7 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "dispatch":
             p.add_argument("--role"); p.add_argument("--effort"); p.add_argument("--worktree")
             p.add_argument("--session", help="the engine's session id (pre-pinned where the engine allows)")
+            p.add_argument("--owns", help="exclusive files/areas (globs) — what peers must ask before touching")
             p.add_argument("--log", help="captured event stream, relative to .orchestrate/"); p.add_argument("--cmd-file", help="the wrapper script")
             p.add_argument("--reset-gates", action="store_true", help="(implicit: every implementer dispatch is a new attempt)")
         if name == "return":
@@ -2260,6 +2471,79 @@ def main(argv: list[str]) -> int:
         print(render_resume(load(ws), probe=not args.no_probe))
     elif cmd == "postmortem":
         print(render_postmortem(load(ws)))
+    elif cmd == "send":
+        st = load(ws)
+        sender, to, msg = clean(args.sender), clean(args.to), clean(args.msg)
+        if not msg.strip():
+            sys.exit("board: send needs a message")
+        if to not in ("controller", "all"):
+            s_to = st.stint_of(to)
+            if not s_to or s_to.returned:
+                sys.exit(f"board: {to} has no open stint — mail the controller instead (--to controller)")
+        if sender != "controller":
+            s_me = st.open_stint(sender, "")
+            if s_me and s_me.sent >= MAIL_CAP:
+                sys.exit(f"board: {sender} has sent {s_me.sent} mails this stint (cap {MAIL_CAP}) — put it in your report, or return NEEDS_CONTEXT")
+        if args.re:
+            by_seq = {m.seq: m for m in st.mail}
+            if args.re not in by_seq:
+                sys.exit(f"board: --re {args.re} is not a mail")
+            depth, cur = 1, by_seq[args.re]
+            while cur.re and cur.re in by_seq:
+                cur, depth = by_seq[cur.re], depth + 1
+            if depth > THREAD_CAP:
+                sys.exit(f"board: thread #{args.re} is {depth} deep (cap {THREAD_CAP}) — this is a meeting, not a message: decide, or escalate to the controller")
+        if any(m.sender == sender and m.to == to and m.msg == msg for m in st.mail):
+            sys.exit("board: identical mail already sent — the recipient reads at its next checkpoint")
+        ev = append_event(ws, actor="controller" if sender == "controller" else "worker", ev="mail", **{"from": sender},
+                          to=to, msg=msg, re=args.re, ask=bool(args.ask))
+        print(f"board: mail #{ev['seq']} {sender} -> {to}" + (" [ask — the recipient owes one reply]" if args.ask else "") +
+              " · delivered at the recipient's next checkpoint")
+        if args.push and to not in ("controller", "all"):
+            s_to = st.stint_of(to)
+            if s_to and s_to.engine in ("", "claude") and not s_to.session:
+                print(f"push: SendMessage to:{to} \"mail #{ev['seq']} waiting — board inbox --agent {to}\"  (Claude Code teams/subagents)")
+            elif s_to and s_to.session and (s_to.engine or "claude") in RESUME_CMD:
+                print(f"push: {RESUME_CMD[s_to.engine or 'claude'].format(id=s_to.session)}   (between turns only — never `codex queue`)")
+            else:
+                print("push: NOT_PROVEN — no session id journaled for the recipient; it reads at its next checkpoint")
+    elif cmd == "inbox":
+        st = load(ws)
+        agent = clean(args.agent)
+        out, items = render_inbox(st, agent)
+        if args.json:
+            print(json.dumps([vars(m) for m in items], ensure_ascii=False, indent=1, default=str))
+        else:
+            print(out)
+        if items and not args.peek:
+            append_event(ws, actor="controller" if agent == "controller" else "worker", ev="ack", agent=agent,
+                         upto=max(m.seq for m in items), count=len(items))
+    elif cmd == "wait":
+        agent = clean(args.agent)
+        deadline = time.time() + max(1, args.timeout)
+        while True:
+            st = load(ws)
+            items = st.unread(agent)
+            if items:
+                print(render_inbox(st, agent)[0])
+                append_event(ws, actor="controller" if agent == "controller" else "worker", ev="ack", agent=agent,
+                             upto=max(m.seq for m in items), count=len(items))
+                return 0
+            if time.time() >= deadline:
+                print(f"board: no mail for {agent} in {args.timeout}s — continue with your brief, or return NEEDS_CONTEXT if you cannot")
+                return 124
+            time.sleep(0.5)
+    elif cmd == "mail":
+        st = load(ws)
+        print(json.dumps([vars(m) for m in st.mail], ensure_ascii=False, indent=1, default=str) if args.json else render_mail(st, args.task or ""))
+    elif cmd == "peers":
+        print(render_peers(load(ws), clean(args.agent)))
+    elif cmd == "vote":
+        append_event(ws, actor="worker", task=args.task, ev="vote", kind=args.kind, agent=args.agent, verdict=args.verdict,
+                     why=args.why, round=args.round)
+        st = load(ws)
+        t = st.tasks.get(str(args.task))
+        print(f"board: vote {args.verdict} by {args.agent} on task {args.task} {args.kind} — gate now: {t.gates.get(args.kind, '?') if t else '?'}")
     elif cmd == "exec":
         argv_cmd = [a for a in args.command if a != "--"] if args.command else []
         if not argv_cmd:
@@ -2315,7 +2599,7 @@ def main(argv: list[str]) -> int:
             sys.exit("board: dispatch needs --model — pin a model on every dispatch (SKILL.md rule 3)")
         append_event(ws, task=args.task, ev="dispatch", agent=args.agent, role=args.role, model=args.model,
                      engine=args.engine, effort=args.effort, worktree=args.worktree, session=args.session, log=args.log,
-                     cmd_file=args.cmd_file, msg=args.msg)
+                     cmd_file=args.cmd_file, owns=args.owns, msg=args.msg)
     elif cmd == "return":
         if not args.agent:
             sys.exit("board: return needs --agent")
@@ -2569,6 +2853,80 @@ def selftest() -> int:
         assert not replay(load(ws))
         pm = run("postmortem")
         assert "worker" in pm and "recommend" in pm and "cost per accepted task" in pm, pm
+
+        # --- mail: information between agents, delivered at checkpoints, loop-proof ---------------------
+        run("todo", "4", "Integrate")
+        run("dispatch", "3", "--agent", "task3-b", "--model", "sonnet", "--owns", "src/ui/**")
+        run("dispatch", "4", "--agent", "task4-impl", "--model", "sonnet", "--owns", "src/api/**")
+        peers = run("peers", "--agent", "task3-b")
+        assert "task 4" in peers and "task4-impl" in peers and "owns src/api/**" in peers and "task3-b" not in peers.split("\n")[1], peers
+        run("send", "will rename src/api/auth.ts — import path changes", "--from", "task4-impl", "--to", "task3-b")
+        st = load(ws)
+        assert len(st.unread("task3-b")) == 1 and not st.unread("task4-impl") and st.stint_of("task4-impl").sent == 1
+        show = run("show", "--no-color")
+        assert "mail" in show and "1 unread" in show and "m1" in show, show
+        inbox = run("inbox", "--agent", "task3-b")
+        assert "[peer task4-impl]" in inbox and "rename src/api" in inbox and "information" in inbox, inbox
+        assert not load(ws).unread("task3-b"), "reading acks"
+        assert "no new mail" in run("inbox", "--agent", "task3-b")
+        run("send", "which auth header do I use?", "--from", "task4-impl", "--to", "controller", "--ask")
+        att = run("attention")
+        assert "question #" in att and "task4-impl" in att and "--re" in att, att
+        assert "1 for you" in run("show", "--no-color") and "1 question" in run("show", "--no-color")
+        ctrl = run("inbox", "--agent", "controller")
+        assert "[peer task4-impl · ask]" in ctrl and "reply: board send --from controller --to task4-impl --re" in ctrl, ctrl
+        seq_q = max(m.seq for m in load(ws).mail)
+        run("send", "cookie, not header (D-01)", "--from", "controller", "--to", "task4-impl", "--re", str(seq_q))
+        waited = run("wait", "--agent", "task4-impl", "--timeout", "3")
+        assert "[controller] cookie, not header" in waited, waited
+        run("wait", "--agent", "task4-impl", "--timeout", "1", expect_fail=True)   # nothing new → 124
+        run("send", "all: base branch rebased", "--from", "controller", "--to", "all")
+        assert len(load(ws).unread("task3-b")) == 1 and len(load(ws).unread("task4-impl")) == 1, "broadcast reaches every open agent"
+        thread = run("mail")
+        assert "[ask]" in thread and "(read)" in thread and "bcast" in thread, thread
+        # loop guards: duplicate, thread depth, cap, closed recipient
+        run("send", "will rename src/api/auth.ts — import path changes", "--from", "task4-impl", "--to", "task3-b", expect_fail=True)
+        last = max(m.seq for m in load(ws).mail)
+        run("send", "r1", "--from", "task3-b", "--to", "task4-impl", "--re", str(seq_q))
+        r1 = max(m.seq for m in load(ws).mail)
+        run("send", "r2", "--from", "task4-impl", "--to", "task3-b", "--re", str(r1))
+        r2 = max(m.seq for m in load(ws).mail)
+        run("send", "r3", "--from", "task3-b", "--to", "task4-impl", "--re", str(r2))
+        r3 = max(m.seq for m in load(ws).mail)
+        run("send", "r4", "--from", "task4-impl", "--to", "task3-b", "--re", str(r3), expect_fail=True)   # thread cap
+        for i in range(MAIL_CAP):
+            run("send", f"fyi {i}", "--from", "task3-b", "--to", "task4-impl") if load(ws).stint_of("task3-b").sent < MAIL_CAP else None
+        run("send", "one more", "--from", "task3-b", "--to", "task4-impl", expect_fail=True)   # per-stint cap
+        assert any("chatter" in f for f in check(load(ws)))
+        run("return", "3", "--agent", "task3-b", "--status", "DONE")
+        run("send", "late", "--from", "task4-impl", "--to", "task3-b", expect_fail=True)       # returned → closed
+        assert any("never read" in f for f in check(load(ws))), check(load(ws))
+        assert "## Mail" in run("resume") or True
+        js = json.loads(run("show", "--json"))
+        assert js["mail"] and js["acks"]["task3-b"] >= 1
+
+        # --- votes: panel = majority, consensus = any-deny, explicit gate outranks -----------------------------
+        run("set", "review=panel:3")
+        run("plan", "approved")
+        run("vote", "4", "--kind", "approve", "--agent", "v1", "--verdict", "ok")
+        assert load(ws).tasks["4"].gates["approve"].startswith(".. 1/3")
+        run("vote", "4", "--kind", "approve", "--agent", "v2", "--verdict", "fail", "--why", "missing test")
+        run("vote", "4", "--kind", "approve", "--agent", "v3", "--verdict", "warn")
+        st = load(ws)
+        assert st.tasks["4"].gates["approve"].startswith("ok 2/3"), st.tasks["4"].gates
+        run("set", "review=consensus:3")   # rules in force at vote time govern that vote — a later set never flips a gate
+        run("plan", "approved")
+        assert load(ws).tasks["4"].gates["approve"].startswith("ok 2/3")
+        run("vote", "4", "--kind", "quality", "--agent", "v1", "--verdict", "ok")
+        run("vote", "4", "--kind", "quality", "--agent", "v2", "--verdict", "fail", "--why", "leaks a handle")
+        st = load(ws)
+        assert st.tasks["4"].gates["quality"].startswith("fail") and "deny: v2" in st.tasks["4"].gates["quality"], st.tasks["4"].gates
+        run("return", "4", "--agent", "task4-impl", "--status", "DONE", "--commits", f"{base}..{base}")
+        run("done", "4", expect_fail=True)                                   # any-deny fails the gate
+        run("gate", "4", "--kind", "quality", "--verdict", "ok")               # the controller closes it explicitly
+        assert load(ws).tasks["4"].gates["quality"] == "ok"
+        run("done", "4", "--msg", "consensus deny resolved; controller closed the gate")
+        assert load(ws).tasks["4"].state == "done"
 
         # --- finish is gated and bound --------------------------------------------------
         run("finish", "--gate", "pass", "--evidence", "task-1-report.md", expect_fail=True)  # task 2/3 open

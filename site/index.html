@@ -375,7 +375,7 @@
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-bot"/></svg>dispatch</b><span>The controller writes a brief and sends a fresh subagent to do exactly that task, on an explicitly chosen model.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-shield-check"/></svg>gate</b><span><b>Gates</b> review each result — first against the brief, then for quality. Failures loop back until clean.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-scroll-text"/></svg>ledger</b><span>Each finished task becomes one line in the <b>ledger</b>, <code>progress.md</code>. A resumed run trusts the ledger, not memory.</span></div>
-    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-receipt"/></svg>journal&nbsp;+&nbsp;board</b><span>Every step above is one line in a hash-chained <b>journal</b>, written only by the controller. <code>board</code> renders it as a live kanban in a pane you open — cards with agents, gates and test checks (<code>tests ok 12s</code>), an attention strip, a priced flight plan, a resume receipt. Any host, stdlib python3; older workspaces are adopted, not restarted.</span></div>
+    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-receipt"/></svg>journal&nbsp;+&nbsp;board</b><span>Every step above is one line in a hash-chained <b>journal</b>, written only by the controller. <code>board</code> renders it as a live kanban in a pane you open — cards with agents, gates and test checks (<code>tests ok 12s</code>), an attention strip, a priced flight plan, a resume receipt. Agents talk through the same journal (<code>board send</code> / <code>inbox</code> / <code>wait</code>) — information and questions, delivered at checkpoints, capped so nobody talks instead of working — and panels vote. Any host, stdlib python3; older workspaces are adopted, not restarted.</span></div>
   </div>
 </section>
 
@@ -537,10 +537,10 @@ accepted progress = validation + durable writeback + committed readback</div>
   <p>Every dispatch carries a short contract matched to its role — a dispatch with no block is a
   defect, not a default:</p>
   <div class="cards">
-    <div class="card"><div class="top"><h3>WORKER<em>&approx;334 tok</em></h3></div>
+    <div class="card"><div class="top"><h3>WORKER<em>&approx;463 tok</em></h3></div>
       <div class="use"><b>Who:</b> implementers, integrators, loop executors.</div>
       <div class="mech">Orient first — reading to understand is work, not waste. Then silence: no narration, no restating the brief. Blockers come back structured, and safety messages are never silenced. Written files follow the same discipline: length matched to what the task needs, no filler sections or boilerplate.</div></div>
-    <div class="card"><div class="top"><h3>REVIEWER<em>&approx;176 tok</em></h3></div>
+    <div class="card"><div class="top"><h3>REVIEWER<em>&approx;221 tok</em></h3></div>
       <div class="use"><b>Who:</b> spec, quality, and panel reviewers.</div>
       <div class="mech"><b>Never self-filters.</b> Every finding goes to a findings file with severity and confidence; inline is just the verdict and counts. Deciding what matters is the controller's job. Delivering that verdict <i>is</i> the completion condition — a finished-but-silent reviewer never finished.</div></div>
     <div class="card"><div class="top"><h3>MINIMAL<em>&approx;19 tok</em></h3></div>

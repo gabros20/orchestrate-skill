@@ -20,8 +20,11 @@ adversarial review debates. Teams are experimental; costs scale ~linearly per te
 
 **Host availability**: Claude Code (experimental flag below) or Antigravity (`invoke_subagent` +
 any-to-any `send_message` approximate the topology — no shared task list, so carry state in
-`.orchestrate/` files). Every other host: degrade to `hierarchical` with file-based handoff and
-say so (`shared-hosts.md`).
+`.orchestrate/` files). Every other host: the **file-mail team** — parallel workers (worktrees,
+`strategy-parallel.md` cards with owned files) plus `board send` / `board inbox` at integration
+points; delivery is at each worker's next checkpoint, never mid-turn (no CLI-agnostic interrupt
+exists), so say "messages: checkpoint delivery" in the flight plan. Degrade to `hierarchical`
+only when the tasks do not actually need to talk (`shared-hosts.md`).
 
 Requires (Claude Code): `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (settings.json `env` or shell).
 Without it, no teammates spawn — fall back to `parallel` or `hierarchical`.
@@ -51,7 +54,11 @@ focused teammates beat five scattered ones. Never assign implementation to read-
   Status goes in TaskUpdate, never as JSON chat messages. Card-shaped task briefs follow the
   priming anatomy and pass `scripts/brief-check` (`shared-token-economy.md`).
 - **Direct messages > broadcast** (broadcast = N messages; use for genuine all-hands only).
-  Message at integration points; don't micromanage mid-task.
+  Message at integration points; don't micromanage mid-task. On file-mail teams the same rules
+  ride on `board send`: dispatch each teammate with `--owns`, tell them the others exist
+  (`board peers --agent <you>` is live), and expect mail ONLY for "I will touch your area" and
+  for questions (`--ask` + `board wait`); the caps (`MAIL_CAP`, `THREAD_CAP`) stop a thread from
+  turning into a meeting — a thread that hits the cap is a decision for you, not for them.
 - **Plan-approval gate for risky work**: spawn with "require plan approval"; the teammate stays
   read-only until you approve its plan — give yourself explicit approval criteria up front.
 - **File conflicts**: teams do NOT worktree-isolate teammates. Partition file ownership in the

@@ -93,6 +93,9 @@ resume by id|references/engine-codex.md,references/engine-grok.md,references/sha
 board gate|references/shared-contracts.md,references/shared-review-gates.md
 board exec|SKILL.md,references/shared-contracts.md,references/shared-monitoring.md,references/shared-review-gates.md,references/strategy-xcli.md
 --lanes|SKILL.md,references/shared-monitoring.md,references/shared-flight-plan.md
+board inbox|SKILL.md,references/shared-token-economy.md,references/shared-contracts.md,references/shared-monitoring.md,references/strategy-team.md
+board vote|SKILL.md,references/shared-token-economy.md,references/shared-contracts.md,references/shared-review-gates.md
+board peers|SKILL.md,references/shared-token-economy.md,references/strategy-parallel.md,references/strategy-team.md
 '
 while IFS='|' read -r pattern homes; do
   [ -n "$pattern" ] || continue

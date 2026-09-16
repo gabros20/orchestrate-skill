@@ -61,7 +61,7 @@ ambiguous, ask the user — a wrong host assumption mis-binds every dispatch aft
 | DISPATCH (spawn subagent) | ✅ Agent tool, depth 5 | ✅ agents TOML (`model`, `model_reasoning_effort`, `sandbox_mode`, `developer_instructions`), `multi_agent` stable; `ultra` effort = automatic delegation | ✅ agent files, depth 1 | ✅ `invoke_subagent`, depth 10 | ⚠️ synchronous only | ✅ up to 8, auto-worktree | ⚠️ `delegate_task`, 3, flat | ✅ `Agent` tool, built-ins coder/explore/plan, nesting ≥1; custom defs undocumented | ❌ none built in |
 | …with per-dispatch model pin | ✅ | ✅ `model` + effort in TOML | ✅ `model:` frontmatter | ❌ inherits parent | ✅ agent file `model:` | ❌ unconfirmed | ❌ accepted, silently ignored | ❌ undocumented | ✅ per xcli process |
 | PARALLEL (N at once) | ✅ | ✅ (≤6) | ✅ + background | ✅ async by default | ❌ in-session | ✅ (≤8) | ⚠️ (≤3) | ✅ `AgentSwarm`/`/swarm`, cap via `KIMI_CODE_AGENT_SWARM_MAX_CONCURRENCY` (no doc'd limit) | ❌ xcli processes only |
-| MESSAGE (inter-agent) | ✅ SendMessage / teams | ❌ | ❌ | ✅ `send_message` any-to-any | ❌ | ❌ | ❌ | ❌ | ❌ |
+| MESSAGE (inter-agent) | ✅ SendMessage / teams (+ `board send`) | ⚠️ `board send` (checkpoint) | ⚠️ `board send` | ✅ `send_message` any-to-any (+ `board send`) | ⚠️ `board send` | ⚠️ `board send` | ⚠️ `board send` | ⚠️ `board send` | ⚠️ `board send` |
 | ASK_USER (structured) | ✅ AskUserQuestion | ⚠️ TUI-only | ⚠️ broken in `-p`; ACP only | ✅ `ask_question` | ✅ `question` tool | ⚠️ free-form via `/plan` | ⚠️ `clarify`, 120s timeout | ✅ `AskUserQuestion` (never asks in auto/`-p`) | ⚠️ free-form chat only |
 | WORKTREE helper | ✅ isolation/EnterWorktree | ✅ `codex exec --worktree` (0.154) | ✅ `--worktree` | ✅ per-subagent option | ❌ plain git | ✅ automatic | ❌ plain git | ❌ plain git (`/fork` = session branch, not filesystem) | ❌ plain git |
 | BACKGROUND shell tasks | ✅ | ❌ nohup+poll | ✅ | ✅ `/tasks` | ⚠️ | ✅ | ⚠️ | ✅ native (Ctrl+B, `/tasks`, auto-returning subagents) | ❌ nohup+poll |
@@ -97,8 +97,10 @@ out loud ("team unavailable on codex → hierarchical with file handoff").
     text (no turn-limit flag); Stop hook exit-2 can extend the loop Ralph-style, but hooks
     FAIL-OPEN on script error/timeout — don't hang safety on the hook alone.
 - `team`: Claude Code (experimental teams) or Antigravity (`send_message` approximates; no shared
-  task list). Elsewhere → `hierarchical` with file-based handoff — artifact-first rules make this
-  a mild downgrade.
+  task list). Elsewhere → **file-mail team**: parallel workers in worktrees + `board send`/`inbox`
+  at integration points (`strategy-team.md`) — messages arrive at checkpoints, never mid-turn;
+  name that latency in the flight plan. `hierarchical` with file handoff remains the fallback
+  when the tasks do not actually need to talk.
 - `workflow`: Claude Code only. Elsewhere → a controller-held driver script fanning out headless
   engines per item (keep workflow.md's pilot/budget/verify discipline), or `parallel`.
 - Model-tier separation (`shared-model-routing.md`) on Antigravity/Grok/Hermes/Kimi: per-dispatch

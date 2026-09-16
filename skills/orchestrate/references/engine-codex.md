@@ -24,7 +24,7 @@ codex exec --cd /path/to/repo -m gpt-6-astra -c model_reasoning_effort=high \
   --sandbox workspace-write -c sandbox_workspace_write.network_access=true \
   --worktree --json -o "$OUT" - < "$SPEC" > events.jsonl 2> stderr.txt
 ID=$(head -1 events.jsonl | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
-board dispatch N --agent task-N-codex --model gpt-6-astra --engine codex --session "$ID" --log raw/lane-N.jsonl
+board dispatch N --agent impl-N-codex --model gpt-6-astra --engine codex --session "$ID" --log raw/lane-N.jsonl
 cat "$OUT"; git -C /path/to/repo status --short   # read the result; inspect what it actually changed
 ```
 - Prompt from stdin with `-`; a positional prompt needs `</dev/null` or codex waits forever.

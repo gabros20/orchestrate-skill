@@ -41,9 +41,10 @@ Peek before deep: sample the structure cheaply before committing your fan-out.
 
 ## Your subtree on the board
 You are the controller of your domain and a worker of the parent's. Journal your subtree under
-your task's id with dotted subtasks: `board todo N.1 "…"`, `board dispatch N.1 --agent <w> --model
-M --by <you> [--owns …]`, `board return N.1 --agent <w> --status …`, `board done N.1`. `--by <you>`
-is what makes you their lead: their questions (`--to controller`) route to YOU while you are open,
+your task's id with dotted subtasks: `board todo N.1 "…"`, `board dispatch N.1 --model M --by <you>
+[--owns …]` (the board names the worker `impl-N.1`; tell it its name and yours in its brief),
+`board return N.1 --agent impl-N.1 --status …`, `board done N.1`. `--by <you>` is what makes you
+their lead: their questions (`--to controller`) route to YOU while you are open,
 your mail reaches them tagged [lead <you>] (an instruction), `board peers` shows them their team.
 Wait for your workers with `board wait --agent <you> --task N.1 --task N.2 --timeout 0 --or-mail`
 — one blocking command; exit 0 = their work is on disk, 5 = a worker asked you something (answer,

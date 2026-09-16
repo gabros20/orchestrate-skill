@@ -147,10 +147,16 @@ the previous run's workspace to `archive/<run-id>/`, writes the `run` record wit
 sha, queues every task, generates `run.md`'s Resolved block) · `board set key=value` (re-resolve a
 dimension; the plan goes back to pending; `lanes=todo,implement,verify,review,integrate,done,blocked`
 declares the board's lanes — a projection of state × role, `todo/done/blocked` required) · `board
-plan approved|changed|skipped` · `board dispatch N --agent <real id> --model M [--role --engine
+plan approved|changed|skipped` · `board dispatch N --model M [--agent --role --engine
 --effort --worktree --owns --by <lead> --session ID --log raw/lane-N.jsonl --cmd-file]` (`--model` is REQUIRED — rule
 3; every implementer dispatch is a new *attempt*, which resets the review cycle; the session id
-is what `board resume` resumes by) · `board return N --agent A --status
+is what `board resume` resumes by). **Agent names are `<role>-<task>[-tag]`** — `impl-3`, `lead-1`,
+`impl-1.1` (under `lead-1`), `spec-3`, `quality-3`, `verify-3`, `integ-1`, `fix-3-r2`: the role says
+what the sender IS when a worker reads `[peer impl-1.2]`, the task id says WHERE it sits in the tree,
+the run makes it unique. Omit `--agent` and the board derives it from `--role` and the task
+(`-rN` when the name would repeat — a re-dispatch is attempt N); an explicit name is refused unless
+it fits; `controller` is reserved; a trailing tag tells twins apart (`spec-3-codex`). Spawn native
+subagents under the same name (`name:`) so the journal and the host agree · `board return N --agent A --status
 DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED [--commits --report --observed-model
 --tokens --session]` (the typed return; rule 13's observation; usage receipts) · `board review N
 --kind spec|quality --round K` (gate opened) · `board gate N --kind K --verdict ok|fail|warn

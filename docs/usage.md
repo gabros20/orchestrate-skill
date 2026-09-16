@@ -288,39 +288,40 @@ board init PLAN --strategy staged --review dual --engine claude --host "Claude C
 board set effort=ultra            # re-resolve a dimension (journaled; the plan goes back to pending) — never edit the journal
 board plan --why "…"              # the flight plan, rendered from the record (tree + gates/rails/budget/board/tweak)
 board plan approved               # the gate outcome, appended to run.md
-board dispatch 3 --agent task3-impl --model sonnet [--role --engine codex --effort high --worktree wt-3 \
+board dispatch 3 --model sonnet                          # names the agent impl-3 (<role>-<task>; --role sub-orchestrator → lead-3; a repeat → impl-3-r2); explicit --agent must fit the schema
+board dispatch 3 --agent impl-3 --model sonnet [--role --engine codex --effort high --worktree wt-3 \
                  --session <id> --log raw/lane-3.jsonl --cmd-file raw/lane-3.sh]   # the id is what resume resumes by
                                   # --model is required (rule 3); every implementer dispatch is a new attempt → review cycle resets
-board return 3 --agent task3-impl --status DONE --commits a1b2c3d..e4f5a6b --report task-3-report.md \
+board return 3 --agent impl-3 --status DONE --commits a1b2c3d..e4f5a6b --report task-3-report.md \
            [--observed-model haiku --tokens 84k]          # typed return · rule 13 observation · usage receipt
 board review 3 --kind spec --round 1                     # gate opened (verdict read from the findings file, first mark in text order)
 board gate 3 --kind spec --verdict ok --round 1 --findings review-task3-spec-r1.md   # gate closed explicitly (outranks the parse)
 board exec 3 --name tests -- npm test                    # a machine check THROUGH the journal: raw/ log, exit, duration → `tests ok 12s` on the card
-board dispatch 4 --agent task4-impl --model sonnet --owns "src/api/**"   # ownership on the record → `board peers` tells workers who owns what
-board dispatch 3.1 --agent w31 --model sonnet --by dom-lead              # a sub-orchestrator's subtree: dotted subtasks, --by makes it their lead (its mail = instruction; their asks route to it)
-board launch 4 --agent task4-grok --engine grok --model grok-4.6 --effort high --owns "src/api/**" \
+board dispatch 4 --agent impl-4 --model sonnet --owns "src/api/**"   # ownership on the record → `board peers` tells workers who owns what
+board dispatch 3.1 --model sonnet --by lead-3                                # a sub-orchestrator's subtree: dotted subtasks named impl-3.1 under lead-3; --by makes the lead (its mail = instruction; their asks route to it)
+board launch 4 --agent impl-4-grok --engine grok --model grok-4.6 --effort high --owns "src/api/**" \
              --extra='--always-approve' -- .orchestrate/task-4-brief.md   # the lane as ONE command: wrapper, session, dispatch, start; `exit` + `receipt` journaled when it ends
-board receipt 4 --agent task4-grok                        # fetch (grok usage / codex log / claude result / hermes usage-file) or state --tokens --calls --cost
+board receipt 4 --agent impl-4-grok                        # fetch (grok usage / codex log / claude result / hermes usage-file) or state --tokens --calls --cost
 board follow --for controller                             # your watch: one line per event that needs you; ends on finish
-board send "will rename src/api/auth.ts" --from task4-impl --to task3-impl   # mail: information, delivered at the recipient's next checkpoint
-board send "which auth header?" --from task4-impl --to controller --ask   # a question — the recipient owes ONE reply; the worker parks in `board wait`
-board inbox --agent task3-impl · board wait --agent task4-impl · board mail   # read (acks), rendezvous, the whole thread
-board wait --agent dom-lead --task 1.1 --task 1.2 --timeout 0 --or-mail   # a lead waits on its workers; exit 5 = one of them asked you something first
+board send "will rename src/api/auth.ts" --from impl-4 --to impl-3   # mail: information, delivered at the recipient's next checkpoint
+board send "which auth header?" --from impl-4 --to controller --ask   # a question — the recipient owes ONE reply; the worker parks in `board wait`
+board inbox --agent impl-3 · board wait --agent impl-4 · board mail   # read (acks), rendezvous, the whole thread
+board wait --agent lead-1 --task 1.1 --task 1.2 --timeout 0 --or-mail   # a lead waits on its workers; exit 5 = one of them asked you something first
 board wait --task 1 --task 2                                     # dependency rendezvous (agent defaults to controller): block until their work is on disk — exit 0; exit 3 when one cannot land (BLOCKED/REFUSED, a dead lane); exit 124 on timeout
-board vote 3 --kind quality --agent sec-lens --verdict fail --why "leaks a handle"   # panel:N = majority · consensus:N = any-deny → the gate is derived
+board vote 3 --kind quality --agent lens1-3 --verdict fail --why "leaks a handle"   # panel:N = majority · consensus:N = any-deny → the gate is derived
 board result 3 --name lint --exit 1 --log raw/lint.log    # a check that ran elsewhere
-board nudge 3 --agent task3-impl · board escalate 3 --agent task3-impl --to opus --why "same error x3"
+board nudge 3 --agent impl-3 · board escalate 3 --agent impl-3 --to opus --why "same error x3"
 board decide D-04 "cookie, not header" --owner controller --task 3     # also appends decisions.md
 board rail "single-flight: npm publish -> task2-impl"    # degradations, owners
 board blocked 3 --msg "owner: controller · resolve D-04 then re-dispatch"
-board return 4 --agent task4-codex --status REFUSED --msg "exit 0, empty diff: AGENTS.md rule"   # xcli lanes
+board return 4 --agent impl-4-codex --status REFUSED --msg "exit 0, empty diff: AGENTS.md rule"   # xcli lanes
 board done 3 --msg "commits a1b2c3d..e4f5a6b, review clean"   # writes the ledger line; refused over a failed gate or check
 board finish --gate pass --evidence raw/final-review.md  # refused while `check --finish` is dirty (or --force --reason); binds HEAD + goal + cursor
 ```
 
 Workers get two optional observation lines in their brief — `board note 3 "committing"` (a note,
 never a status, never liveness — liveness is artifact deltas only) and `board exec 3 --name tests
---agent task3-impl -- npm test` (their own test run: `tests ..` while it runs, `tests ok 12s` /
+--agent impl-3 -- npm test` (their own test run: `tests ..` while it runs, `tests ok 12s` /
 `tests fail` after, log under `raw/`, attributed to the worker in the journal). Following the
 invariants (a worker saying "done" is a proposal; the gate is the transition), only the controller
 writes the transition lines above; a journal lock serializes parallel writers. Titles, notes and decisions are sanitised before they reach the terminal. `board --help` groups every command by role — the controller loop, lanes, worker observations, views.

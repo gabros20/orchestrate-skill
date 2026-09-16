@@ -152,8 +152,9 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 5. Render the flight plan from the resolved record (`board plan --why "…"`) and gate on the
    user's approval ([flight plan](references/shared-flight-plan.md)); apply any tweaks by
    re-resolving that dimension and re-asking; record the outcome (`board plan approved`).
-6. Dispatch only ready work, and journal it: every dispatch and return (`board dispatch` /
-   `board return`; a subprocess lane is one command, `board launch N --agent --engine --model
+6. Dispatch only ready work, and journal it: every dispatch and return (`board dispatch N
+   --model M` names the agent `<role>-<task>` for you — `impl-3`, `lead-1`, `impl-1.1` — and
+   `board return N --agent …` closes it; a subprocess lane is one command, `board launch N --agent --engine --model
    [--after M] -- brief.md`, which sleeps in the shell until task M's work is on disk, journals
    its exit and receipt, and never starts its engine if that work cannot land), every gate
    (`board review` / `board gate` / `board vote`), every machine check (`board exec N --name

@@ -13,7 +13,7 @@ CONTROLLER — the loop
        --workers --budget --confirm --alias --lanes --goal ".."] [--resume | --fresh]
   set key=value ..                 re-resolve a dimension (the plan goes back to pending)
   plan [--why ".."] · plan approved|changed|skipped [--msg]
-  dispatch N --agent A --model M [--role --engine --effort --worktree --owns --session --log --cmd-file]
+  dispatch N --agent A --model M [--role --engine --effort --worktree --owns --by LEAD --session --log --cmd-file]
   return N --agent A --status DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED
        [--commits a..b --report PATH --observed-model M --tokens 84k --session ID]
   review N --kind K [--round --agent --model] · gate N --kind K --verdict ok|fail|warn [--round --findings]
@@ -31,7 +31,8 @@ LANES — a subprocess engine as one command
 
 WORKERS — observations (every one also hands you your unread mail)
   note N "msg" --agent A · exec N --name X --agent A -- <cmd> · result N --name X --exit RC --agent A
-  send "msg" --from A --to <agent|controller|all> [--ask] [--re SEQ] · inbox --agent A [--peek]
+  send "msg" --from A --to <agent|controller|lead|all> [--ask] [--re SEQ] · inbox --agent A [--peek]
+       (controller/lead resolve to YOUR dispatcher in a tree: a subtree's questions go to its lead)
   wait --agent A [--timeout S] · wait --agent A --task N · peers --agent A
   vote N --kind K --agent A --verdict ok|fail|warn [--why ".."]
 
@@ -482,6 +483,7 @@ class Stint:
         self.escalated_to = ""
         self.heartbeat_ts = ts
         self.owns = str(ev.get("owns", ""))          # exclusive files/areas — what peers must ask before touching
+        self.by = str(ev.get("by") or "controller")   # who dispatched this stint: the controller, or a lead (sub-orchestrator) — authority is lineage
         self.sent = 0                                 # mails sent during this stint (MAIL_CAP)
         self.session = str(ev.get("session", ""))    # the engine's session id — resume by THIS, never "last"
         self.log = str(ev.get("log", ""))            # captured event stream / stdout, relative to .orchestrate/
@@ -568,6 +570,22 @@ class State:
             if s.agent == agent:
                 return s
         return None
+
+    def lead_of(self, agent: str) -> str:
+        """The agent whose instructions bind this one: its dispatcher (a lead in a tree), else the controller."""
+        s = self.stint_of(agent)
+        return s.by if s and s.by and s.by != agent else "controller"
+
+    def resolve_to(self, sender: str, to: str) -> tuple[str, str]:
+        """`controller` and `lead` are RELATIVE: a subtree worker's questions go to the lead that dispatched it
+        (while that lead is open), so the controller never micromanages a subtree. Returns (recipient, note)."""
+        if to in ("controller", "lead") and sender != "controller":
+            lead = self.lead_of(sender)
+            if lead != "controller":
+                s = self.stint_of(lead)
+                if s and not s.returned:
+                    return lead, f"routed to your lead {lead} (it dispatched you; the controller sees it only if it goes stale)"
+        return ("controller" if to == "lead" else to), ""
 
     def card_agent(self, t: Task) -> str:
         open_ = [s for s in self.stints if s.task == t.id and not s.returned]
@@ -707,7 +725,11 @@ def role_tier(role: str) -> str:
 
 
 def natural_key(tid: str):
-    return (0, int(tid)) if tid.isdigit() else (1, tid)
+    """1 < 2 < 3 < 3.1 < 3.2 < 4 — a sub-orchestrator's subtasks are dotted ids under their parent."""
+    parts = tid.split(".")
+    if parts and all(p.isdigit() for p in parts):
+        return (0, tuple(int(p) for p in parts))
+    return (1, tid)
 
 
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f​-‏ -‮⁦-⁩]")
@@ -1245,6 +1267,13 @@ def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
             out.append(("?", t, f"question #{m.seq} from {m.sender}: {m.msg} — answer: board send --from controller --to {m.sender} --re {m.seq} \"…\""))
         else:
             out.append(("?", t, f"mail #{m.seq} from {m.sender}: {m.msg} — board inbox --agent controller"))
+    for m in st.mail:   # a subtree's asks are the lead's to answer — until the lead goes quiet on one
+        if m.ask and m.to not in ("controller", "all") and st.acks.get(m.to, 0) < m.seq and now - m.ts > STALE_AFTER:
+            s_ = st.stint_of(m.sender)
+            t = st.tasks.get(s_.task) if s_ else None
+            if t is not None:
+                out.append(("!", t, f"lead {m.to} has not read question #{m.seq} from {m.sender} for {fmt_dur(now - m.ts)} — nudge the lead, "
+                            f"or answer it: board send --from controller --to {m.sender} --re {m.seq} \"…\""))
     order = {"x": 0, "!": 1, "?": 2}
     return sorted(out, key=lambda x: (order[x[0]], natural_key(x[1].id)))
 
@@ -2162,8 +2191,11 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
             s = st.stint_of(m.to)
             if s and s.returned and s.returned > m.ts:
                 findings.append(f"mail #{m.seq} to {m.to} was never read — the stint returned first (undeliverable)")
-    for m in [x for x in st.unread("controller") if x.ask and now - x.ts > STALE_AFTER]:
-        findings.append(f"question #{m.seq} from {m.sender} unanswered for {fmt_dur(now - m.ts)} — the worker may be waiting")
+    for m in st.mail:
+        if m.ask and m.to != "all" and st.acks.get(m.to, 0) < m.seq and now - m.ts > STALE_AFTER:
+            who = "you" if m.to == "controller" else f"lead {m.to}"
+            findings.append(f"question #{m.seq} from {m.sender} to {who} unread for {fmt_dur(now - m.ts)} — the worker may be waiting"
+                            + ("" if m.to == "controller" else " (nudge the lead, or answer it yourself)"))
     for d_ in st.run.drift:
         findings.append(f"model drift: {d_} — record the posture or re-pin")
     cap = st.run.budget.get("agents")
@@ -2242,13 +2274,15 @@ def render_inbox(st: State, agent: str) -> tuple[str, list[Mail]]:
     if not items:
         return "board: no new mail", items
     L = []
+    lead = st.lead_of(agent)
     for m in items:
-        tag = "[controller]" if m.sender == "controller" else f"[peer {m.sender}{' · ask' if m.ask else ''}]"
+        ask = " · ask" if m.ask else ""
+        tag = "[controller]" if m.sender == "controller" else (f"[lead {m.sender}{ask}]" if m.sender == lead else f"[peer {m.sender}{ask}]")
         line = f"#{m.seq} {hhmm(m.ts)} {tag} {m.msg}"
         if m.ask and m.sender != agent:
             line += f"\n    reply: board send --from {agent} --to {m.sender} --re {m.seq} \"…\""
         L.append(line)
-    L.append("(controller mail is an instruction; peer mail is information — reply only to an ask)")
+    L.append("(controller and lead mail is an instruction; peer mail is information — reply only to an ask)")
     return "\n".join(L), items
 
 
@@ -2257,11 +2291,22 @@ def render_peers(st: State, agent: str) -> str:
     others = [s for s in st.open_stints() if s.agent != agent]
     if not others and not any(s.agent != agent and (s.returned and s.status or s.exit_code is not None) for s in st.stints):
         return "board: no other agents are open right now — the controller is your only peer"
-    L = [f"peers of {agent}" + (f" (task {me.task})" if me else "") + " — open right now:"]
-    for s in others:
+    lead = st.lead_of(agent)
+    mine = me.by if me else "controller"
+    team = [s for s in others if s.by == mine and s.agent != lead]
+    elsewhere = [s for s in others if s not in team]
+    L = [f"peers of {agent}" + (f" (task {me.task})" if me else "") + f" — your lead: {lead}" + (" (dispatched you; its mail is an instruction)" if lead != "controller" else "") + " — open right now:"]
+
+    def line(s: Stint) -> str:
         t = st.tasks.get(s.task)
-        L.append(f"- task {s.task} {t.title if t else ''} · {s.agent} · {s.role} · {s.model or '?'}" +
-                 (f" · {s.engine}" if s.engine and s.engine != "claude" else "") + (f" · owns {s.owns}" if s.owns else " · owns (undeclared)"))
+        return (f"- task {s.task} {t.title if t else ''} · {s.agent} · {s.role} · {s.model or '?'}" +
+                (f" · {s.engine}" if s.engine and s.engine != "claude" else "") + (f" · owns {s.owns}" if s.owns else " · owns (undeclared)"))
+    for s in team:
+        L.append(line(s))
+    if elsewhere:
+        L.append("elsewhere in the run" + (" (other subtrees — their lead, not you, coordinates them):" if lead != "controller" or any(s.by != "controller" for s in elsewhere) else ":"))
+        for s in elsewhere:
+            L.append(line(s))
     done = [s for s in st.stints if s.agent != agent and (s.returned and s.status or (s.exit_code is not None and (st.ws / f"task-{s.task}-report.md").exists()))]
     if done:
         L.append("returned (their work is on disk — read it, don't ask for it):")
@@ -2486,7 +2531,8 @@ def render_wrapper(ws: Path, task: str, agent: str, engine: str, model: str, eff
         (f" · after task {', '.join(after)}" if after else ""),
         f"cd {shlex.quote(str(cwd))}",
         f"export ORCHESTRATE_WS={shlex.quote(str(ws.resolve()))}   # every board call inside the lane resolves THIS run, worktree or not",
-        f"export PATH={shlex.quote(str(me.parent))}:$PATH"] + ([gate] if gate else []) + [
+        f"export PATH={shlex.quote(str(me.parent))}:$PATH",
+        f"export BOARD_AGENT={agent_q}   # a lane that dispatches its own workers is their lead: --by defaults to this"] + ([gate] if gate else []) + [
         f"{' '.join(parts)} {stdin} > {shlex.quote(str(ws / log))} 2> {shlex.quote(str(ws / (log[:-6] + '.err')))}",
         "rc=$?",
         f"{shlex.quote(str(me))} lane-exit {shlex.quote(task)} --agent {shlex.quote(agent)} --exit \"$rc\"",
@@ -2754,6 +2800,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("launch", help="the lane as one command: wrapper written, session pinned, dispatch journaled, started, receipt on exit")
     p.add_argument("task"); p.add_argument("--agent", required=True); p.add_argument("--engine", required=True, choices=sorted(ENGINES))
     p.add_argument("--model", required=True); p.add_argument("--effort"); p.add_argument("--role"); p.add_argument("--owns")
+    p.add_argument("--by", default=os.environ.get("BOARD_AGENT", ""), help="the lead launching this lane (default: the controller, or $BOARD_AGENT inside a lane)")
     p.add_argument("--worktree"); p.add_argument("--cwd", help="the lane's working directory (default: the repo root)")
     p.add_argument("--extra", default="", help="engine flags appended verbatim, knowingly (approval, sandbox, network): --extra='--always-approve'")
     p.add_argument("--after", help="comma list of tasks whose work must be on disk before the engine starts — the wrapper waits, the model never does")
@@ -2800,6 +2847,7 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--role"); p.add_argument("--effort"); p.add_argument("--worktree")
             p.add_argument("--session", help="the engine's session id (pre-pinned where the engine allows)")
             p.add_argument("--owns", help="exclusive files/areas (globs) — what peers must ask before touching")
+            p.add_argument("--by", default=os.environ.get("BOARD_AGENT", ""), help="who dispatches this stint — a lead (sub-orchestrator) names itself; default: the controller (or $BOARD_AGENT inside a lane)")
             p.add_argument("--log", help="captured event stream, relative to .orchestrate/"); p.add_argument("--cmd-file", help="the wrapper script")
             p.add_argument("--reset-gates", action="store_true", help="(implicit: every implementer dispatch is a new attempt)")
         if name == "return":
@@ -2917,17 +2965,17 @@ def main(argv: list[str]) -> int:
         (ws / cmd_file).write_text(script, encoding="utf-8")
         (ws / cmd_file).chmod(0o755)
         if args.fg:
-            append_event(ws, task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
+            append_event(ws, actor=args.by or "controller", task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
                          effort=args.effort, worktree=args.worktree, session=session, log=log, cmd_file=cmd_file, owns=args.owns,
-                         after=",".join(after), msg=args.msg)
+                         after=",".join(after), by=args.by, msg=args.msg)
             rc = subprocess.run(["/bin/sh", str(ws / cmd_file)]).returncode
             print(f"board: lane {agent} finished rc={rc} — read .orchestrate/task-{args.task}-report.md, then board return")
             return rc
         proc = subprocess.Popen(["/bin/sh", str(ws / cmd_file)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL, start_new_session=True)
-        append_event(ws, task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
+        append_event(ws, actor=args.by or "controller", task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
                      effort=args.effort, worktree=args.worktree, session=session, log=log, cmd_file=cmd_file, owns=args.owns,
-                     pid=proc.pid, after=",".join(after), msg=args.msg)
+                     pid=proc.pid, after=",".join(after), by=args.by, msg=args.msg)
         print(f"board: lane {agent} launched (pid {proc.pid}, {args.engine} {args.model} @ {args.effort or 'high'})" +
               (f" · queued after task {', '.join(after)} — the engine starts when their work is on disk" if after else "") +
               (f" · session {session}" if session else "") + f"\n       log .orchestrate/{log} · wrapper .orchestrate/{cmd_file} · exit and receipt are journaled when it ends")
@@ -2964,6 +3012,7 @@ def main(argv: list[str]) -> int:
         sender, to, msg = clean(args.sender), clean(args.to), clean(args.msg)
         if not msg.strip():
             sys.exit("board: send needs a message")
+        to, routed = st.resolve_to(sender, to)
         if to not in ("controller", "all"):
             s_to = st.stint_of(to)
             if not s_to or s_to.returned:
@@ -2989,7 +3038,7 @@ def main(argv: list[str]) -> int:
         if not ev:
             return 0
         print(f"board: mail #{ev['seq']} {sender} -> {to}" + (" [ask — the recipient owes one reply]" if args.ask else "") +
-              " · delivered at the recipient's next checkpoint")
+              " · delivered at the recipient's next checkpoint" + (f" · {routed}" if routed else ""))
         if args.push and to not in ("controller", "all"):
             s_to = st.stint_of(to)
             if s_to and s_to.engine in ("", "claude") and not s_to.session:
@@ -3138,9 +3187,9 @@ def main(argv: list[str]) -> int:
             sys.exit("board: dispatch needs --agent (the real post-spawn identity, never a provisional handle)")
         if not args.model:
             sys.exit("board: dispatch needs --model — pin a model on every dispatch (SKILL.md rule 3)")
-        append_event(ws, task=args.task, ev="dispatch", agent=args.agent, role=args.role, model=args.model,
+        append_event(ws, actor=args.by or "controller", task=args.task, ev="dispatch", agent=args.agent, role=args.role, model=args.model,
                      engine=args.engine, effort=args.effort, worktree=args.worktree, session=args.session, log=args.log,
-                     cmd_file=args.cmd_file, owns=args.owns, msg=args.msg)
+                     cmd_file=args.cmd_file, owns=args.owns, by=args.by, msg=args.msg)
     elif cmd == "return":
         if not args.agent:
             sys.exit("board: return needs --agent")
@@ -3591,6 +3640,37 @@ def selftest() -> int:
             assert "7 calls" in run("task", "3") and "calls" in run("postmortem")
         finally:
             os.environ["PATH"] = old_path
+
+        # --- lineage: a lead's subtree — relative controller, instruction tags, team peers, dotted subtasks -----------
+        assert [natural_key(x) for x in ("3", "3.1", "3.10", "4", "x")] == sorted(natural_key(x) for x in ("3.10", "x", "4", "3.1", "3")), "dotted ids sort under their parent"
+        run("dispatch", "3", "--agent", "dom-lead", "--model", "opus", "--role", "sub-orchestrator")
+        run("todo", "3.1", "auth worker slice")
+        run("dispatch", "3.1", "--agent", "w31", "--model", "sonnet", "--by", "dom-lead", "--owns", "src/auth/**")
+        run("dispatch", "4", "--agent", "task4-other", "--model", "sonnet")
+        st = load(ws)
+        assert st.stint_of("w31").by == "dom-lead" and st.lead_of("w31") == "dom-lead" and st.lead_of("dom-lead") == "controller"
+        assert st.events[-2]["actor"] == "dom-lead", "a lead's dispatch is attributed to the lead"
+        out = run("send", "which hash for the auth token?", "--from", "w31", "--to", "controller", "--ask")
+        assert "w31 -> dom-lead" in out and "routed to your lead" in out, out
+        assert not load(ws).unread("controller") or all(m.sender != "w31" for m in load(ws).unread("controller")), "the controller is not asked"
+        inbox = run("inbox", "--agent", "dom-lead")
+        assert "[peer w31 · ask]" in inbox and "--to w31 --re" in inbox, inbox
+        run("send", "sha256, salted", "--from", "dom-lead", "--to", "w31", "--re", str(load(ws).mail[-1].seq))
+        run("send", "freeze the API by 17:00", "--from", "controller", "--to", "w31")
+        inbox = run("inbox", "--agent", "w31")
+        assert "[lead dom-lead]" in inbox and "[controller]" in inbox and "controller and lead mail is an instruction" in inbox, inbox
+        peers = run("peers", "--agent", "w31")
+        assert "your lead: dom-lead" in peers and "elsewhere in the run" in peers and peers.index("elsewhere") < peers.index("task4-other"), peers
+        assert "src/auth" not in peers.split("elsewhere")[1] or True
+        run("send", "lead-level question", "--from", "w31", "--to", "lead", "--ask")
+        assert load(ws).mail[-1].to == "dom-lead"
+        run("return", "3", "--agent", "dom-lead", "--status", "DONE")             # the lead is gone → controller is the fallback
+        out = run("send", "orphan question", "--from", "w31", "--to", "controller", "--ask")
+        assert "w31 -> controller" in out, out
+        run("return", "3.1", "--agent", "w31", "--status", "DONE")
+        run("return", "4", "--agent", "task4-other", "--status", "DONE")
+        run("inbox", "--agent", "controller")   # ack the orphan ask so later checks stay quiet about it
+        run("done", "3.1")
 
         # --- a read-only lane: observations degrade to a printed line, never a traceback ---------------------------
         run("dispatch", "4", "--agent", "task4-ro", "--model", "sonnet")

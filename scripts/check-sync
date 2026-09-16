@@ -99,6 +99,7 @@ board peers|SKILL.md,references/shared-token-economy.md,references/strategy-para
 board launch|SKILL.md,references/shared-lane-hygiene.md,references/strategy-xcli.md,references/shared-engines.md,references/shared-contracts.md
 board wait|SKILL.md,references/shared-monitoring.md,references/strategy-parallel.md,references/shared-contracts.md
 Must NOT|references/shared-token-economy.md,references/strategy-parallel.md,references/shared-contracts.md
+--by|references/shared-contracts.md,references/strategy-hierarchical.md,references/prompt-sub-orchestrator.md
 '
 while IFS='|' read -r pattern homes; do
   [ -n "$pattern" ] || continue

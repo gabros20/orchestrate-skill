@@ -160,7 +160,8 @@ sandbox degrades to a printed line instead of failing. Agents talk through the s
 / `inbox` / `wait` — information and questions only, delivered on the recipient's next board call
 on every host (no server, no host feature), with
 hard caps so two agents can never talk instead of working; `board peers` tells a parallel worker who
-else is working and what they own. Panels vote (`board vote`): majority or any-deny, derived.
+else is working and what they own. In a hierarchy, authority is lineage: a sub-orchestrator that
+dispatches `--by` itself becomes its workers' lead — their questions route to it, its mail binds them. Panels vote (`board vote`): majority or any-deny, derived.
 
 `install.sh` puts `board` on your PATH; every workspace also carries a zero-install copy. Existing
 `.orchestrate/` folders from older versions are adopted (`board init … --resume`), never restarted.

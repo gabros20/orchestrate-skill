@@ -92,10 +92,11 @@ Prompt: `prompt-sub-orchestrator.md`.
 ## Mail in a tree (authority is lineage, not a name)
 
 One flat journal, one board, any depth. A sub-orchestrator journals its subtree as dotted subtasks
-of its own task (`board todo 3.1`, `board dispatch 3.1 --agent w --model M --by dom-lead`) — the
-`--by` is what makes it their **lead**: `controller` and `lead` in a worker's `--to` resolve to
+of its own task (`board todo 3.1`, `board dispatch 3.1 --model M --by lead-3` — the board names the
+worker `impl-3.1`, so the tree is readable from the names alone) — the `--by` is what makes it
+their **lead**: `controller` and `lead` in a worker's `--to` resolve to
 the agent that dispatched it, so a subtree's questions reach its lead, never you; the lead's mail
-arrives tagged `[lead dom-lead]` and binds like yours (`[controller]` binds everywhere); `board
+arrives tagged `[lead lead-3]` and binds like yours (`[controller]` binds everywhere); `board
 peers` shows a worker its team first and "elsewhere in the run" after. You see a subtree's ask
 only when its lead leaves it unread past the stale threshold (`!` in attention, `board check`),
 and then you nudge the lead or answer it yourself. A lead that has returned is no lead: its

@@ -21,7 +21,7 @@ ID=$(uuidgen)
 claude -p --session-id "$ID" --output-format stream-json --verbose --include-partial-messages \
   --model sonnet --effort high --permission-mode acceptEdits --max-budget-usd 2.00 \
   --agents '{"worker":{"description":"…","prompt":"…"}}' "$(cat spec.md)" > events.jsonl
-board dispatch N --agent task-N-claude --model sonnet --engine claude --session "$ID" --log raw/lane-N.jsonl
+board dispatch N --agent impl-N-claude --model sonnet --engine claude --session "$ID" --log raw/lane-N.jsonl
 claude -p --resume "$ID" "<nudge>"             # resume by id (bare --continue is cwd-scoped)
 ```
 - `-p --output-format stream-json` REQUIRES `--verbose` (exit 1 otherwise — observed live 2026-09-16 on

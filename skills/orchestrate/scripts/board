@@ -13,7 +13,8 @@ CONTROLLER — the loop
        --workers --budget --confirm --alias --lanes --goal ".."] [--resume | --fresh]
   set key=value ..                 re-resolve a dimension (the plan goes back to pending)
   plan [--why ".."] · plan approved|changed|skipped [--msg]
-  dispatch N --agent A --model M [--role --engine --effort --worktree --owns --by LEAD --session --log --cmd-file]
+  dispatch N --model M [--agent <role>-<task>: derived when omitted] [--role --engine --effort --worktree --owns --by LEAD
+       --session --log --cmd-file]        names: impl-3 · lead-1 · impl-1.1 · spec-3 · quality-3 · verify-3 · integ-1 · fix-3-r2
   return N --agent A --status DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED
        [--commits a..b --report PATH --observed-model M --tokens 84k --session ID]
   review N --kind K [--round --agent --model] · gate N --kind K --verdict ok|fail|warn [--round --findings]
@@ -85,6 +86,14 @@ LANE_OF_ROLE = (("implement", "implement"), ("worker", "implement"), ("executor"
                 ("verif", "verify"), ("integrat", "integrate"), ("advis", "advise"), ("review", "review"),
                 ("judge", "review"))
 LANE_BASE = {"implement": "in_progress", "verify": "in_progress", "integrate": "in_progress", "advise": "in_progress"}
+# Agent names are `<role>-<task>[-tag…]`: impl-3 · lead-1 · impl-1.1 · spec-3 · quality-3 · verify-3 · integ-1 · fix-3-r2.
+# The role says what the sender IS (a small model reads `[peer impl-1.2]` and knows), the task id says WHERE in the
+# tree it sits (impl-1.1 is under lead-1), the run makes it unique. Omit --agent and the board derives it.
+AGENT_RE = re.compile(r"^[a-z][a-z0-9]*-\d+(?:\.\d+)*(?:-[a-z0-9]+)*$")
+ROLE_SHORT = (("sub-orch", "lead"), ("lead", "lead"), ("orchestr", "lead"), ("integrat", "integ"), ("fix", "fix"), ("spec", "spec"),
+              ("qual", "quality"), ("verif", "verify"), ("judge", "judge"), ("lens", "lens"), ("panel", "lens"), ("review", "review"),
+              ("advis", "advisor"), ("peer", "peer"), ("counter", "peer"), ("plan", "planner"), ("research", "research"),
+              ("implement", "impl"), ("worker", "impl"), ("executor", "impl"))
 # Per-engine resume-by-id lines (printed by `board resume` for every open stint that journaled a session).
 RESUME_CMD = {
     "codex": "codex exec resume {id} -c 'sandbox_mode=\"workspace-write\"' --json -o out.md - < nudge.md",
@@ -704,6 +713,28 @@ def quorum(review: str, votes: list[tuple[str, str]]) -> str:
     if ok >= n:
         return f"ok {ok}/{n}"
     return f".. {ok}/{n}"
+
+
+def role_short(role: str) -> str:
+    r = (role or "implementer").lower()
+    return next((short for key, short in ROLE_SHORT if key in r), re.sub(r"[^a-z0-9]+", "", r) or "impl")
+
+
+def agent_name(st: "State", task: str, role: str) -> str:
+    """`<role>-<task>`, with `-rN` when that name already had a stint in this run (a re-dispatch is attempt N)."""
+    base = f"{role_short(role)}-{task}"
+    prior = sum(1 for s in st.stints if s.agent == base or re.fullmatch(re.escape(base) + r"-r\d+", s.agent))
+    return base if not prior else f"{base}-r{prior + 1}"
+
+
+def check_agent(name: str, st: "State", task: str, role: str) -> str:
+    """Enforce the schema on an explicit name; suggest the derived one."""
+    if name == "controller":
+        sys.exit("board: `controller` is the controller's name, never an agent's")
+    if not AGENT_RE.match(name):
+        sys.exit(f"board: agent name {name!r} is not <role>-<task>[-tag] (impl-3, lead-1, impl-1.1, spec-3, fix-3-r2) — "
+                 f"omit --agent to get {agent_name(st, task, role)!r}, or name it that way")
+    return name
 
 
 def role_tier(role: str) -> str:
@@ -2808,7 +2839,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("task"); p.add_argument("--kind", required=True); p.add_argument("--agent", required=True)
     p.add_argument("--verdict", choices=["ok", "fail", "warn"], required=True); p.add_argument("--why"); p.add_argument("--round", type=int)
     p = sub.add_parser("launch", help="the lane as one command: wrapper written, session pinned, dispatch journaled, started, receipt on exit")
-    p.add_argument("task"); p.add_argument("--agent", required=True); p.add_argument("--engine", required=True, choices=sorted(ENGINES))
+    p.add_argument("task"); p.add_argument("--agent", help="<role>-<task>[-tag]; omitted = derived from --role and the task"); p.add_argument("--engine", required=True, choices=sorted(ENGINES))
     p.add_argument("--model", required=True); p.add_argument("--effort"); p.add_argument("--role"); p.add_argument("--owns")
     p.add_argument("--by", default=os.environ.get("BOARD_AGENT", ""), help="the lead launching this lane (default: the controller, or $BOARD_AGENT inside a lane)")
     p.add_argument("--worktree"); p.add_argument("--cwd", help="the lane's working directory (default: the repo root)")
@@ -2963,7 +2994,8 @@ def main(argv: list[str]) -> int:
         cwd = Path(args.cwd).resolve() if args.cwd else Path(git("rev-parse", "--show-toplevel") or os.getcwd())
         tpl = ENGINES[args.engine]
         session = str(__import__("uuid").uuid4()) if tpl["session"] == "pin" else ""
-        agent = clean(args.agent)
+        st0 = load(ws)
+        agent = check_agent(clean(args.agent), st0, str(args.task), args.role or "") if args.agent else agent_name(st0, str(args.task), args.role or "")
         after = [x.strip() for x in (args.after or "").split(",") if x.strip()]
         script, log, usage = render_wrapper(ws, str(args.task), agent, args.engine, args.model, args.effort or "", session, spec, cwd,
                                             shlex.split(args.extra or ""), after)
@@ -3199,10 +3231,11 @@ def main(argv: list[str]) -> int:
     elif cmd == "todo":
         append_event(ws, task=args.task, ev="todo", title=args.title)
     elif cmd == "dispatch":
-        if not args.agent:
-            sys.exit("board: dispatch needs --agent (the real post-spawn identity, never a provisional handle)")
         if not args.model:
             sys.exit("board: dispatch needs --model — pin a model on every dispatch (SKILL.md rule 3)")
+        st = load(ws)
+        args.agent = check_agent(clean(args.agent), st, str(args.task), args.role or "") if args.agent else agent_name(st, str(args.task), args.role or "")
+        print(f"board: task {args.task} → {args.agent} ({args.role or 'implementer'} · {args.model})")
         append_event(ws, actor=args.by or "controller", task=args.task, ev="dispatch", agent=args.agent, role=args.role, model=args.model,
                      engine=args.engine, effort=args.effort, worktree=args.worktree, session=args.session, log=args.log,
                      cmd_file=args.cmd_file, owns=args.owns, by=args.by, msg=args.msg)
@@ -3224,6 +3257,8 @@ def main(argv: list[str]) -> int:
         if args.observed_model:
             write_resolved(ws)
     elif cmd == "review":
+        if args.agent:
+            check_agent(clean(args.agent), load(ws), str(args.task), f"{args.kind} reviewer")
         append_event(ws, task=args.task, ev="review", kind=args.kind, round=args.round, agent=args.agent,
                      model=args.model, engine=args.engine, msg=args.msg)
     elif cmd == "gate":
@@ -3326,7 +3361,7 @@ def selftest() -> int:
         Path("plan.md").write_text("# P\n## Task 1: Scaffold\n## Task 2: Auth\n```\n## Task 9: fenced\n```\n## Task 3: Docs\n")
         ws = Path(tmp) / ".orchestrate"
 
-        # --- v1 migration + legacy name -------------------------------------------------
+        # --- lens1-4 migration + legacy name -------------------------------------------------
         ws.mkdir()
         (ws / LEGACY_JOURNAL).write_text('{"ts":"2026-09-15T10:00:00","task":"7","ev":"todo","title":"Legacy"}\n'
                                          '{"ts":"2026-09-15T10:01:00","task":"7","ev":"dispatch","agent":"old","model":"x"}\n')
@@ -3357,34 +3392,34 @@ def selftest() -> int:
         assert "plan: approved" in (ws / "run.md").read_text() and "plan-trail" in (ws / "run.md").read_text()
 
         # --- dispatch requires a model; same-second dispatch beats todo --------------------
-        run("dispatch", "1", "--agent", "task1-impl", expect_fail=True)
-        run("dispatch", "1", "--agent", "task1-impl", "--model", "sonnet", "--worktree", "wt-1")
+        run("dispatch", "1", "--agent", "impl-1", expect_fail=True)
+        run("dispatch", "1", "--agent", "impl-1", "--model", "sonnet", "--worktree", "wt-1")
         assert load(ws).tasks["1"].state == "in_progress"
-        run("note", "1", "tests green \x1b[31mINJECT\x1b[0m", "--agent", "task1-impl")
+        run("note", "1", "tests green \x1b[31mINJECT\x1b[0m", "--agent", "impl-1")
         show = run("show", "--no-color")
         assert "\x1b" not in show and "INJECT" in show, "control sequences from notes never reach the terminal"
         st = load(ws)
         assert st.tasks["1"].heartbeat_ts > 0 and st.tasks["1"].artifact_ts == 0, "notes are heartbeats, not liveness"
-        run("return", "1", "--agent", "task1-impl", "--status", "DONE", "--commits", f"{base}..{base}",
+        run("return", "1", "--agent", "impl-1", "--status", "DONE", "--commits", f"{base}..{base}",
             "--report", "task-1-report.md", "--observed-model", "haiku", "--tokens", "84k")
         st = load(ws)
         assert st.tasks["1"].state == "review" and st.run.tokens == 84000 and st.run.observed["worker"] == "haiku"
         assert st.run.drift and "drift:" in (ws / "run.md").read_text()
 
         # --- gates: text-order verdict, explicit gate events, attempts ---------------------
-        run("review", "1", "--kind", "spec", "--round", "1", "--agent", "task1-spec", "--model", "opus")
+        run("review", "1", "--kind", "spec", "--round", "1", "--agent", "spec-1", "--model", "opus")
         (ws / "review-task1-spec-r1.md").write_text("❌ 1 Critical — later note: ✅ tests pass\n")
         assert load(ws).tasks["1"].gates["spec"].startswith("fail"), "first mark in text order wins"
         run("gate", "1", "--kind", "spec", "--verdict", "ok", "--round", "1", "--findings", "review-task1-spec-r1.md")
         assert load(ws).tasks["1"].gates["spec"] == "ok r1", "explicit gate event outranks the file parse"
-        run("review", "1", "--kind", "quality", "--round", "1", "--agent", "task1-qual")
+        run("review", "1", "--kind", "quality", "--round", "1", "--agent", "quality-1")
         (ws / "review-task1-quality-r1.md").write_text("❌ 2 important\n")
         assert load(ws).tasks["1"].gates["quality"].startswith("fail")
         run("done", "1", expect_fail=True)  # failed gate blocks the ledger
-        run("dispatch", "1", "--agent", "task1-fix", "--model", "sonnet", "--msg", "fix wave")
+        run("dispatch", "1", "--agent", "fix-1", "--model", "sonnet", "--msg", "fix wave")
         st = load(ws)
         assert st.tasks["1"].attempt == 2 and st.tasks["1"].gates == {}, "new implementer attempt resets the review cycle"
-        run("return", "1", "--agent", "task1-fix", "--status", "DONE", "--commits", f"{base}..{base}")
+        run("return", "1", "--agent", "fix-1", "--status", "DONE", "--commits", f"{base}..{base}")
         run("review", "1", "--kind", "quality", "--round", "2")
         (ws / "review-task1-quality-r2.md").write_text("✅ clean r2\n")
         assert load(ws).tasks["1"].gates == {"quality": "ok r2"}
@@ -3392,23 +3427,23 @@ def selftest() -> int:
         assert "ledger" in out and "Task 1: complete" in (ws / "progress.md").read_text()
 
         # --- xcli lane: REFUSED, escalation, decisions, rails ------------------------------
-        run("dispatch", "2", "--agent", "task2-impl", "--model", "sonnet", "--engine", "codex")
-        run("escalate", "2", "--agent", "task2-impl", "--to", "opus", "--why", "same error x3")
-        run("return", "2", "--agent", "task2-impl", "--status", "REFUSED", "--msg", "empty diff: AGENTS.md rule; owner: controller")
+        run("dispatch", "2", "--agent", "impl-2", "--model", "sonnet", "--engine", "codex")
+        run("escalate", "2", "--agent", "impl-2", "--to", "opus", "--why", "same error x3")
+        run("return", "2", "--agent", "impl-2", "--status", "REFUSED", "--msg", "empty diff: AGENTS.md rule; owner: controller")
         run("decide", "D-01", "cookie auth, not header", "--owner", "controller", "--task", "2")
-        run("rail", "single-flight: npm publish -> task2-impl")
+        run("rail", "single-flight: npm publish -> impl-2")
         st = load(ws)
         assert st.tasks["1"].state == "done" and st.tasks["2"].state == "blocked" and st.tasks["3"].state == "todo"
         assert st.run.decisions[-1]["id"] == "D-01" and "D-01" in (ws / "decisions.md").read_text()
         assert len(st.stints) == 5 and any(s.escalated_to == "opus" for s in st.stints)
         roster = run("agents")
-        assert "task1-impl" in roster and "sonnet -> haiku !" in roster and "spec reviewer" in roster and "wt-1" in roster
+        assert "impl-1" in roster and "sonnet -> haiku !" in roster and "spec reviewer" in roster and "wt-1" in roster
         show = run("show", "--no-color")
         for needle in ("goal       Ship the thing", "agents 5/6", "worker sonnet (observed haiku !)", "approved", "rails",
                        "D-01", "1  Scaffold", "2  Auth", "single-flight", "attention", "x 1", "IN PROGRESS  0", "REVIEW  0"):
             assert needle in show, f"show lacks {needle!r}\n{show}"
         wide = run("show", "--no-color", "--expanded")
-        assert "attempt   task1-impl" in wide and "escalated → opus" in wide and "evidence  task-1-report.md" in wide, wide
+        assert "attempt   impl-1" in wide and "escalated → opus" in wide and "evidence  task-1-report.md" in wide, wide
         assert "action" in wide
         att = run("attention")
         assert "x task 2" in att
@@ -3449,7 +3484,7 @@ def selftest() -> int:
         st = load(ws)
         assert "integration" in st.run_checks and "orphan" in st.run_checks and "77" not in st.tasks, st.run_checks
         assert "run: integration ok" in run("show", "--no-color")
-        run("exec", "3", "--name", "unit", "--agent", "task3-impl", "--", sys.executable, "-c", "pass")
+        run("exec", "3", "--name", "unit", "--agent", "impl-3", "--", sys.executable, "-c", "pass")
         assert load(ws).events[-1]["actor"] == "worker", "a worker's own check is attributed to the worker"
         # parallel workers must not race the chain: 12 concurrent notes, one journal, no problems
         procs = [subprocess.Popen([sys.executable, __file__, "note", "3", f"beat {i}", "--agent", f"w{i}"],
@@ -3462,7 +3497,7 @@ def selftest() -> int:
         # --- lanes are a projection of state × role; sessions travel with the stint ---------------
         run("set", "lanes=todo,implement,verify,review,integrate,done,blocked")
         run("plan", "approved")
-        run("dispatch", "3", "--agent", "task3-verify", "--model", "haiku", "--role", "verifier", "--engine", "codex",
+        run("dispatch", "3", "--agent", "verify-3", "--model", "haiku", "--role", "verifier", "--engine", "codex",
             "--session", "sess-3", "--log", "raw/lane-3.jsonl")
         st = load(ws)
         assert st.lanes[1] == "implement" and st.lane_of(st.tasks["3"]) == "verify" and st.lane_of(st.tasks["1"]) == "done"
@@ -3472,12 +3507,12 @@ def selftest() -> int:
         assert "session sess-3" in res and "codex exec resume sess-3" in res, res
         assert "sess-3" in run("agents") and "lanes   todo → implement" in run("plan")
         assert "lane" in run("task", "3") and json.loads(run("show", "--json"))["tasks"][2]["lane"] == "verify"
-        run("return", "3", "--agent", "task3-verify", "--status", "DONE")
+        run("return", "3", "--agent", "verify-3", "--status", "DONE")
         assert "no usage receipt" in "\n".join(check(load(ws)))
         before = len(load(ws).stints)
-        run("return", "3", "--agent", "task3-verify", "--status", "DONE", "--tokens", "12k")   # receipt amendment
+        run("return", "3", "--agent", "verify-3", "--status", "DONE", "--tokens", "12k")   # receipt amendment
         st = load(ws)
-        assert len(st.stints) == before and st.stint_of("task3-verify").tokens == 12000 and "no usage receipt" not in "\n".join(check(st))
+        assert len(st.stints) == before and st.stint_of("verify-3").tokens == 12000 and "no usage receipt" not in "\n".join(check(st))
 
         # --- replay: the journal alone must derive the same board -----------------------------------
         assert not replay(load(ws)), replay(load(ws))
@@ -3493,73 +3528,73 @@ def selftest() -> int:
 
         # --- mail: information between agents, delivered at checkpoints, loop-proof ---------------------
         run("todo", "4", "Integrate")
-        run("dispatch", "3", "--agent", "task3-b", "--model", "sonnet", "--owns", "src/ui/**")
-        run("dispatch", "4", "--agent", "task4-impl", "--model", "sonnet", "--owns", "src/api/**")
-        peers = run("peers", "--agent", "task3-b")
-        assert "task 4" in peers and "task4-impl" in peers and "owns src/api/**" in peers and "task3-b" not in peers.split("\n")[1], peers
-        run("send", "will rename src/api/auth.ts — import path changes", "--from", "task4-impl", "--to", "task3-b")
+        run("dispatch", "3", "--agent", "impl-3-b", "--model", "sonnet", "--owns", "src/ui/**")
+        run("dispatch", "4", "--agent", "impl-4", "--model", "sonnet", "--owns", "src/api/**")
+        peers = run("peers", "--agent", "impl-3-b")
+        assert "task 4" in peers and "impl-4" in peers and "owns src/api/**" in peers and "impl-3-b" not in peers.split("\n")[1], peers
+        run("send", "will rename src/api/auth.ts — import path changes", "--from", "impl-4", "--to", "impl-3-b")
         st = load(ws)
-        assert len(st.unread("task3-b")) == 1 and not st.unread("task4-impl") and st.stint_of("task4-impl").sent == 1
+        assert len(st.unread("impl-3-b")) == 1 and not st.unread("impl-4") and st.stint_of("impl-4").sent == 1
         show = run("show", "--no-color")
         assert "mail" in show and "1 unread" in show and "m1" in show, show
-        inbox = run("inbox", "--agent", "task3-b")
-        assert "[peer task4-impl]" in inbox and "rename src/api" in inbox and "information" in inbox, inbox
-        assert not load(ws).unread("task3-b"), "reading acks"
-        assert "no new mail" in run("inbox", "--agent", "task3-b")
-        run("send", "which auth header do I use?", "--from", "task4-impl", "--to", "controller", "--ask")
+        inbox = run("inbox", "--agent", "impl-3-b")
+        assert "[peer impl-4]" in inbox and "rename src/api" in inbox and "information" in inbox, inbox
+        assert not load(ws).unread("impl-3-b"), "reading acks"
+        assert "no new mail" in run("inbox", "--agent", "impl-3-b")
+        run("send", "which auth header do I use?", "--from", "impl-4", "--to", "controller", "--ask")
         att = run("attention")
-        assert "question #" in att and "task4-impl" in att and "--re" in att, att
+        assert "question #" in att and "impl-4" in att and "--re" in att, att
         assert "1 for you" in run("show", "--no-color") and "1 question" in run("show", "--no-color")
         ctrl = run("inbox", "--agent", "controller")
-        assert "[peer task4-impl · ask]" in ctrl and "reply: board send --from controller --to task4-impl --re" in ctrl, ctrl
+        assert "[peer impl-4 · ask]" in ctrl and "reply: board send --from controller --to impl-4 --re" in ctrl, ctrl
         seq_q = max(m.seq for m in load(ws).mail)
-        run("send", "cookie, not header (D-01)", "--from", "controller", "--to", "task4-impl", "--re", str(seq_q))
-        waited = run("wait", "--agent", "task4-impl", "--timeout", "3")
+        run("send", "cookie, not header (D-01)", "--from", "controller", "--to", "impl-4", "--re", str(seq_q))
+        waited = run("wait", "--agent", "impl-4", "--timeout", "3")
         assert "[controller] cookie, not header" in waited, waited
-        run("wait", "--agent", "task4-impl", "--timeout", "1", expect_fail=True)   # nothing new → 124
+        run("wait", "--agent", "impl-4", "--timeout", "1", expect_fail=True)   # nothing new → 124
         run("send", "all: base branch rebased", "--from", "controller", "--to", "all")
-        assert len(load(ws).unread("task3-b")) == 1 and len(load(ws).unread("task4-impl")) == 1, "broadcast reaches every open agent"
+        assert len(load(ws).unread("impl-3-b")) == 1 and len(load(ws).unread("impl-4")) == 1, "broadcast reaches every open agent"
         thread = run("mail")
         assert "[ask]" in thread and "(read)" in thread and "bcast" in thread, thread
         # loop guards: duplicate, thread depth, cap, closed recipient
-        run("send", "will rename src/api/auth.ts — import path changes", "--from", "task4-impl", "--to", "task3-b", expect_fail=True)
+        run("send", "will rename src/api/auth.ts — import path changes", "--from", "impl-4", "--to", "impl-3-b", expect_fail=True)
         last = max(m.seq for m in load(ws).mail)
-        run("send", "r1", "--from", "task3-b", "--to", "task4-impl", "--re", str(seq_q))
+        run("send", "r1", "--from", "impl-3-b", "--to", "impl-4", "--re", str(seq_q))
         r1 = max(m.seq for m in load(ws).mail)
-        run("send", "r2", "--from", "task4-impl", "--to", "task3-b", "--re", str(r1))
+        run("send", "r2", "--from", "impl-4", "--to", "impl-3-b", "--re", str(r1))
         r2 = max(m.seq for m in load(ws).mail)
-        run("send", "r3", "--from", "task3-b", "--to", "task4-impl", "--re", str(r2))
+        run("send", "r3", "--from", "impl-3-b", "--to", "impl-4", "--re", str(r2))
         r3 = max(m.seq for m in load(ws).mail)
-        run("send", "r4", "--from", "task4-impl", "--to", "task3-b", "--re", str(r3), expect_fail=True)   # thread cap
+        run("send", "r4", "--from", "impl-4", "--to", "impl-3-b", "--re", str(r3), expect_fail=True)   # thread cap
         for i in range(MAIL_CAP):
-            run("send", f"fyi {i}", "--from", "task3-b", "--to", "task4-impl") if load(ws).stint_of("task3-b").sent < MAIL_CAP else None
-        run("send", "one more", "--from", "task3-b", "--to", "task4-impl", expect_fail=True)   # per-stint cap
+            run("send", f"fyi {i}", "--from", "impl-3-b", "--to", "impl-4") if load(ws).stint_of("impl-3-b").sent < MAIL_CAP else None
+        run("send", "one more", "--from", "impl-3-b", "--to", "impl-4", expect_fail=True)   # per-stint cap
         assert any("chatter" in f for f in check(load(ws)))
-        run("send", "before you go: CLI order is greeting then farewell", "--from", "task4-impl", "--to", "task3-b")   # piggyback delivers on the RECIPIENT's calls; a return does not read
-        run("return", "3", "--agent", "task3-b", "--status", "DONE")
-        run("send", "late", "--from", "task4-impl", "--to", "task3-b", expect_fail=True)       # returned → closed
+        run("send", "before you go: CLI order is greeting then farewell", "--from", "impl-4", "--to", "impl-3-b")   # piggyback delivers on the RECIPIENT's calls; a return does not read
+        run("return", "3", "--agent", "impl-3-b", "--status", "DONE")
+        run("send", "late", "--from", "impl-4", "--to", "impl-3-b", expect_fail=True)       # returned → closed
         assert any("never read" in f for f in check(load(ws))), check(load(ws))
         assert "## Mail" in run("resume") or True
         js = json.loads(run("show", "--json"))
-        assert js["mail"] and js["acks"]["task3-b"] >= 1
+        assert js["mail"] and js["acks"]["impl-3-b"] >= 1
 
         # --- votes: panel = majority, consensus = any-deny, explicit gate outranks -----------------------------
         run("set", "review=panel:3")
         run("plan", "approved")
-        run("vote", "4", "--kind", "approve", "--agent", "v1", "--verdict", "ok")
+        run("vote", "4", "--kind", "approve", "--agent", "lens1-4", "--verdict", "ok")
         assert load(ws).tasks["4"].gates["approve"].startswith(".. 1/3")
-        run("vote", "4", "--kind", "approve", "--agent", "v2", "--verdict", "fail", "--why", "missing test")
-        run("vote", "4", "--kind", "approve", "--agent", "v3", "--verdict", "warn")
+        run("vote", "4", "--kind", "approve", "--agent", "lens2-4", "--verdict", "fail", "--why", "missing test")
+        run("vote", "4", "--kind", "approve", "--agent", "lens3-4", "--verdict", "warn")
         st = load(ws)
         assert st.tasks["4"].gates["approve"].startswith("ok 2/3"), st.tasks["4"].gates
         run("set", "review=consensus:3")   # rules in force at vote time govern that vote — a later set never flips a gate
         run("plan", "approved")
         assert load(ws).tasks["4"].gates["approve"].startswith("ok 2/3")
-        run("vote", "4", "--kind", "quality", "--agent", "v1", "--verdict", "ok")
-        run("vote", "4", "--kind", "quality", "--agent", "v2", "--verdict", "fail", "--why", "leaks a handle")
+        run("vote", "4", "--kind", "quality", "--agent", "lens1-4", "--verdict", "ok")
+        run("vote", "4", "--kind", "quality", "--agent", "lens2-4", "--verdict", "fail", "--why", "leaks a handle")
         st = load(ws)
-        assert st.tasks["4"].gates["quality"].startswith("fail") and "deny: v2" in st.tasks["4"].gates["quality"], st.tasks["4"].gates
-        run("return", "4", "--agent", "task4-impl", "--status", "DONE", "--commits", f"{base}..{base}")
+        assert st.tasks["4"].gates["quality"].startswith("fail") and "deny: lens2-4" in st.tasks["4"].gates["quality"], st.tasks["4"].gates
+        run("return", "4", "--agent", "impl-4", "--status", "DONE", "--commits", f"{base}..{base}")
         run("done", "4", expect_fail=True)                                   # any-deny fails the gate
         run("gate", "4", "--kind", "quality", "--verdict", "ok")               # the controller closes it explicitly
         assert load(ws).tasks["4"].gates["quality"] == "ok"
@@ -3578,7 +3613,7 @@ def selftest() -> int:
         assert "RUN COMPLETE" in run("show", "--no-color")
         run("note", "3", "poke")  # a note is not work → still valid
         assert not finish_invalid(load(ws))
-        run("dispatch", "3", "--agent", "task3-docs", "--model", "haiku")
+        run("dispatch", "3", "--agent", "impl-3-docs", "--model", "haiku")
         assert "work event" in finish_invalid(load(ws)) and "RUN COMPLETE (STALE)" in run("show", "--no-color")
         subprocess.run([*gitc, "commit", "-q", "--allow-empty", "-m", "after"], check=True)
         assert any("finish invalidated" in f for f in check(load(ws)))
@@ -3622,35 +3657,35 @@ def selftest() -> int:
         old_path = os.environ.get("PATH", "")
         os.environ["PATH"] = f"{shim}:{old_path}"
         try:
-            dry = run("launch", "3", "--agent", "task3-lane", "--engine", "codex", "--model", "gpt-5.6-terra", "--dry-run", "--", "plan.md")
+            dry = run("launch", "3", "--agent", "impl-3-lane", "--engine", "codex", "--model", "gpt-5.6-terra", "--dry-run", "--", "plan.md")
             assert "codex exec" in dry and "lane-exit 3" in dry and "< " in dry and not (ws / "raw" / "lane-3-task3-lane.sh").exists(), dry
-            dry = run("launch", "3", "--agent", "task3-gated", "--engine", "grok", "--model", "grok-4.6", "--after", "1,2", "--dry-run", "--", "plan.md")
-            assert "wait --agent task3-gated --task 1 --task 2 --timeout 0" in dry and dry.index("wait --agent") < dry.index("grok --cwd"), dry
-            out = run("launch", "3", "--agent", "task3-lane", "--engine", "grok", "--model", "grok-4.6", "--effort", "high",
+            dry = run("launch", "3", "--agent", "impl-3-gated", "--engine", "grok", "--model", "grok-4.6", "--after", "1,2", "--dry-run", "--", "plan.md")
+            assert "wait --agent impl-3-gated --task 1 --task 2 --timeout 0" in dry and dry.index("wait --agent") < dry.index("grok --cwd"), dry
+            out = run("launch", "3", "--agent", "impl-3-lane", "--engine", "grok", "--model", "grok-4.6", "--effort", "high",
                       "--owns", "app.py", "--extra=--always-approve", "--fg", "--", "plan.md")
             assert "finished rc=0" in out, out
             st = load(ws)
-            s = st.stint_of("task3-lane")
+            s = st.stint_of("impl-3-lane")
             assert s and s.session and s.cmd_file and s.exit_code == 0 and s.tokens == 12345 and s.calls == 7 and s.owns == "app.py", vars(s)
             assert "--always-approve" in (ws / s.cmd_file).read_text() and (ws / s.log).exists()
             run("done", "1", "--msg", "round two: landed")                                  # task 1 landed → the gate opens at once
-            out = run("launch", "3", "--agent", "task3-after", "--engine", "grok", "--model", "grok-4.6", "--after", "1", "--fg", "--", "plan.md")
-            assert "finished rc=0" in out and load(ws).stint_of("task3-after").after == ["1"], out
+            out = run("launch", "3", "--agent", "impl-3-after", "--engine", "grok", "--model", "grok-4.6", "--after", "1", "--fg", "--", "plan.md")
+            assert "finished rc=0" in out and load(ws).stint_of("impl-3-after").after == ["1"], out
             assert any("exited rc=0 but no task-3-report.md" in why for _, _, why in attention(st, time.time())), "the worktree-report hint"
-            assert "export ORCHESTRATE_WS=" in (ws / load(ws).stint_of("task3-after").cmd_file).read_text(), "the lane's env carries the run"
+            assert "export ORCHESTRATE_WS=" in (ws / load(ws).stint_of("impl-3-after").cmd_file).read_text(), "the lane's env carries the run"
             # a dependency that cannot land: the waiter is released with exit 3; a gated lane exits 125 and NEVER starts its engine
             run("blocked", "2", "--msg", "owner: controller · plan wrong")
-            out = run("wait", "--agent", "task3-after", "--task", "2", "--timeout", "1", expect_fail=True)   # task 2 is blocked
+            out = run("wait", "--agent", "impl-3-after", "--task", "2", "--timeout", "1", expect_fail=True)   # task 2 is blocked
             assert "cannot land" in out and "plan wrong" in out, out
             assert "no such task" in run("wait", "--task", "99", "--timeout", "1", expect_fail=True)         # --agent defaults to controller
             calls = (shim / "grok.calls").read_text().count("x")
-            run("launch", "3", "--agent", "task3-doomed", "--engine", "grok", "--model", "grok-4.6", "--after", "2", "--fg", "--", "plan.md", expect_fail=True)
-            s = load(ws).stint_of("task3-doomed")
+            run("launch", "3", "--agent", "impl-3-doomed", "--engine", "grok", "--model", "grok-4.6", "--after", "2", "--fg", "--", "plan.md", expect_fail=True)
+            s = load(ws).stint_of("impl-3-doomed")
             assert s and s.exit_code == 125 and s.tokens == 0 and (shim / "grok.calls").read_text().count("x") == calls, "a doomed lane never starts its engine"
-            assert any("never started" in why and "task3-doomed" in why for _, _, why in attention(load(ws), time.time()))
+            assert any("never started" in why and "impl-3-doomed" in why for _, _, why in attention(load(ws), time.time()))
             assert not queued_after(load(ws), load(ws).tasks["3"]), "an exited gate is not 'queued'"
-            run("return", "3", "--agent", "task3-doomed", "--status", "BLOCKED", "--msg", "dependency task 2 failed")
-            run("return", "3", "--agent", "task3-lane", "--status", "DONE")   # no --tokens: the receipt already landed
+            run("return", "3", "--agent", "impl-3-doomed", "--status", "BLOCKED", "--msg", "dependency task 2 failed")
+            run("return", "3", "--agent", "impl-3-lane", "--status", "DONE")   # no --tokens: the receipt already landed
             st = load(ws)
             assert "no usage receipt" not in "\n".join(check(st)) and st.run.tokens >= 12345
             assert "7 calls" in run("task", "3") and "calls" in run("postmortem")
@@ -3659,96 +3694,109 @@ def selftest() -> int:
 
         # --- lineage: a lead's subtree — relative controller, instruction tags, team peers, dotted subtasks -----------
         assert [natural_key(x) for x in ("3", "3.1", "3.10", "4", "x")] == sorted(natural_key(x) for x in ("3.10", "x", "4", "3.1", "3")), "dotted ids sort under their parent"
-        run("dispatch", "3", "--agent", "dom-lead", "--model", "opus", "--role", "sub-orchestrator")
+        run("dispatch", "3", "--agent", "lead-3", "--model", "opus", "--role", "sub-orchestrator")
         run("todo", "3.1", "auth worker slice")
-        run("dispatch", "3.1", "--agent", "w31", "--model", "sonnet", "--by", "dom-lead", "--owns", "src/auth/**")
-        run("dispatch", "4", "--agent", "task4-other", "--model", "sonnet")
+        run("dispatch", "3.1", "--agent", "impl-3.1", "--model", "sonnet", "--by", "lead-3", "--owns", "src/auth/**")
+        run("dispatch", "4", "--agent", "impl-4-other", "--model", "sonnet")
         st = load(ws)
-        assert st.stint_of("w31").by == "dom-lead" and st.lead_of("w31") == "dom-lead" and st.lead_of("dom-lead") == "controller"
-        assert st.events[-2]["actor"] == "dom-lead", "a lead's dispatch is attributed to the lead"
-        out = run("send", "which hash for the auth token?", "--from", "w31", "--to", "controller", "--ask")
-        assert "w31 -> dom-lead" in out and "routed to your lead" in out, out
-        assert not load(ws).unread("controller") or all(m.sender != "w31" for m in load(ws).unread("controller")), "the controller is not asked"
-        inbox = run("inbox", "--agent", "dom-lead")
-        assert "[peer w31 · ask]" in inbox and "--to w31 --re" in inbox, inbox
-        run("send", "sha256, salted", "--from", "dom-lead", "--to", "w31", "--re", str(load(ws).mail[-1].seq))
-        run("send", "freeze the API by 17:00", "--from", "controller", "--to", "w31")
-        inbox = run("inbox", "--agent", "w31")
-        assert "[lead dom-lead]" in inbox and "[controller]" in inbox and "controller and lead mail is an instruction" in inbox, inbox
-        peers = run("peers", "--agent", "w31")
-        assert "your lead: dom-lead" in peers and "elsewhere in the run" in peers and peers.index("elsewhere") < peers.index("task4-other"), peers
+        assert st.stint_of("impl-3.1").by == "lead-3" and st.lead_of("impl-3.1") == "lead-3" and st.lead_of("lead-3") == "controller"
+        assert st.events[-2]["actor"] == "lead-3", "a lead's dispatch is attributed to the lead"
+        out = run("send", "which hash for the auth token?", "--from", "impl-3.1", "--to", "controller", "--ask")
+        assert "impl-3.1 -> lead-3" in out and "routed to your lead" in out, out
+        assert not load(ws).unread("controller") or all(m.sender != "impl-3.1" for m in load(ws).unread("controller")), "the controller is not asked"
+        inbox = run("inbox", "--agent", "lead-3")
+        assert "[peer impl-3.1 · ask]" in inbox and "--to impl-3.1 --re" in inbox, inbox
+        run("send", "sha256, salted", "--from", "lead-3", "--to", "impl-3.1", "--re", str(load(ws).mail[-1].seq))
+        run("send", "freeze the API by 17:00", "--from", "controller", "--to", "impl-3.1")
+        inbox = run("inbox", "--agent", "impl-3.1")
+        assert "[lead lead-3]" in inbox and "[controller]" in inbox and "controller and lead mail is an instruction" in inbox, inbox
+        peers = run("peers", "--agent", "impl-3.1")
+        assert "your lead: lead-3" in peers and "elsewhere in the run" in peers and peers.index("elsewhere") < peers.index("impl-4-other"), peers
         assert "src/auth" not in peers.split("elsewhere")[1] or True
-        run("send", "lead-level question", "--from", "w31", "--to", "lead", "--ask")
-        assert load(ws).mail[-1].to == "dom-lead"
-        out = run("wait", "--agent", "dom-lead", "--task", "3.1", "--or-mail", "--timeout", "1", expect_fail=True)   # 5: a worker's ask wakes the lead
+        run("send", "lead-level question", "--from", "impl-3.1", "--to", "lead", "--ask")
+        assert load(ws).mail[-1].to == "lead-3"
+        out = run("wait", "--agent", "lead-3", "--task", "3.1", "--or-mail", "--timeout", "1", expect_fail=True)   # 5: a worker's ask wakes the lead
         assert "lead-level question" in out and "mail arrived while you waited" in out, out
-        run("wait", "--agent", "dom-lead", "--task", "3.1", "--or-mail", "--timeout", "1", expect_fail=True)         # 124: nothing new
-        run("return", "3", "--agent", "dom-lead", "--status", "DONE")             # the lead is gone → controller is the fallback
-        out = run("send", "orphan question", "--from", "w31", "--to", "controller", "--ask")
-        assert "w31 -> controller" in out, out
-        run("return", "3.1", "--agent", "w31", "--status", "DONE")
-        run("return", "4", "--agent", "task4-other", "--status", "DONE")
+        run("wait", "--agent", "lead-3", "--task", "3.1", "--or-mail", "--timeout", "1", expect_fail=True)         # 124: nothing new
+        run("return", "3", "--agent", "lead-3", "--status", "DONE")             # the lead is gone → controller is the fallback
+        out = run("send", "orphan question", "--from", "impl-3.1", "--to", "controller", "--ask")
+        assert "impl-3.1 -> controller" in out, out
+        run("return", "3.1", "--agent", "impl-3.1", "--status", "DONE")
+        run("return", "4", "--agent", "impl-4-other", "--status", "DONE")
         run("inbox", "--agent", "controller")   # ack the orphan ask so later checks stay quiet about it
         run("done", "3.1")
+        # --- naming: <role>-<task>, derived when omitted, attempt suffix on repeats, enforced when given -----------
+        out = run("dispatch", "4", "--model", "sonnet", "--role", "spec reviewer")
+        assert "task 4 → spec-4" in out and load(ws).stint_of("spec-4"), out
+        run("return", "4", "--agent", "spec-4", "--status", "DONE")
+        assert "→ spec-4-r2" in run("dispatch", "4", "--model", "sonnet", "--role", "spec reviewer"), "a repeat is attempt 2"
+        run("return", "4", "--agent", "spec-4-r2", "--status", "DONE")
+        assert "→ lead-4" in run("dispatch", "4", "--model", "opus", "--role", "sub-orchestrator")
+        run("return", "4", "--agent", "lead-4", "--status", "DONE")
+        run("dispatch", "4", "--agent", "Manager Steve", "--model", "sonnet", expect_fail=True)
+        run("dispatch", "4", "--agent", "controller", "--model", "sonnet", expect_fail=True)
+        run("dispatch", "4", "--agent", "impl-4-codex", "--model", "sonnet")   # a trailing tag is fine
+        run("return", "4", "--agent", "impl-4-codex", "--status", "DONE")
+        assert [natural_key(x) for x in ("impl-4",)] and role_short("quality reviewer") == "quality" and role_short("") == "impl"
         show = run("show", "--no-color", "-x")
-        assert "↳ auth worker slice" in show and "by dom-lead" in show and "sub-orchestrator" in show, show
+        assert "↳ auth worker slice" in show and "by lead-3" in show and "sub-orchestrator" in show, show
         (ws / "task-5-brief.md").write_text("You are implementing Task 5: do the thing. Repo root: /x\n")
         Path("plan.md").write_text(Path("plan.md").read_text() + "## Task 5: Fifth\n")
         run("init", "plan.md", "--resume")
         assert load(ws).tasks["5"].title == "Fifth", "a plan heading outranks a brief's first line"
 
         # --- a read-only lane: observations degrade to a printed line, never a traceback ---------------------------
-        run("dispatch", "4", "--agent", "task4-ro", "--model", "sonnet")
+        run("dispatch", "4", "--agent", "impl-4-ro", "--model", "sonnet")
         for f in (ws / JOURNAL, ws / ".journal.lock"):
             f.chmod(0o444)
         try:
-            out = run("note", "4", "hi", "--agent", "task4-ro")
-            assert "not writable" in out and "board note 4 hi --agent task4-ro" in out, out
-            out = run("vote", "4", "--kind", "approve", "--agent", "task4-ro", "--verdict", "ok")
-            assert "board vote 4 --kind approve --agent task4-ro --verdict ok" in out, out
-            assert "not writable" in run("send", "fyi", "--from", "task4-ro", "--to", "controller")
-            assert "no new mail" in run("inbox", "--agent", "task4-ro")
+            out = run("note", "4", "hi", "--agent", "impl-4-ro")
+            assert "not writable" in out and "board note 4 hi --agent impl-4-ro" in out, out
+            out = run("vote", "4", "--kind", "approve", "--agent", "impl-4-ro", "--verdict", "ok")
+            assert "board vote 4 --kind approve --agent impl-4-ro --verdict ok" in out, out
+            assert "not writable" in run("send", "fyi", "--from", "impl-4-ro", "--to", "controller")
+            assert "no new mail" in run("inbox", "--agent", "impl-4-ro")
         finally:
             for f in (ws / JOURNAL, ws / ".journal.lock"):
                 f.chmod(0o644)
-        assert not load(ws).problems and not any(e.get("agent") == "task4-ro" and e.get("ev") != "dispatch" for e in load(ws).events)
-        run("return", "4", "--agent", "task4-ro", "--status", "DONE")
+        assert not load(ws).problems and not any(e.get("agent") == "impl-4-ro" and e.get("ev") != "dispatch" for e in load(ws).events)
+        run("return", "4", "--agent", "impl-4-ro", "--status", "DONE")
 
         # --- piggyback delivery: a worker's own board call hands over its mail ---------------------------------
-        run("dispatch", "4", "--agent", "task4-b", "--model", "sonnet")
-        run("send", "heads-up: app.py CLI line moves", "--from", "controller", "--to", "task4-b")
-        out = run("note", "4", "committing", "--agent", "task4-b")
-        assert "mail for task4-b" in out and "[controller] heads-up" in out and not load(ws).unread("task4-b"), out
-        assert "no new mail" in run("inbox", "--agent", "task4-b")
+        run("dispatch", "4", "--agent", "impl-4-b", "--model", "sonnet")
+        run("send", "heads-up: app.py CLI line moves", "--from", "controller", "--to", "impl-4-b")
+        out = run("note", "4", "committing", "--agent", "impl-4-b")
+        assert "mail for impl-4-b" in out and "[controller] heads-up" in out and not load(ws).unread("impl-4-b"), out
+        assert "no new mail" in run("inbox", "--agent", "impl-4-b")
 
         # --- report ↔ return: disagreement is a note and a field, never a refusal ----------------------------------
         (ws / "task-4-report.md").write_text("Status: DONE\nall good\n")
-        out = run("return", "4", "--agent", "task4-b", "--status", "DONE_WITH_CONCERNS", "--report", "task-4-report.md")
-        assert "report says Status: DONE" in out and load(ws).stint_of("task4-b").reported == "DONE", out
+        out = run("return", "4", "--agent", "impl-4-b", "--status", "DONE_WITH_CONCERNS", "--report", "task-4-report.md")
+        assert "report says Status: DONE" in out and load(ws).stint_of("impl-4-b").reported == "DONE", out
         assert "report ≠ return" in run("postmortem")
 
         # --- follow: a filtered tail that ends on finish or timeout --------------------------------------------------
         seq0 = load(ws).run.last_seq
         run("send", "fyi", "--from", "controller", "--to", "all")
-        run("note", "4", "beat", "--agent", "task4-b")
+        run("note", "4", "beat", "--agent", "impl-4-b")
         out = run("follow", "--since", str(seq0), "--timeout", "1", "--kinds", "mail", expect_fail=True)   # 124 on timeout
         assert "mail" in out and "beat" not in out, out
         out = run("follow", "--since", str(seq0), "--timeout", "1", "--for", "controller", expect_fail=True)
         assert "fyi" in out and "beat" not in out, out
 
         # --- dependency rendezvous: wait on a task's RETURN, peers show what returned ---------------------------
-        run("dispatch", "3", "--agent", "task3-dep", "--model", "sonnet")
-        run("wait", "--agent", "task4-b", "--task", "3", "--timeout", "1", expect_fail=True)      # open → 124
-        run("lane-exit", "3", "--agent", "task3-dep", "--exit", "0")                                  # exited, no report yet → still open
-        run("wait", "--agent", "task4-b", "--task", "3", "--timeout", "1", expect_fail=True)
+        run("dispatch", "3", "--agent", "impl-3-dep", "--model", "sonnet")
+        run("wait", "--agent", "impl-4-b", "--task", "3", "--timeout", "1", expect_fail=True)      # open → 124
+        run("lane-exit", "3", "--agent", "impl-3-dep", "--exit", "0")                                  # exited, no report yet → still open
+        run("wait", "--agent", "impl-4-b", "--task", "3", "--timeout", "1", expect_fail=True)
         (ws / "task-3-report.md").write_text("Status: DONE\n")
-        out = run("wait", "--agent", "task4-b", "--task", "3", "--timeout", "1")                   # exited + report on disk → 0
+        out = run("wait", "--agent", "impl-4-b", "--task", "3", "--timeout", "1")                   # exited + report on disk → 0
         assert "report on disk" in out and "not yet returned" in out, out
-        run("return", "3", "--agent", "task3-dep", "--status", "DONE", "--commits", f"{base}..{base}")
-        out = run("wait", "--agent", "task4-b", "--task", "3", "--timeout", "1")                   # returned → 0
+        run("return", "3", "--agent", "impl-3-dep", "--status", "DONE", "--commits", f"{base}..{base}")
+        out = run("wait", "--agent", "impl-4-b", "--task", "3", "--timeout", "1")                   # returned → 0
         assert "task 3" in out and "done" in out and base in out, out
-        peers = run("peers", "--agent", "task4-b")
-        assert "returned (their work is on disk" in peers and "task3-dep" in peers and "board wait --agent <you> --task N" in peers, peers
+        peers = run("peers", "--agent", "impl-4-b")
+        assert "returned (their work is on disk" in peers and "impl-3-dep" in peers and "board wait --agent <you> --task N" in peers, peers
         subprocess.run(["git", "checkout", "-q", "-b", "elsewhere"], check=True)
         assert "(you: elsewhere)" in run("show", "--no-color"), "viewer's branch is named when it differs from the run's"
         subprocess.run(["git", "checkout", "-q", "main"], check=True)
@@ -3767,10 +3815,10 @@ def selftest() -> int:
         # observed model keyed by the NAMED role when the models map has it
         run("set", "models=worker=sonnet,integrator=opus")
         run("plan", "approved")
-        run("dispatch", "4", "--agent", "task4-int", "--model", "opus", "--role", "integrator")
-        run("return", "4", "--agent", "task4-int", "--status", "DONE", "--observed-model", "opus")
+        run("dispatch", "4", "--agent", "integ-4", "--model", "opus", "--role", "integrator")
+        run("return", "4", "--agent", "integ-4", "--status", "DONE", "--observed-model", "opus")
         st = load(ws)
-        assert st.run.observed.get("integrator") == "opus" and not any("task4-int" in d for d in st.run.drift), (st.run.observed, st.run.drift)
+        assert st.run.observed.get("integrator") == "opus" and not any("integ-4" in d for d in st.run.drift), (st.run.observed, st.run.drift)
 
         # --- an older repo: a pre-journal workspace is detected, refused by bare init, adopted by --resume ----
         shutil.rmtree(ws)

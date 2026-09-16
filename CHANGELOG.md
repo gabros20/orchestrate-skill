@@ -10,6 +10,18 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.23.0] — 2026-09-16
+
+### Added
+- **Agent names are `<role>-<task>[-tag]`**, derived and enforced. `board dispatch N --model M`
+  (and `board launch`) without `--agent` names the agent from `--role` and the task — `impl-3`,
+  `lead-1`, `impl-1.1` under `lead-1`, `spec-3`, `quality-3`, `verify-3`, `integ-1` — with `-rN`
+  when the name would repeat (a re-dispatch is attempt N). An explicit `--agent` is refused unless
+  it fits; `controller` is reserved; a trailing tag tells twins apart (`spec-3-codex`). Why: a
+  small model reading `[peer impl-1.2]` or `[lead lead-1]` knows what the sender is and where it
+  sits without being told; the roster and mail thread read as the tree. Older journals are
+  untouched (validation is at write time).
+
 ## [1.22.1] — 2026-09-16
 
 ### Added

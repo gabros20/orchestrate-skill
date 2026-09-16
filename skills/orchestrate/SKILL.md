@@ -166,8 +166,9 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 
 Use [toolbox](scripts/toolbox) to inventory available tools once and reuse the recorded result.
 The journal (`.orchestrate/journal.jsonl`) is the run's spine and the board is a view over it,
-never a second record: transitions are the controller's to record, workers may only `board
-note`; the user watches from a pane of their own (`board`).
+never a second record: transitions are the controller's to record; workers only observe —
+`board note` (a heartbeat) and `board exec N --name tests --agent <you> -- <cmd>` (their own
+test run, exit code on the card); the user watches from a pane of their own (`board`).
 
 ## Artifact contract
 

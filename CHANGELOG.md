@@ -42,6 +42,11 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, 
   routing suggestion that is recommended, never applied (one change, repeated evidence only);
   the loop evolve pass takes it as input. `RUN COMPLETE` and the resume receipt carry tokens per
   accepted task.
+- **Workers' own test runs are visible.** `board exec … --agent <worker>` (and `board result
+  --agent`) journal a check as the worker's observation — an exit code is not a transition, so the
+  report contract now offers two observation lines (note, exec). A journal lock (`.journal.lock`,
+  flock) serializes parallel writers; the selftest fires 12 concurrent notes and asserts an
+  unbroken chain.
 - **Adoption route for older workspaces.** `board init` detects the workspace shape (empty ·
   pre-journal · open · finished): over unfinished work a bare `init` is refused with the two
   routes printed — `--resume` adopts (journal started or continued, ledger/reports kept, an

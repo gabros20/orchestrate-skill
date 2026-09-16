@@ -162,8 +162,10 @@ ran elsewhere) · `board nudge` / `board escalate N --to MODEL --why` · `board 
 line itself — refused while the current attempt has a failed gate or a failed check) · `board finish --gate pass|fail
 --evidence PATH` (`pass` is refused while `check --finish` is dirty unless `--force --reason`; binds
 HEAD, the goal hash and the journal cursor, so later work, a moved HEAD or a changed goal render it
-STALE). Workers get one optional line — `board note N "<msg>"` — a heartbeat, never a status and
-never liveness (liveness is artifact deltas only, `shared-monitoring.md` 3b).
+STALE). Workers get two optional observation lines — `board note N "<msg>"` (a heartbeat, never a
+status and never liveness — liveness is artifact deltas only, `shared-monitoring.md` 3b) and
+`board exec N --name tests --agent <you> -- <cmd>` (their own verification run; an exit code is an
+observation, not a transition). Parallel writers are serialized by a journal lock.
 
 Views, all derived from the journal plus the files above (briefs → todo, reports and findings →
 review, ledger → done — final, always wins): the kanban the user watches from their own pane

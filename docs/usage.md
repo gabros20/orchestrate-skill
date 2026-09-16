@@ -306,10 +306,12 @@ board done 3 --msg "commits a1b2c3d..e4f5a6b, review clean"   # writes the ledge
 board finish --gate pass --evidence raw/final-review.md  # refused while `check --finish` is dirty (or --force --reason); binds HEAD + goal + cursor
 ```
 
-Workers get one optional heartbeat line in their brief — `board note 3 "tests green, committing"`
-— a note, never a status, and never liveness (liveness is artifact deltas only). Following the
+Workers get two optional observation lines in their brief — `board note 3 "committing"` (a note,
+never a status, never liveness — liveness is artifact deltas only) and `board exec 3 --name tests
+--agent task3-impl -- npm test` (their own test run: `tests ..` while it runs, `tests ok 12s` /
+`tests fail` after, log under `raw/`, attributed to the worker in the journal). Following the
 invariants (a worker saying "done" is a proposal; the gate is the transition), only the controller
-writes the lines above. Titles, notes and decisions are sanitised before they reach the terminal.
+writes the transition lines above; a journal lock serializes parallel writers. Titles, notes and decisions are sanitised before they reach the terminal.
 
 ### Views
 

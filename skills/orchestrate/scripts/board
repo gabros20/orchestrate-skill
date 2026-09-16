@@ -761,6 +761,10 @@ RGB = {"todo": (128, 138, 156), "in_progress": (62, 142, 247), "review": (245, 1
 OK, WARN, BAD = (48, 164, 108), (245, 165, 36), (229, 72, 77)
 ANSI16 = {"todo": "90", "in_progress": "34", "review": "33", "done": "32", "blocked": "35"}
 MARGIN = 2  # left/right page margin
+# braille "dots" spinner (the cli-spinners default) with a plain |/-\ fallback for ascii/non-utf
+# terminals — both are well-worn picks from https://stackoverflow.com/questions/2685435
+SPIN_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+SPIN_FRAMES_ASCII = "|/-\\"
 BOLD, DIM, REV, RESET = "\033[1m", "\033[2m", "\033[7m", "\033[0m"
 Row = list  # list[tuple[str, str]] — (text, sgr) segments; sgr "" = terminal default
 
@@ -1238,10 +1242,14 @@ def cmd_watch(ws: Path) -> None:
 
     def reload(reason: str) -> None:
         """Re-execute the script from disk — a real restart that keeps the view where it was."""
-        flash = f"  {view.S.dot} ⟳ reloading ({reason})…" if not view.S.ascii else f"  * reloading ({reason})..."
-        out.write("\033[H" + DIM + flash + RESET + "\033[K")
-        out.flush()
-        time.sleep(0.25)  # long enough to be seen, short enough to feel instant
+        frames = SPIN_FRAMES_ASCII if view.S.ascii else SPIN_FRAMES
+        label = f"reloading ({reason})…" if not view.S.ascii else f"reloading ({reason})..."
+        col = view.S.fg(OK)
+        for i in range(9):  # ~9 frames @ 75ms ≈ 0.67s total — seen, but still feels instant
+            text = clip(f"  {frames[i % len(frames)]} {label}", max(1, cols - MARGIN))
+            out.write(f"\033[{lines};1H" + col + text + RESET + "\033[K")
+            out.flush()
+            time.sleep(0.075)
         restore()
         os.environ["BOARD_VIEW"] = json.dumps({"expanded": view.expanded, "focus": view.focus, "open": view.open,
                                                "attention": view.attention_only, "offset": offset, "reloaded": time.time()})
@@ -1285,7 +1293,8 @@ def cmd_watch(ws: Path) -> None:
             if now - reloaded_at < 4:
                 status = f"reloaded {dt.datetime.fromtimestamp(reloaded_at).strftime('%H:%M:%S')}"
             elif now - updated_at < 3:
-                status = ("↻ " if not view.S.ascii else "* ") + f"updated {dt.datetime.fromtimestamp(updated_at).strftime('%H:%M:%S')}"
+                spin = SPIN_FRAMES_ASCII if view.S.ascii else SPIN_FRAMES
+                status = spin[tick % len(spin)] + " " + f"updated {dt.datetime.fromtimestamp(updated_at).strftime('%H:%M:%S')}"
             hint = (f"q quit  {dot}  j/k focus  {dot}  enter card  {dot}  " +
                     ("e contract" if view.expanded else "e expand") + f"  {dot}  " +
                     ("a all" if view.attention_only else "a attention") + f"  {dot}  r reload" +

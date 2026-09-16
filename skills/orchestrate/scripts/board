@@ -2149,7 +2149,7 @@ def finish_invalid(st: State) -> str:
     run = st.run
     if not run.finish:
         return ""
-    later = [e for e in st.events if int(e.get("seq", 0)) > run.finish_seq and e.get("ev") in TASK_EVENTS - {"note"}]
+    later = [e for e in st.events if int(e.get("seq", 0)) > run.finish_seq and e.get("ev") in TASK_EVENTS - {"note", "title", "todo"}]   # a retitle is not work
     if later:
         return f"{len(later)} work event(s) after finish"
     head = git("rev-parse", "HEAD")

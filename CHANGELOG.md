@@ -10,6 +10,28 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.24.0] — 2026-09-17
+
+### Changed
+- **Cards are three columns — task · who · signal — signal over noise.** Widths are computed per
+  lane so the eye scans columns, not prose. *Who* is the agent responsible right now (newest open
+  stint, else the last returned one); its `<role>-<task>` name already says role and place, so
+  `by <lead>`, role, model, engine, effort and ownership no longer repeat on the line — they live
+  in the header and the expanded view. The one per-card exception is a deviation from the run's
+  defaults, shown as a suffix (`impl-3 ·opus`, `spec-2 ·codex`). *Signal* is one thing per state,
+  with a glyph only when the controller must act: `~ after N` (a queued lane — now projected into
+  TODO, since nothing runs and nothing can be nudged), `> elapsed`, `> 1/2 landed · 6m` (a lead
+  counts its subtasks instead of a clock), `! stale`, `? asked you #n`, `! exited rc=0 · report on
+  disk`, `x never started · dependency N failed`, `? returned · dispatch the review`, gate marks,
+  the commit range on done, `x reason` on blocked. The `↳` marker is gone: a subtask indents under
+  its parent when both are in the lane, otherwise the dotted id carries the tree. Done collapses
+  whole families and never hides a parent whose subtasks show. Narrow panes stack who and signal
+  under the title.
+
+### Fixed
+- The pane runs `git` against the workspace's repository, not its own cwd — a pane following
+  another run no longer reports "HEAD moved" or "(you: <branch>)" from the wrong repo.
+
 ## [1.23.1] — 2026-09-16
 
 ### Fixed

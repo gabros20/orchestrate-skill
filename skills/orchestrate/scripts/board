@@ -233,10 +233,13 @@ def workspace() -> Path:
     return common_path.resolve().parent / ".orchestrate"
 
 
+GIT_CWD: Path | None = None   # the workspace's repo — a pane following another run must not read its own cwd's git
+
+
 def git(*args: str) -> str:
     try:
-        return subprocess.run(["git", *args], capture_output=True, text=True).stdout.strip()
-    except FileNotFoundError:
+        return subprocess.run(["git", *args], capture_output=True, text=True, cwd=GIT_CWD).stdout.strip()
+    except (FileNotFoundError, OSError):
         return ""
 
 
@@ -637,6 +640,8 @@ class State:
     def lane_of(self, t: Task) -> str:
         """Project a card onto the declared lanes: canonical state, refined by the open stint's role."""
         lanes, s = self.lanes, t.state
+        if s == "in_progress" and queued_after(self, t):
+            return "todo"   # the wrapper is waiting for a dependency; the engine has not started
         if s in ("todo", "done", "blocked") or lanes == COLUMNS:
             return s
         open_ = [x for x in self.stints if x.task == t.id and not x.returned]
@@ -1331,54 +1336,87 @@ def mail_badge(t: Task, st_: "State", S: Style) -> Row:
     return [(f" {S.dot} ", DIM), (f"m{n_}", S.fg(WARN))] if n_ else []
 
 
-def who_label(t: Task, st_: "State | None", S: Style, narrow: bool) -> str:
-    """`agent · role · model · engine · by lead` — the role when it is not a plain implementer, the lead when there is one."""
-    s = st_.stint_of(t.agent) if (st_ is not None and t.agent) else None
-    role = s.role if s and s.role and s.role != "implementer" else ""
-    lead = f"by {s.by}" if s and s.by and s.by != "controller" else ""
-    parts = [t.agent, role, lead] if narrow else [t.agent, role, t.model, t.engine if t.engine and t.engine != "claude" else "", lead]
-    return f" {S.dot} ".join(x for x in parts if x)
+def card_who(t: Task, st: "State") -> tuple[str, list[str]]:
+    """(agent, deviations) — the agent responsible right now: the newest open stint, else the last returned one.
+    Deviations are the only per-card facts worth a line: a model or engine that differs from the run's defaults."""
+    mine = [s for s in st.stints if s.task == t.id]
+    if not mine:
+        return "", []
+    open_ = [s for s in mine if not s.returned]
+    s = open_[-1] if open_ else mine[-1]
+    dev: list[str] = []
+    tier = st.run.models.get(s.role if s.role in st.run.models else role_tier(s.role))
+    if s.model and tier and s.model != tier:
+        dev.append(s.model)
+    eng = str(st.run.dims.get("engine") or "claude")
+    if s.engine and (eng == "mixed" or s.engine != eng):
+        dev.append(s.engine)
+    return s.agent, dev
 
 
-def card_meta(t: Task, now: float, S: Style, narrow: bool, st_: "State | None" = None) -> Row:
-    """Right-hand side of a card as styled segments."""
-    st = t.state
-    who = who_label(t, st_, S, narrow)
-    badges = check_badges(t, S) if st in ("todo", "in_progress", "review") else []
-    if st_ is not None:
-        badges = badges + mail_badge(t, st_, S)
-    if st == "in_progress":
-        idle = now - t.last_activity
-        stale = idle > STALE_AFTER
-        tail = f" {S.dot} ".join(p for p in (who or "dispatched", fmt_dur(now - t.since) if t.since else "") if p)
-        if st_ is not None:
-            waiting = [x for x in st_.stints if x.task == t.id and not x.returned and x.after
-                       and not all(dep_landed(st_, st_.tasks[d]) for d in x.after if d in st_.tasks)]
-            if waiting:
-                return [("~ ", S.fg(WARN) + BOLD), (tail, DIM), (f" {S.dot} queued after task {', '.join(waiting[0].after)}", S.fg(WARN))] + badges
-        if stale:
-            return [("! ", S.fg(WARN) + BOLD), (tail, DIM), (f" {S.dot} stale {fmt_dur(idle)}", S.fg(WARN))] + badges
-        return [("> ", S.fg(OK) + BOLD), (tail, DIM)] + badges
-    if st == "review":
+def children(st: "State", t: Task) -> list[Task]:
+    return [x for x in st.ordered() if x.id.startswith(t.id + ".")]
+
+
+def card_signal(t: Task, st: "State", now: float, S: Style) -> Row:
+    """One signal per state, glyph first when the controller must act: ~ queued · > running · ! look · ? decide · x failed."""
+    d = f" {S.dot} "
+    state = t.state
+    badges = (check_badges(t, S) if state in ("todo", "in_progress", "review") else []) + mail_badge(t, st, S)
+    if state == "in_progress" and queued_after(st, t):
+        return [("~ ", S.fg(WARN) + BOLD), (f"after {', '.join(queued_after(st, t))}", S.fg(WARN))] + badges
+    if state == "todo":
+        return [(t.detail or "queued", DIM)] + badges
+    if state == "in_progress":
+        exited = [x for x in st.stints if x.task == t.id and not x.returned and x.exit_code is not None]
+        if exited:
+            x = exited[-1]
+            if x.exit_code == 125:
+                return [("x ", S.fg(BAD) + BOLD), (f"never started{d}dependency {', '.join(x.after) or '?'} failed", S.fg(BAD))] + badges
+            if x.exit_code == 0:
+                has = (st.ws / f"task-{t.id}-report.md").exists() or bool(t.report)
+                return [("! ", S.fg(WARN) + BOLD), (f"exited rc=0{d}" + ("report on disk" if has else "no report here"), S.fg(WARN))] + badges
+            return [("x ", S.fg(BAD) + BOLD), (f"exited rc={x.exit_code}", S.fg(BAD))] + badges
+        agent = st.card_agent(t)
+        asked = [m for m in st.unread("controller") if m.ask and m.sender == agent]
+        elapsed = fmt_dur(now - t.since) if t.since else ""
+        kids = children(st, t)
+        lead = f"{sum(1 for k in kids if dep_landed(st, k))}/{len(kids)} landed{d}" if kids else ""
+        if asked:
+            return [("? ", S.fg(WARN) + BOLD), (f"asked you #{asked[0].seq}{d}{fmt_dur(now - asked[0].ts)}", S.fg(WARN))] + badges
+        if is_stale(t, now):
+            return [("! ", S.fg(WARN) + BOLD), (f"{lead}stale {fmt_dur(now - t.last_activity)}", S.fg(WARN))] + badges
+        return [("> ", S.fg(OK) + BOLD), (f"{lead}{elapsed}", DIM)] + badges
+    if state == "review":
         segs: Row = []
         for k, v in t.gates.items():
             if segs:
-                segs.append((f" {S.dot} ", DIM))
+                segs.append((d, DIM))
             mark, _, rnd = v.partition(" ")
             colour = S.fg(OK) if mark == "ok" else S.fg(BAD) if mark == "fail" else S.fg(WARN) if mark == "warn" else DIM
             segs += [(f"{k} ", DIM), (mark, colour), (f" {rnd}" if rnd else "", DIM)]
-        if not segs:
-            segs = [(t.detail or "awaiting review", DIM)]
-        if who:
-            segs.append((f" {S.dot} {who}", DIM))
+        if not t.gates:
+            segs = [("? ", S.fg(WARN) + BOLD), ("returned" + (f"{d}concerns" if t.last_status == "DONE_WITH_CONCERNS" else "") + f"{d}dispatch the review", DIM)]
+        elif any(v.startswith("fail") for v in t.gates.values()):
+            segs = [("x ", S.fg(BAD) + BOLD)] + segs
+        else:
+            rs = [x for x in st.open_stints() if x.task == t.id and x.role.endswith("reviewer")]
+            if rs and stint_stale(rs[-1], t, now):
+                segs = [("! ", S.fg(WARN) + BOLD)] + segs + [(f"{d}reviewer silent {fmt_dur(now - rs[-1].started)}", S.fg(WARN))]
         return segs + badges
-    if st == "done":
-        return [(t.final_note or t.note or t.detail or "complete", DIM)] + ([(f" {S.dot} {who}", DIM)] if who and not narrow else [])
-    if st == "blocked":
+    if state == "done":
+        accepted = next((s for s in reversed(st.stints) if s.task == t.id and s.returned and s.commits), None)
+        text_ = accepted.commits if accepted else (t.final_note or t.note or t.detail or "complete")
+        concerns = f"{d}concerns" if accepted and accepted.status == "DONE_WITH_CONCERNS" else ""
+        return [(text_, DIM), (concerns, DIM)] + mail_badge(t, st, S)
+    if state == "blocked":
         return [("x ", S.fg(BAD) + BOLD), ((t.note or t.detail or "blocked"), S.col("blocked"))]
-    if badges:
-        return [(t.detail or "", DIM)] + badges
-    return [(t.detail or "", DIM)]
+    return [(t.detail or "", DIM)] + badges
+
+
+def card_meta(t: Task, now: float, S: Style, narrow: bool, st_: "State | None" = None) -> Row:
+    """Compatibility: the card's signal column."""
+    return card_signal(t, st_, now, S) if st_ is not None else [(t.detail or "", DIM)]
 
 
 def row_text(row: Row) -> str:
@@ -1654,7 +1692,8 @@ class View:
 
 
 def build_rows(st: State, width: int, view: View) -> tuple[list[Row], list[tuple[int, str]]]:
-    """Returns rows and the (row index, task id) anchors of every rendered card (for focus/scroll)."""
+    """Returns rows and the (row index, task id) anchors of every rendered card (for focus/scroll).
+    Every card is three columns — task · who · signal — with widths computed per lane, so the eye scans columns, not prose."""
     now = time.time()
     S = view.S
     W = max(40, width) - 2 * MARGIN          # usable width
@@ -1666,6 +1705,7 @@ def build_rows(st: State, width: int, view: View) -> tuple[list[Row], list[tuple
     ordered = st.ordered()
     idw = max([len(t.id) for t in ordered] + [1])
     att_ids = {t.id for _, t, _ in attention(st, now)}
+    has_kids = {t.id for t in ordered if children(st, t)}
     for col in st.lanes:
         cards = [t for t in ordered if st.lane_of(t) == col]
         if view.attention_only:
@@ -1681,38 +1721,66 @@ def build_rows(st: State, width: int, view: View) -> tuple[list[Row], list[tuple
             continue
         hidden = 0
         if col == "done" and not view.expanded and len(cards) > DONE_SHOW:
-            cards, hidden = cards[-DONE_SHOW:], len(cards) - DONE_SHOW
+            # collapse whole families (a parent with its subtasks), oldest first; a parent with children is never hidden
+            fams: list[str] = []
+            for t in cards:
+                root = t.id.split(".")[0]
+                if root not in fams:
+                    fams.append(root)
+            keep = set(fams[-DONE_SHOW:])
+            shown = [t for t in cards if t.id.split(".")[0] in keep or t.id in has_kids]
+            hidden, cards = len(cards) - len(shown), shown
         title = f" {lane_label(col)} "
         count = f" {len(cards) + hidden} "
         fill = W - 2 - dw(title) - 1 - dw(count) - 1
         rows.append([(m + S.tl + S.h, c), (title, c + BOLD), (S.h * max(1, fill), c), (count, c + BOLD), (S.h + S.tr, c)])
+        visible = {t.id for t in cards}
+        whos = {t.id: card_who(t, st) for t in cards}
+        who_txt = {tid: (a + "".join(f" {S.dot}{x}" for x in dev) if a else "") for tid, (a, dev) in whos.items()}
+        whow = max([dw(x) for x in who_txt.values()] + [0])
+        sigs = {t.id: card_signal(t, st, now, S) for t in cards}
+
+        def ttl_of(t: Task) -> str:
+            parent = t.id.rsplit(".", 1)[0] if "." in t.id else ""
+            return ("  " if parent in visible else "") + (t.title or "(untitled)")
+
+        head_w = idw + 2
+        avail = inner - head_w - (whow + 2 if whow else 0)
+        tw_want = max([dw(ttl_of(t)) for t in cards] + [8])
+        sw_want = max([dw(row_text(sigs[t.id])) for t in cards] + [0])
+        tw = tw_want if tw_want + 2 + sw_want <= avail else max(12, min(tw_want, avail - 2 - min(sw_want, avail // 2)))
+        sig_w = max(0, avail - tw - 2)
         for t in cards:
             focused = view.focus == t.id
-            metasegs = card_meta(t, now, S, narrow, st)
-            metatxt = row_text(metasegs)
             head = f"{t.id.rjust(idw)}  "
             head_sgr = REV if focused else BOLD
-            parent = t.id.rsplit(".", 1)[0] if "." in t.id else ""
-            ttl = (("↳ " if not S.ascii else "> ") if parent and parent in st.tasks else "") + (t.title or "(untitled)")
             anchors.append((len(rows), t.id))
-            if not metatxt:
-                rows.append(edge + [(head, head_sgr), (pad(clip(ttl, inner - dw(head)), inner - dw(head)), ""), *tail])
-            elif dw(head) + dw(ttl) + 4 + dw(metatxt) <= inner:
-                space = inner - dw(head) - dw(ttl) - dw(metatxt)
-                rows.append(edge + [(head, head_sgr), (ttl, ""), (" " * space, "")] + metasegs + tail)
-            else:  # narrow: meta on its own line beneath the title
-                rows.append(edge + [(head, head_sgr), (pad(clip(ttl, inner - dw(head)), inner - dw(head)), ""), *tail])
-                avail = inner - dw(head)
-                for line_ in wrap_segs(metasegs, avail, S.dot):
-                    rows.append(edge + [(" " * dw(head), "")] + line_ + [(" " * (avail - dw(row_text(line_))), ""), *tail])
+            who = who_txt[t.id]
+            sig = sigs[t.id]
+            if narrow:   # stack who and signal under the title
+                rows.append(edge + [(head, head_sgr), (pad(clip(ttl_of(t), inner - head_w), inner - head_w), ""), *tail])
+                under = ([(who, DIM), (f" {S.dot} ", DIM)] if who else []) + sig
+                for line_ in wrap_segs(under, inner - head_w, S.dot):
+                    rows.append(edge + [(" " * head_w, "")] + line_ + [(" " * (inner - head_w - dw(row_text(line_))), ""), *tail])
+            else:
+                line: Row = [(head, head_sgr), (pad(clip(ttl_of(t), tw), tw), ""), ("  ", "")]
+                if whow:
+                    line += [(pad(who, whow), DIM if not who else ""), ("  ", "")]
+                if dw(row_text(sig)) <= sig_w:
+                    rows.append(edge + line + sig + [(" " * (sig_w - dw(row_text(sig))), ""), *tail])
+                else:   # a long signal continues under itself
+                    parts = wrap_segs(sig, sig_w, S.dot)
+                    rows.append(edge + line + parts[0] + [(" " * (sig_w - dw(row_text(parts[0]))), ""), *tail])
+                    for line_ in parts[1:]:
+                        rows.append(edge + [(" " * (inner - sig_w), "")] + line_ + [(" " * (sig_w - dw(row_text(line_))), ""), *tail])
             if view.expanded or view.open == t.id:
                 details = card_details(t, st, now, S)
                 lab = 10
                 for label, segs in details:
-                    avail = inner - dw(head) - lab
-                    for i, line_ in enumerate(wrap_segs(segs, avail, S.dot)):
-                        rows.append(edge + [(" " * dw(head), ""), (pad(label if i == 0 else "", lab), DIM)] + line_ +
-                                    [(" " * (avail - dw(row_text(line_))), ""), *tail])
+                    avail_ = inner - head_w - lab
+                    for i, line_ in enumerate(wrap_segs(segs, avail_, S.dot)):
+                        rows.append(edge + [(" " * head_w, ""), (pad(label if i == 0 else "", lab), DIM)] + line_ +
+                                    [(" " * (avail_ - dw(row_text(line_))), ""), *tail])
                 if details and t is not cards[-1]:
                     rows.append(edge + [(" " * inner, ""), *tail])
         if hidden:
@@ -1754,6 +1822,9 @@ def cmd_watch(ws: Path) -> None:
     import select
     import termios
     import tty
+
+    global GIT_CWD
+    GIT_CWD = ws.resolve().parent
 
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         sys.exit("board: watch needs a terminal (use `board show` when piping)")
@@ -2139,8 +2210,8 @@ def render_log(events: list[dict]) -> str:
 
 def commit_exists(ref: str) -> bool:
     try:
-        return subprocess.run(["git", "cat-file", "-e", f"{ref}^{{commit}}"], capture_output=True).returncode == 0
-    except FileNotFoundError:
+        return subprocess.run(["git", "cat-file", "-e", f"{ref}^{{commit}}"], capture_output=True, cwd=GIT_CWD).returncode == 0
+    except (FileNotFoundError, OSError):
         return True
 
 
@@ -2943,6 +3014,8 @@ def main(argv: list[str]) -> int:
             return 0
     else:
         ws = workspace()
+    global GIT_CWD
+    GIT_CWD = ws.resolve().parent if ws.exists() or ws.parent.exists() else None
     if cmd == "watch":
         cmd_watch(ws)
     elif cmd == "show":
@@ -3685,6 +3758,20 @@ def selftest() -> int:
             assert any("never started" in why and "impl-3-doomed" in why for _, _, why in attention(load(ws), time.time()))
             assert not queued_after(load(ws), load(ws).tasks["3"]), "an exited gate is not 'queued'"
             run("return", "3", "--agent", "impl-3-doomed", "--status", "BLOCKED", "--msg", "dependency task 2 failed")
+            # a queued lane sits in the todo lane (nothing runs, nothing to nudge) until its dependency lands or fails
+            run("todo", "6", "late input")
+            run("launch", "3", "--agent", "impl-3-queued", "--engine", "grok", "--model", "grok-4.6", "--after", "6", "--", "plan.md")
+            time.sleep(0.6)
+            show = run("show", "--no-color")
+            todo_box = show.split(lane_label("todo"), 1)[1].split(lane_label("in_progress"), 1)[0]
+            assert "impl-3-queued" in todo_box and "~ after 6" in todo_box, todo_box
+            run("blocked", "6", "--msg", "owner: controller · cancelled")
+            for _ in range(30):
+                time.sleep(0.2)
+                if load(ws).stint_of("impl-3-queued").exit_code == 125:
+                    break
+            assert load(ws).stint_of("impl-3-queued").exit_code == 125, "a blocked dependency releases the queued wrapper with 125"
+            run("return", "3", "--agent", "impl-3-queued", "--status", "BLOCKED", "--msg", "dependency task 6 cancelled")
             run("return", "3", "--agent", "impl-3-lane", "--status", "DONE")   # no --tokens: the receipt already landed
             st = load(ws)
             assert "no usage receipt" not in "\n".join(check(st)) and st.run.tokens >= 12345
@@ -3694,12 +3781,14 @@ def selftest() -> int:
 
         # --- lineage: a lead's subtree — relative controller, instruction tags, team peers, dotted subtasks -----------
         assert [natural_key(x) for x in ("3", "3.1", "3.10", "4", "x")] == sorted(natural_key(x) for x in ("3.10", "x", "4", "3.1", "3")), "dotted ids sort under their parent"
+        run("return", "3", "--agent", "impl-3-after", "--status", "DONE")   # close the exited lane: an exit without a return outranks any other signal
         run("dispatch", "3", "--agent", "lead-3", "--model", "opus", "--role", "sub-orchestrator")
         run("todo", "3.1", "auth worker slice")
         run("dispatch", "3.1", "--agent", "impl-3.1", "--model", "sonnet", "--by", "lead-3", "--owns", "src/auth/**")
         run("dispatch", "4", "--agent", "impl-4-other", "--model", "sonnet")
         st = load(ws)
         assert st.stint_of("impl-3.1").by == "lead-3" and st.lead_of("impl-3.1") == "lead-3" and st.lead_of("lead-3") == "controller"
+        assert "0/1 landed" in run("show", "--no-color"), "a lead's card counts its subtasks instead of showing elapsed time"
         assert st.events[-2]["actor"] == "lead-3", "a lead's dispatch is attributed to the lead"
         out = run("send", "which hash for the auth token?", "--from", "impl-3.1", "--to", "controller", "--ask")
         assert "impl-3.1 -> lead-3" in out and "routed to your lead" in out, out
@@ -3737,9 +3826,21 @@ def selftest() -> int:
         run("dispatch", "4", "--agent", "controller", "--model", "sonnet", expect_fail=True)
         run("dispatch", "4", "--agent", "impl-4-codex", "--model", "sonnet")   # a trailing tag is fine
         run("return", "4", "--agent", "impl-4-codex", "--status", "DONE")
+        run("done", "4")   # two done cards in one lane: the who column must line up
         assert [natural_key(x) for x in ("impl-4",)] and role_short("quality reviewer") == "quality" and role_short("") == "impl"
-        show = run("show", "--no-color", "-x")
-        assert "↳ auth worker slice" in show and "by lead-3" in show and "sub-orchestrator" in show, show
+        show = run("show", "--no-color")
+        assert "by lead-3" not in show and "↳" not in show and "impl-3.1" in show, "no lineage prose on the card line: the name carries it"
+        done_lines = [l for l in show.splitlines() if "impl-3.1" in l or "impl-4-codex" in l]
+        assert len(done_lines) == 2 and done_lines[0].index("impl-3.1") == done_lines[1].index("impl-4-codex"), "who is a column:\n" + "\n".join(done_lines)
+        assert "gpt-5.6" not in show and " sonnet" not in "\n".join(done_lines), "model and engine stay in the header unless they deviate"
+        run("set", "models=worker=sonnet")
+        run("plan", "approved")
+        run("dispatch", "4", "--agent", "impl-4-op", "--model", "opus")
+        assert "impl-4-op ·opus" in run("show", "--no-color"), "a deviating model is the one per-card fact worth a suffix"
+        run("dispatch", "4", "--agent", "impl-4-eng", "--model", "sonnet", "--engine", "grok")
+        assert "impl-4-eng ·grok" in run("show", "--no-color"), "a deviating engine too"
+        run("return", "4", "--agent", "impl-4-eng", "--status", "DONE")
+        run("return", "4", "--agent", "impl-4-op", "--status", "DONE")
         (ws / "task-5-brief.md").write_text("You are implementing Task 5: do the thing. Repo root: /x\n")
         Path("plan.md").write_text(Path("plan.md").read_text() + "## Task 5: Fifth\n")
         run("init", "plan.md", "--resume")

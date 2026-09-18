@@ -1469,7 +1469,7 @@ def card_signal(t: Task, st: "State", now: float, S: Style) -> Row:
         kids = children(st, t)
         lead = f"{sum(1 for k in kids if dep_landed(st, k))}/{len(kids)} landed{d}" if kids else ""
         if asked:
-            return [("? ", S.fg(WARN) + BOLD), (f"asked you #{asked[0].seq}{d}{fmt_dur(now - asked[0].ts)}", S.fg(WARN))] + badges
+            return [("? ", S.fg(WARN) + BOLD), (f"asked controller #{asked[0].seq}{d}{fmt_dur(now - asked[0].ts)}", S.fg(WARN))] + badges
         if is_stale(t, now):
             return [("! ", S.fg(WARN) + BOLD), (f"{lead}stale {fmt_dur(now - t.last_activity)}", S.fg(WARN))] + badges
         return [("> ", S.fg(OK) + BOLD), (f"{lead}{elapsed}", DIM)] + badges
@@ -1758,14 +1758,14 @@ def header_rows(st: State, W: int, now: float, S: Style) -> list[Row]:
             asks = [m for m in mine if m.ask]
             segs = [(f"{len(st.mail)} sent", DIM), (f"  {d}  {unread_all} unread", S.fg(WARN) if unread_all else DIM)]
             if mine:
-                segs += [(f"  {d}  {len(mine)} for you", S.fg(WARN) + BOLD)]
+                segs += [(f"  {d}  {len(mine)} for controller", S.fg(WARN) + BOLD)]
             if asks:
                 segs += [(f"  {d}  {len(asks)} question{'s' if len(asks) != 1 else ''}", S.fg(WARN) + BOLD)]
         if st.learned:
             new = len(st.unread_learn("controller"))
             segs += [(f"  {d}  " if segs else "", DIM), (f"learn {len(st.learned)}", DIM)]
             if new:
-                segs += [(f"  {d}  {new} new for you", S.fg(WARN) + BOLD)]
+                segs += [(f"  {d}  {new} new for controller", S.fg(WARN) + BOLD)]
         line("mail", segs)
     if st.problems:
         line("journal", [(f"! {len(st.problems)} integrity problem(s) — board check", S.fg(BAD))])
@@ -2404,9 +2404,9 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
                 findings.append(f"mail #{m.seq} to {m.to} was never read — the stint returned first (undeliverable)")
     for m in st.mail:
         if m.ask and m.to != "all" and st.acks.get(m.to, 0) < m.seq and now - m.ts > STALE_AFTER:
-            who = "you" if m.to == "controller" else f"lead {m.to}"
+            who = "the controller" if m.to == "controller" else f"lead {m.to}"
             findings.append(f"question #{m.seq} from {m.sender} to {who} unread for {fmt_dur(now - m.ts)} — the worker may be waiting"
-                            + ("" if m.to == "controller" else " (nudge the lead, or answer it yourself)"))
+                            + ("" if m.to == "controller" else " (nudge the lead, or the controller answers it)"))
     for d_ in st.run.drift:
         findings.append(f"model drift: {d_} — record the posture or re-pin")
     cap = st.run.budget.get("agents")
@@ -3986,7 +3986,7 @@ def selftest() -> int:
         run("send", "which auth header do I use?", "--from", "impl-4", "--to", "controller", "--ask")
         att = run("attention")
         assert "question #" in att and "impl-4" in att and "--re" in att, att
-        assert "1 for you" in run("show", "--no-color") and "1 question" in run("show", "--no-color")
+        assert "1 for controller" in run("show", "--no-color") and "1 question" in run("show", "--no-color")
         ctrl = run("inbox", "--agent", "controller")
         assert "[peer impl-4 · ask]" in ctrl and "reply: board send --from controller --to impl-4 --re" in ctrl, ctrl
         seq_q = max(m.seq for m in load(ws).mail)
@@ -4348,7 +4348,7 @@ def selftest() -> int:
                 f.chmod(0o644)
         # views
         show = run("show", "--no-color")
-        assert "learn " in show and "new for you" in show, show
+        assert "learn " in show and "new for controller" in show and "for you" not in show, show
         assert json.loads(run("show", "--json"))["learn"]
         lst = run("learn")
         assert "[gotcha] impl-4-l (task 4" in lst and "constraint 1" in lst, lst

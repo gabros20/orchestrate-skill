@@ -129,15 +129,15 @@
   .pcap{font-size:13.5px; color:var(--muted); margin:14px 0 0; max-width:68ch}
   .pcap b{color:var(--ink)}
 
-  /* the board — a faithful rendering of the pane */
-  .board{background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:16px 18px 14px; margin-top:20px; font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:12.5px; line-height:1.75; overflow-x:auto; white-space:pre; color:var(--muted)}
-  .board .k{color:var(--muted)} .board .v{color:var(--ink)} .board .h{color:var(--accent); font-weight:600}
-  .board .x{color:var(--bad); font-weight:600} .board .q{color:var(--amber); font-weight:600} .board .ok{color:var(--good)}
-  .board .lane{display:block; margin:12px 0 0; border:1px solid var(--line); border-radius:7px; padding:6px 12px 5px; position:relative; background:var(--panel); white-space:pre; min-width:max-content}
-  .board .lane::before{content:attr(data-lane); position:absolute; top:-10px; left:10px; padding:0 6px; background:var(--panel); color:var(--accent); font-weight:600; letter-spacing:.08em; font-size:11px}
-  .board .lane .n{color:var(--muted)} .board .lane .t{color:var(--ink)} .board .lane .w{color:var(--ink); font-weight:600}
-  .board .keys{margin-top:12px; color:var(--muted); font-size:11.5px}
-  .board .keys b{color:var(--ink); font-weight:600}
+  /* the board — the pane as it looks in a macOS terminal window (Ghostty's default dark palette; fixed in both themes) */
+  .tty{margin-top:20px; background:#292c33; border-radius:11px; overflow:hidden; color:#e6e8ec; box-shadow:0 18px 44px rgba(0,0,0,.28), 0 0 0 1px rgba(0,0,0,.35)}
+  .ttybar{position:relative; display:flex; align-items:center; gap:8px; height:36px; padding:0 13px; background:#3a3d45; border-bottom:1px solid #22252b}
+  .ttybar i{width:12px; height:12px; border-radius:50%; box-shadow:inset 0 0 0 .5px rgba(0,0,0,.25)}
+  .ttybar i:nth-child(1){background:#ff5f57} .ttybar i:nth-child(2){background:#febc2e} .ttybar i:nth-child(3){background:#28c840}
+  .ttybar span{position:absolute; left:0; right:0; text-align:center; font:12.5px system-ui,-apple-system,sans-serif; color:#b9bec8; pointer-events:none}
+  .tty pre{margin:0; padding:14px 8px 16px; font:11.5px/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace; overflow-x:auto; color:#e6e8ec}
+  .tty .B{font-weight:600; color:#ffffff} .tty .D{color:#9aa1ad} .tty .D.B{color:#c9ced8}
+  .tty .b{color:#5f8ff7} .tty .a{color:#f5a524} .tty .g{color:#3fb37a} .tty .r{color:#e5484d} .tty .p{color:#b455e8} .tty .d{color:#8a919d}
   .bcap{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px; margin-top:16px}
   .bcap div{font-size:13.5px; color:var(--muted); line-height:1.5; border-left:3px solid var(--line); padding-left:12px}
   .bcap div b{display:block; color:var(--ink); font-family:ui-monospace,Menlo,monospace; font-size:12.5px; margin-bottom:2px}
@@ -408,20 +408,41 @@
   repo and type <code>board</code>. You get a live kanban of the run: what is queued, who is
   working on what, what is under review, what is done, what is stuck. It updates by itself as
   files land. It runs in any terminal and needs nothing but python.</p>
-  <div class="board" role="img" aria-label="The board: a header with the goal, the run settings, budget, what needs attention and mail counts; then lanes IN PROGRESS, REVIEW, DONE and BLOCKED, each card showing the task, the agent responsible and one status signal."><span class="h">ORCHESTRATE</span>   <span class="v">payments-api @ main</span>                                                    <span class="v">1/5 done  ·  4m</span>
-<span class="k">goal       </span><span class="v">Ship the rate-limit rewrite behind a flag</span>
-<span class="k">run        </span><span class="v">parallel  ·  review dual  ·  host Claude Code</span>
-<span class="k">models     </span><span class="v">worker sonnet  ·  reviewer opus</span>
-<span class="k">budget     </span><span class="v">agents 6/8  ·  tokens 412k/150k-600k</span>
-<span class="k">checks     </span><span class="ok">3/3 ok</span>
-<span class="k">attention  </span><span class="x">x 1 blocked/failed</span>  ·  <span class="q">? 2 pending</span>
-<span class="k">mail       </span><span class="v">2 sent  ·  2 unread  ·  </span><span class="q">1 for you  ·  1 question</span><span class="v">  ·  learn 2  ·  </span><span class="q">2 new for you</span>
-<span class="lane" data-lane="IN PROGRESS · 2"><span class="n">3</span>  <span class="t">Migrate the DB layer        </span> <span class="w">impl-3       </span> <span class="q">? asked you #23</span> <span class="k">· 6m · </span><span class="ok">tests ok 12s</span>
-<span class="n">4</span>  <span class="t">Ship the docs               </span> <span class="w">impl-4 ·codex</span> <span class="k">&gt; 4m</span></span>
-<span class="lane" data-lane="REVIEW · 1"><span class="n">2</span>  <span class="t">Auth token refresh          </span> <span class="w">quality-2    </span> <span class="ok">spec ok r1</span> <span class="k">· quality .. r1</span></span>
-<span class="lane" data-lane="DONE · 1"><span class="n">1</span>  <span class="t">Extract rate-limit middleware</span> <span class="w">quality-1    </span> <span class="k">4f2c91a..a7d3e10</span></span>
-<span class="lane" data-lane="BLOCKED · 1"><span class="n">5</span>  <span class="t">Integration                 </span> <span class="w">integ-5      </span> <span class="x">x</span> <span class="k">needs the vendor token — owner: controller, next: add it to .env.example</span></span>
-<span class="keys"><b>j/k</b> focus a card  ·  <b>enter</b> its history  ·  <b>e</b> expand all  ·  <b>a</b> attention only  ·  <b>n</b> next run  ·  <b>r</b> reload  ·  <b>q</b> quit</span></div>
+  <div class="tty" role="img" aria-label="The board in a terminal: a header with the goal, run settings, budget, checks, what needs attention and mail counts; then lanes IN PROGRESS, REVIEW, DONE and BLOCKED drawn as boxes, each card showing the task, the agent responsible and one status signal."><div class="ttybar"><i></i><i></i><i></i><span>board — payments-api — ghostty</span></div>
+<pre>
+<span class="B">  ORCHESTRATE</span>   payments-api @ main                                                                     <span class="B">1/5 done  ·  2m20s</span>
+<span class="D">  goal       </span>Ship the rate-limit rewrite behind a flag
+<span class="D">  run        </span><span class="D">parallel  ·  review dual  ·  host Claude Code</span>
+<span class="D">  models     </span><span class="D">worker </span>sonnet<span class="D">  ·  </span><span class="D">reviewer </span>opus
+<span class="D">  budget     </span><span class="D">agents </span>6/8<span class="D">  ·  </span><span class="D">tokens </span>412k/150k-600k
+<span class="D">  checks     </span><span class="g">3/3 ok</span>
+<span class="D">  plan       </span><span class="g">approved</span><span class="D"> 15:51</span>
+<span class="D">  attention  </span><span class="r B">x 1 </span><span class="D">blocked/failed</span><span class="D">  ·  </span><span class="B D">? 2 </span><span class="D">pending</span>
+<span class="D">  mail       </span><span class="D">2 sent</span><span class="a">  ·  2 unread</span><span class="a B">  ·  1 for you</span><span class="a B">  ·  1 question</span><span class="D">  ·  </span><span class="D">learn 2</span><span class="a B">  ·  2 new for you</span>
+
+<span class="d">  TODO  0</span>
+
+<span class="b">  ╭─</span><span class="b B"> IN PROGRESS </span><span class="b">────────────────────────────────────────────────────────────────────────────────────────────────────</span><span class="b B"> 2 </span><span class="b">─╮</span>
+<span class="b">  │  </span><span class="B">3  </span>Migrate the DB layer  impl-3         <span class="a B">? </span><span class="a">asked you #23 · 2m19s</span><span class="D"> · </span><span class="D">tests </span><span class="g">ok</span><span class="D"> 0s</span><span class="D"> · </span><span class="a">m1</span>                                <span class="b">  │</span>
+<span class="b">  │  </span><span class="B">4  </span>Ship the docs         impl-4 ·codex  <span class="g B">&gt; </span><span class="D">2m19s</span>                                                                   <span class="b">  │</span>
+<span class="b">  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
+
+<span class="a">  ╭─</span><span class="a B"> REVIEW </span><span class="a">─────────────────────────────────────────────────────────────────────────────────────────────────────────</span><span class="a B"> 1 </span><span class="a">─╮</span>
+<span class="a">  │  </span><span class="B">2  </span>Auth token refresh  quality-2  <span class="D">spec </span><span class="g">ok</span><span class="D"> r1</span><span class="D"> · </span><span class="D">quality </span><span class="D">..</span><span class="D"> r1</span>                                                      <span class="a">  │</span>
+<span class="a">  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
+
+<span class="g">  ╭─</span><span class="g B"> DONE </span><span class="g">───────────────────────────────────────────────────────────────────────────────────────────────────────────</span><span class="g B"> 1 </span><span class="g">─╮</span>
+<span class="g">  │  </span><span class="B">1  </span>Extract rate-limit middleware  quality-1  <span class="D">4f2c91a..a7d3e10</span>                                                     <span class="g">  │</span>
+<span class="g">  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
+
+<span class="p">  ╭─</span><span class="p B"> BLOCKED </span><span class="p">────────────────────────────────────────────────────────────────────────────────────────────────────────</span><span class="p B"> 1 </span><span class="p">─╮</span>
+<span class="p">  │  </span><span class="B">5  </span>Integration  integ-5  <span class="r B">x </span><span class="p">needs the vendor token — owner: controller, next: add it to .env.example</span>               <span class="p">  │</span>
+<span class="p">  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
+
+<span class="D">  15:51  </span><span class="B D">integ-5</span><span class="D">: needs the vendor token — owner: controller, next: add it to .env.example</span>
+
+<span class="D">  j/k focus a card  ·  enter its history  ·  e expand all  ·  a attention only  ·  n next run  ·  r reload  ·  q quit</span>
+</pre></div>
   <div class="bcap">
     <div class="q"><b>? asked you #23</b>A worker has a question. It stops and waits for your answer instead of guessing. The board tells you, and hands you the reply command.</div>
     <div class="x"><b>x needs the vendor token</b>A stuck task always names who owns it and what happens next. If it does not, the board calls it abandoned, not blocked.</div>

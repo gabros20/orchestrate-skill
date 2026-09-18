@@ -10,6 +10,13 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.25.5] — 2026-09-18
+
+### Changed
+- Website: the board is shown as it looks in a terminal — the pane's real coloured output (box
+  lanes, dimmed labels, the attention and mail lines) inside a macOS-style terminal window with
+  Ghostty's default dark palette, in both site themes.
+
 ## [1.25.4] — 2026-09-18
 
 ### Fixed

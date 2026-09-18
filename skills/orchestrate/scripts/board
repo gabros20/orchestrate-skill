@@ -2901,7 +2901,7 @@ def render_wrapper(ws: Path, task: str, agent: str, engine: str, model: str, eff
     if after:
         deps = " ".join(f"--task {shlex.quote(x)}" for x in after)
         # exit 3 (a dependency cannot land) / 2 (unknown task) → 125: the engine never starts; 124 stays a timeout
-        gate = (f"{me_q} wait --agent {agent_q} {deps} --timeout 0 > {shlex.quote(str(ws / (log[:-6] + '.wait')))} 2>&1 "
+        gate = (f"{me_q} wait --agent {agent_q} {deps} --timeout 0 --peek > {shlex.quote(str(ws / (log[:-6] + '.wait')))} 2>&1 "
                 f"|| {{ rc=$?; [ \"$rc\" = 124 ] || rc=125; {me_q} lane-exit {task_q} --agent {agent_q} --exit \"$rc\"; exit \"$rc\"; }}")
     script = "\n".join([
         "#!/bin/sh",
@@ -3177,6 +3177,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--agent", default=me or "controller"); p.add_argument("--timeout", type=int, default=WAIT_SLICE, help="seconds; 0 = no deadline")
     p.add_argument("--task", action="append", help="wait for this task's work instead of for mail (repeatable: all must have landed)")
     p.add_argument("--or-mail", action="store_true", help="with --task: return 5 as soon as mail for --agent arrives (a lead waiting on its workers must answer their asks)")
+    p.add_argument("--peek", action="store_true", help="never ack: a wrapper waiting on behalf of an engine that has not started must not consume its digest")
     p = sub.add_parser("mail"); p.add_argument("--task"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("peers"); p.add_argument("--agent", default=me, required=me is None)
     p = sub.add_parser("vote", help="one reviewer's verdict; the gate is derived by quorum (panel = majority, consensus = any-deny)")
@@ -3475,7 +3476,8 @@ def main(argv: list[str]) -> int:
                 if args.or_mail and st.unread(agent):   # a lead waiting on its workers wakes for their questions
                     text, items = render_inbox(st, agent)
                     print(text)
-                    ack(ws, agent, items)
+                    if not args.peek:
+                        ack(ws, agent, items)
                     print("board: mail arrived while you waited — answer it (reply ONLY to an ask), then wait again")
                     return 5
                 failed = [(d, dep_failed(st, d)) for d in deps if dep_failed(st, d)]
@@ -3483,7 +3485,8 @@ def main(argv: list[str]) -> int:
                     for d, why in failed:
                         print(f"board: task {d.id} {d.title} cannot land — {why}; this input will not arrive "
                               f"(return NEEDS_CONTEXT naming it, or the controller re-dispatches task {d.id})")
-                    deliver(ws, agent)
+                    if not args.peek:
+                        deliver(ws, agent)
                     return 3
                 landed = [d for d in deps if dep_landed(st, d)]
                 if len(landed) == len(deps):
@@ -3493,7 +3496,8 @@ def main(argv: list[str]) -> int:
                                  f"lane exited rc={s.exit_code}, report on disk (not yet returned by the controller)" if s else d.state)
                         print(f"task {d.id} {d.title}: {state}" + (f" · commits {s.commits}" if s and s.commits else "")
                               + (f" · report {rp if rp.startswith('/') else '.orchestrate/' + rp}" if (rp := d.report or (f'task-{d.id}-report.md' if (ws / f'task-{d.id}-report.md').exists() else '')) else ""))
-                    deliver(ws, agent)
+                    if not args.peek:
+                        deliver(ws, agent)
                     return 0
                 if time.time() >= deadline:
                     open_ = ", ".join(f"task {x}" for x, d in zip(args.task, deps) if not (d and dep_landed(st, d)))
@@ -3504,7 +3508,8 @@ def main(argv: list[str]) -> int:
             if st.unread(agent):   # wakes on MAIL; the digest (learnings, record changes) rides along
                 text, items = render_inbox(st, agent)
                 print(text)
-                ack(ws, agent, items)
+                if not args.peek:
+                    ack(ws, agent, items)
                 return 0
             if time.time() >= deadline:
                 print(f"board: no mail for {agent} in {args.timeout}s — continue with your brief, or return NEEDS_CONTEXT if you cannot")
@@ -4347,7 +4352,19 @@ def selftest() -> int:
         assert "## Project memory" in run("resume") and "ctx handoff" in run("resume")
         out = run("init", "plan.md", "--resume")
         assert "project memory: 1 entry" in out and "ctx context --scope" in out, out
-        for tid, a in (("4", "impl-4-l"), ("3", "impl-3-l"), ("3", "impl-3-m"), ("3.5", "impl-3.5"), ("3", "lead-3-x")):
+        # a gated lane's wrapper waits AS the engine but is not the engine: --peek shows and never acks (observed live: a
+        # wrapper's wait consumed the learning the engine was launched to receive)
+        run("return", "4", "--agent", "impl-4-l", "--status", "DONE")
+        run("send", "for the engine, not the wrapper", "--from", "controller", "--to", "impl-3-m")
+        run("learn", "3.5", "gate test: a fixture the engine must hear about", "--agent", "impl-3.5")
+        out = run("wait", "--agent", "impl-3-m", "--task", "4", "--timeout", "1", "--peek")
+        assert "task 4" in out and "for the engine" not in out, out
+        assert len(load(ws).unread("impl-3-m")) == 1 and not any(e.get("agent") == "impl-3-m" and e.get("ev") == "ack" and int(e.get("upto") or 0) >= load(ws).mail[-1].seq for e in load(ws).events), "peek must not ack"
+        out = run("wait", "--agent", "impl-3-m", "--task", "4", "--timeout", "1")
+        assert "for the engine" in out and "gate test" not in out, out   # impl-3.5's learning stays in its subtree; the mail is delivered and acked
+        assert not load(ws).unread("impl-3-m")
+        assert "--peek" in run("launch", "3", "--agent", "impl-3-gatepeek", "--engine", "grok", "--model", "m", "--after", "4", "--dry-run", "--", "plan.md"), "the wrapper's gate never acks"
+        for tid, a in (("3", "impl-3-l"), ("3", "impl-3-m"), ("3.5", "impl-3.5"), ("3", "lead-3-x")):
             run("return", tid, "--agent", a, "--status", "DONE")
         subprocess.run(["git", "checkout", "-q", "-b", "elsewhere"], check=True)
         assert "(you: elsewhere)" in run("show", "--no-color"), "viewer's branch is named when it differs from the run's"

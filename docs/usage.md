@@ -310,7 +310,7 @@ board learn 4 "jest fixture db.sqlite is stale — run npm run db:reset first" -
 board decide D-03 "cookie auth, not header" --why "browser clients keep the session"   # a decision with its why; re-deciding an id supersedes it and reaches open workers as a record change
 board memory --out .orchestrate/memory.json               # the run as ONE project-context record (observation when the final gate stands, else a handoff) — for `ctx append --input`
 board wait --agent lead-1 --task 1.1 --task 1.2 --timeout 0 --or-mail   # a lead waits on its workers; exit 5 = one of them asked you something first
-board wait --task 1 --task 2                                     # dependency rendezvous (agent defaults to controller): block until their work is on disk — exit 0; exit 3 when one cannot land (BLOCKED/REFUSED, a dead lane); exit 124 on timeout
+board wait --task 1 --task 2 [--peek]                            # dependency rendezvous (--peek: show, never ack — what a lane's wrapper gate uses); (agent defaults to controller): block until their work is on disk — exit 0; exit 3 when one cannot land (BLOCKED/REFUSED, a dead lane); exit 124 on timeout
 board vote 3 --kind quality --agent lens1-3 --verdict fail --why "leaks a handle"   # panel:N = majority · consensus:N = any-deny → the gate is derived
 board result 3 --name lint --exit 1 --log raw/lint.log    # a check that ran elsewhere
 board nudge 3 --agent impl-3 · board escalate 3 --agent impl-3 --to opus --why "same error x3"

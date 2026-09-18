@@ -38,6 +38,13 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, 
   parallel, team, hierarchical, sub-orchestrator, monitoring and contracts references say where
   learnings travel. Design record: `docs/designs/v1.25.0-shared-context.md`.
 
+### Fixed
+- **A gated lane's wrapper no longer consumes the engine's mail and learnings.** The `--after`
+  gate is `board wait … --task N --peek`: it shows and never acks, so the engine launched to
+  receive a peer's learning finds it at its first `board inbox` (observed live: the wrapper's
+  wait acked the learning seconds before the engine started, and the worker read "no new mail").
+  `wait --peek` is available to any caller that waits on behalf of someone else.
+
 ## [1.24.0] — 2026-09-17
 
 ### Changed

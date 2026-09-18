@@ -10,6 +10,11 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.25.4] — 2026-09-18
+
+### Fixed
+- Website: the "The board ↓" and "Shared context ↓" step links no longer wrap their arrow onto its own line.
+
 ## [1.25.3] — 2026-09-18
 
 ### Changed

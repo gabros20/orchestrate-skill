@@ -10,6 +10,17 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.25.6] — 2026-09-18
+
+### Fixed
+
+- **The pane names the reader.** The header's mail line said `1 for you` / `2 new for you` and a
+  card said `? asked you #23`, but the person watching the pane is not the controller — "you"
+  pointed at the wrong reader. Now `1 for controller`, `2 new for controller`,
+  `? asked controller #23`; `board check` says "to the controller". Same rename in the README and
+  usage snapshots, the site's board window and callout, the monitoring reference and the hero
+  video's board scene.
+
 ## [1.25.5] — 2026-09-18
 
 ### Changed

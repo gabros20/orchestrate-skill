@@ -418,12 +418,12 @@
 <span class="D">  checks     </span><span class="g">3/3 ok</span>
 <span class="D">  plan       </span><span class="g">approved</span><span class="D"> 15:51</span>
 <span class="D">  attention  </span><span class="r B">x 1 </span><span class="D">blocked/failed</span><span class="D">  ·  </span><span class="B D">? 2 </span><span class="D">pending</span>
-<span class="D">  mail       </span><span class="D">2 sent</span><span class="a">  ·  2 unread</span><span class="a B">  ·  1 for you</span><span class="a B">  ·  1 question</span><span class="D">  ·  </span><span class="D">learn 2</span><span class="a B">  ·  2 new for you</span>
+<span class="D">  mail       </span><span class="D">2 sent</span><span class="a">  ·  2 unread</span><span class="a B">  ·  1 for controller</span><span class="a B">  ·  1 question</span><span class="D">  ·  </span><span class="D">learn 2</span><span class="a B">  ·  2 new for controller</span>
 
 <span class="d">  TODO  0</span>
 
 <span class="b">  ╭─</span><span class="b B"> IN PROGRESS </span><span class="b">────────────────────────────────────────────────────────────────────────────────────────────────────</span><span class="b B"> 2 </span><span class="b">─╮</span>
-<span class="b">  │  </span><span class="B">3  </span>Migrate the DB layer  impl-3         <span class="a B">? </span><span class="a">asked you #23 · 2m19s</span><span class="D"> · </span><span class="D">tests </span><span class="g">ok</span><span class="D"> 0s</span><span class="D"> · </span><span class="a">m1</span>                                <span class="b">  │</span>
+<span class="b">  │  </span><span class="B">3  </span>Migrate the DB layer  impl-3         <span class="a B">? </span><span class="a">asked controller #23 · 2m19s</span><span class="D"> · </span><span class="D">tests </span><span class="g">ok</span><span class="D"> 0s</span><span class="D"> · </span><span class="a">m1</span>                         <span class="b">  │</span>
 <span class="b">  │  </span><span class="B">4  </span>Ship the docs         impl-4 ·codex  <span class="g B">&gt; </span><span class="D">2m19s</span>                                                                   <span class="b">  │</span>
 <span class="b">  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
 
@@ -444,12 +444,12 @@
 <span class="D">  j/k focus a card  ·  enter its history  ·  e expand all  ·  a attention only  ·  n next run  ·  r reload  ·  q quit</span>
 </pre></div>
   <div class="bcap">
-    <div class="q"><b>? asked you #23</b>A worker has a question. It stops and waits for your answer instead of guessing. The board tells you, and hands you the reply command.</div>
+    <div class="q"><b>? asked controller #23</b>A worker has a question. It stops and waits for the answer instead of guessing. The controller is the agent running the run; you are the one watching. The pane always names who has to act.</div>
     <div class="x"><b>x needs the vendor token</b>A stuck task always names who owns it and what happens next. If it does not, the board calls it abandoned, not blocked.</div>
     <div class="ok"><b>spec ok r1 · quality .. r1</b>Every result is reviewed twice before it counts: first against what was asked, then for quality. The card shows which review passed and which is still running.</div>
     <div class="a"><b>impl-4 ·codex</b>Agent names say what they do and on which task. <code>impl-4</code> implements task 4. The suffix means it runs on Codex instead of the run's default model.</div>
   </div>
-  <p class="pcap" style="margin-top:16px">A few commands sit under the pane. <code>board attention</code> lists what needs you, most
+  <p class="pcap" style="margin-top:16px">A few commands sit under the pane. <code>board attention</code> lists what needs the controller, most
   urgent first. <code>board check</code> audits the run and refuses to count a task as finished
   when a review failed or a file it claims to have written is missing. <code>board resume</code>
   writes the handoff a fresh session needs to pick the run up where it stopped. Full reference:

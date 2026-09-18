@@ -141,29 +141,29 @@ proposal; the gate is the transition.
 
 `board` is the view — a CLI-agnostic terminal kanban you open in a pane of your own (any host,
 stdlib python3). Cards are three columns, task · who · one signal; the attention strip is the
-"what needs me" list; lanes are todo · in progress · review · done · blocked, or ones you declare.
+controller's "act on this" list; lanes are todo · in progress · review · done · blocked, or ones you declare.
 
 ```text
-  ORCHESTRATE   payments-api @ main                                    1/5 done  ·  4m
+  ORCHESTRATE   payments-api @ main                                           1/5 done  ·  4m
   goal       Ship the rate-limit rewrite behind a flag
   run        parallel  ·  review dual  ·  host Claude Code
   models     worker sonnet  ·  reviewer opus
   attention  x 1 blocked/failed  ·  ? 2 pending
-  mail       2 sent  ·  1 for you  ·  1 question  ·  learn 2  ·  2 new for you
+  mail       2 sent  ·  1 for controller  ·  1 question  ·  learn 2  ·  2 new for controller
 
-  ╭─ IN PROGRESS ───────────────────────────────────────────────────────────── 2 ─╮
-  │  3  Migrate the DB layer   impl-3         ? asked you #23 · 6m · tests ok 12s │
-  │  4  Ship the docs          impl-4 ·codex  > 4m                                │
-  ╰───────────────────────────────────────────────────────────────────────────────╯
-  ╭─ REVIEW ────────────────────────────────────────────────────────────────── 1 ─╮
-  │  2  Auth token refresh     quality-2      spec ok r1 · quality .. r1          │
-  ╰───────────────────────────────────────────────────────────────────────────────╯
-  ╭─ DONE ──────────────────────────────────────────────────────────────────── 1 ─╮
-  │  1  Extract rate-limit …   quality-1      4f2c91a..a7d3e10                    │
-  ╰───────────────────────────────────────────────────────────────────────────────╯
-  ╭─ BLOCKED ───────────────────────────────────────────────────────────────── 1 ─╮
-  │  5  Integration            integ-5        x needs the vendor token — owner …  │
-  ╰───────────────────────────────────────────────────────────────────────────────╯
+  ╭─ IN PROGRESS ──────────────────────────────────────────────────────────────────── 2 ─╮
+  │  3  Migrate the DB layer   impl-3         ? asked controller #23 · 6m · tests ok 12s │
+  │  4  Ship the docs          impl-4 ·codex  > 4m                                       │
+  ╰──────────────────────────────────────────────────────────────────────────────────────╯
+  ╭─ REVIEW ───────────────────────────────────────────────────────────────────────── 1 ─╮
+  │  2  Auth token refresh     quality-2      spec ok r1 · quality .. r1                 │
+  ╰──────────────────────────────────────────────────────────────────────────────────────╯
+  ╭─ DONE ─────────────────────────────────────────────────────────────────────────── 1 ─╮
+  │  1  Extract rate-limit …   quality-1      4f2c91a..a7d3e10                           │
+  ╰──────────────────────────────────────────────────────────────────────────────────────╯
+  ╭─ BLOCKED ──────────────────────────────────────────────────────────────────────── 1 ─╮
+  │  5  Integration            integ-5        x needs the vendor token — owner …         │
+  ╰──────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ```bash

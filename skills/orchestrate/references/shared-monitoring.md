@@ -42,11 +42,11 @@ and the card shows `tests ok 12s` / `lint fail` (a `checks` line in the header c
 failed check is an `x` in attention and blocks `board done`). Lanes are a projection: `board init
 --lanes todo,implement,verify,review,integrate,done,blocked` shows a verifier's stint under
 VERIFY and an integrator's under INTEGRATE — the state model underneath never changes.
-**Learnings** ride the same journal: `learn N · k new for you` in the header, `board learn` lists
+**Learnings** ride the same journal: `learn N · k new for controller` in the header, `board learn` lists
 them, `board inbox --agent controller` hands them over for curation; workers receive their team's
 learnings and any decision or rail recorded since their dispatch at their next board call — the
 digest, one watermark, never mid-turn. **Mail** rides the same journal: a worker's `--ask` is a `?` in attention with the reply command
-ready, `mail N unread · M for you` sits in the header, and `board inbox --agent controller` is
+ready, `mail N unread · M for controller` sits in the header, and `board inbox --agent controller` is
 part of every liveness check (an unanswered ask is a worker parked in `board wait`). **The
 controller's own watch is the journal, and the reliable primitive is a blocking wait that
 exits**: `board wait --task N --timeout 0` in a background shell returns once per landing (0 =
@@ -60,7 +60,7 @@ before the stale clock would have noticed; exit 125 means its dependency cannot 
 engine never started (return it BLOCKED, fix the dependency, relaunch). Controller
 side: `board attention` lists what to act on, most urgent first (`x` blocked / failed
 gate / failed check, `!` stale, silent reviewer or a third attempt with no escalation, `?`
-pending gate / concerns / mail for you); run `board check` at every liveness check and before any recovery
+pending gate / concerns / mail for the controller); run `board check` at every liveness check and before any recovery
 action — it lists journal-chain breaks, dispatched-never-returned, reviewer silence,
 report-without-review, done over a failed gate or check, done with no gate ever opened, quality
 before spec, xcli DONE without commits or without a usage receipt, model drift and budget

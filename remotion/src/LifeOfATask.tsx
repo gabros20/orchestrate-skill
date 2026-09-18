@@ -883,7 +883,7 @@ const Board: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
   const flash = (at: number) => io(frame, [at, at + 6], [0, 1]) * io(frame, [at + 6, at + 40], [1, 0]);
 
   const inProgress: Row[] = [
-    ["3", "Migrate the DB layer", "impl-3", answered ? "> 6m · tests ok 12s" : "? asked you #23 · tests ok 12s", answered ? "muted" : "amber"],
+    ["3", "Migrate the DB layer", "impl-3", answered ? "> 6m · tests ok 12s" : "? asked controller #23 · tests ok 12s", answered ? "muted" : "amber"],
     ["4", "Ship the docs", "impl-4 ·codex", "> 4m", "muted"],
   ];
   const review: Row[] = landed ? [] : [["2", "Auth token refresh", "quality-2", "spec ok r1 · quality .. r1", "good"]];
@@ -928,8 +928,8 @@ const Board: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
           <span style={{ color: t.bad, fontWeight: 600 }}>x 1 blocked</span>
           <span style={{ color: t.muted, opacity: pending ? 1 : 0 }}>  ·  </span>
           <span style={{ color: t.amber, fontWeight: 600, opacity: pending ? 1 - 0.6 * flash(S + 150) : 0 }}>{`? ${pending} pending`}</span>
-          <span style={{ color: t.muted }}>{"      mail  2 sent · 1 for you · "}</span>
-          <span style={{ color: t.amber }}>learn 2 · 2 new for you</span>
+          <span style={{ color: t.muted }}>{"      mail  2 sent · 1 for controller · "}</span>
+          <span style={{ color: t.amber }}>learn 2 · 2 new for controller</span>
         </div>
       </div>
       <Lane t={t} title="IN PROGRESS" rows={inProgress} x={L} y={192} w={W} opacity={panelOp * laneOp(0)} />

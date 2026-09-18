@@ -137,11 +137,34 @@ the final gate. Everything else is derived from it and the disk: `run.md`'s reso
 flight plan, the roster, the reconciliation check, the resume packet. A worker saying "done" is a
 proposal; the gate is the transition.
 
+### The board
+
 `board` is the view — a CLI-agnostic terminal kanban you open in a pane of your own (any host,
-stdlib python3): todo · in progress · review · done · blocked, or lanes you declare; each card with
-its agent, model, elapsed time, gate verdicts and check badges (`tests ok 12s · lint fail`); an
-attention strip for what needs you; a header with models (drift marked), budget, checks and the
-plan state.
+stdlib python3). Cards are three columns, task · who · one signal; the attention strip is the
+"what needs me" list; lanes are todo · in progress · review · done · blocked, or ones you declare.
+
+```text
+  ORCHESTRATE   payments-api @ main                                    1/5 done  ·  4m
+  goal       Ship the rate-limit rewrite behind a flag
+  run        parallel  ·  review dual  ·  host Claude Code
+  models     worker sonnet  ·  reviewer opus
+  attention  x 1 blocked/failed  ·  ? 2 pending
+  mail       2 sent  ·  1 for you  ·  1 question  ·  learn 2  ·  2 new for you
+
+  ╭─ IN PROGRESS ───────────────────────────────────────────────────────────── 2 ─╮
+  │  3  Migrate the DB layer   impl-3         ? asked you #23 · 6m · tests ok 12s │
+  │  4  Ship the docs          impl-4 ·codex  > 4m                                │
+  ╰───────────────────────────────────────────────────────────────────────────────╯
+  ╭─ REVIEW ────────────────────────────────────────────────────────────────── 1 ─╮
+  │  2  Auth token refresh     quality-2      spec ok r1 · quality .. r1          │
+  ╰───────────────────────────────────────────────────────────────────────────────╯
+  ╭─ DONE ──────────────────────────────────────────────────────────────────── 1 ─╮
+  │  1  Extract rate-limit …   quality-1      4f2c91a..a7d3e10                    │
+  ╰───────────────────────────────────────────────────────────────────────────────╯
+  ╭─ BLOCKED ───────────────────────────────────────────────────────────────── 1 ─╮
+  │  5  Integration            integ-5        x needs the vendor token — owner …  │
+  ╰───────────────────────────────────────────────────────────────────────────────╯
+```
 
 ```bash
 board                                   # live board in your pane · e expand · a attention-only · r reload · q
@@ -156,16 +179,39 @@ A subprocess lane is one command — `board launch N --agent A --engine grok --m
 — and journals its own exit and usage receipt; `--after N` makes it sleep in the shell until task N's
 work is on disk (zero tokens), and a dependency that cannot land stops it before its engine starts;
 `scripts/brief-check` names the dependencies it can see between briefs, and a lane in a read-only
-sandbox degrades to a printed line instead of failing. Agents talk through the same journal — `board send`
-/ `inbox` / `wait` — information and questions only, delivered on the recipient's next board call
-on every host (no server, no host feature), with
-hard caps so two agents can never talk instead of working; `board peers` tells a parallel worker who
-else is working and what they own. In a hierarchy, authority is lineage: a sub-orchestrator that
-dispatches `--by` itself becomes its workers' lead — their questions route to it, its mail binds them. Panels vote (`board vote`): majority or any-deny, derived.
-What a worker learns the hard way is one `board learn` line, handed to its team at their next board
-call along with any decision recorded since their dispatch — checked before acting, never mid-turn;
-`board memory` renders the run as one [`project-context`](https://github.com/gabros20/project-context)
-record so the next run, in any tool, starts from what this one learned.
+sandbox degrades to a printed line instead of failing. Panels vote (`board vote`): majority or
+any-deny, derived.
+
+### Shared context
+
+Parallel agents share one journal, not a chat. Every worker-side board call hands over what the
+worker has not seen yet, under one watermark, never mid-turn, on every host (no server, no host
+feature):
+
+- **mail** — `board send` / `inbox` / `wait`: information ("I will touch your area") and questions
+  (`--ask`), hard-capped so two agents can never talk instead of working; `board peers` says who
+  else is working and what they own. Controller and lead mail is an instruction, peer mail is
+  information. In a hierarchy authority is lineage: a sub-orchestrator that dispatches `--by`
+  itself becomes its workers' lead.
+- **learn** — `board learn N "…"`: one line about what a peer would otherwise re-pay (a stale
+  fixture, a failed approach, an invariant), capped and deduped, handed to the worker's team at
+  their next board call; a decision the controller changes mid-run reaches the workers already
+  running as a record change, with its why — checked before acting.
+- **memory** — `board memory` renders the run as one
+  [`project-context`](https://github.com/gabros20/project-context) record (decisions with their
+  why, failed attempts, learnings, verification, the frontier) so the next run, in any tool,
+  starts from what this one learned. No dependency: the board prints the `ctx` command when the
+  repo keeps project memory and stays silent otherwise.
+
+```text
+$ board inbox                      # what impl-3 sees at its next checkpoint
+mail for impl-3:
+#28 12:58 [peer impl-2] renamed src/auth/session.ts — import path moves
+learned since your last check:
+  #26 12:58 [peer impl-4 · fact] the docs build reads VERSION from package.json, not from the tag
+record changes since your dispatch:
+  #31 12:58 decision D-01 (revised) cookie auth, not header — why: browser clients keep the session
+```
 
 `install.sh` puts `board` on your PATH; every workspace also carries a zero-install copy. Existing
 `.orchestrate/` folders from older versions are adopted (`board init … --resume`), never restarted.

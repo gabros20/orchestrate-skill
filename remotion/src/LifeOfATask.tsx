@@ -812,11 +812,300 @@ const Xcli: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
   );
 };
 
+// ---------- beat 7: the board (the journal as a live kanban) ----------
+
+type Row = [string, string, string, string, "muted" | "good" | "bad" | "amber" | "accent"];
+
+const Lane: React.FC<{ t: Theme; title: string; rows: Row[]; x: number; y: number; w: number; opacity: number }> = ({
+  t,
+  title,
+  rows,
+  x,
+  y,
+  w,
+  opacity,
+}) => {
+  const colour = (c: Row[4]) => (c === "good" ? t.good : c === "bad" ? t.bad : c === "amber" ? t.amber : c === "accent" ? t.accent : t.muted);
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: x,
+        top: y,
+        width: w,
+        opacity,
+        border: `1.5px solid ${t.line}`,
+        borderRadius: 10,
+        padding: "8px 14px 9px",
+        background: t.panel,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: -10,
+          left: 14,
+          padding: "0 6px",
+          background: t.panel,
+          fontFamily: MONO,
+          fontSize: 12.5,
+          fontWeight: 600,
+          letterSpacing: "0.08em",
+          color: t.accent,
+        }}
+      >
+        {title} <span style={{ color: t.muted, fontWeight: 400 }}>{rows.length}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ fontFamily: MONO, fontSize: 14, color: t.muted, height: 22 }}>—</div>
+      ) : (
+        rows.map(([id, name, who, signal, c]) => (
+          <div key={id + who} style={{ display: "flex", alignItems: "baseline", height: 22, fontFamily: MONO, fontSize: 14.5, whiteSpace: "nowrap" }}>
+            <span style={{ color: t.muted, width: 26 }}>{id}</span>
+            <span style={{ color: t.ink, width: 292 }}>{name}</span>
+            <span style={{ color: t.ink, fontWeight: 600, width: 146 }}>{who}</span>
+            <span style={{ color: colour(c) }}>{signal}</span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+};
+
+const Board: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
+  const S = 1296;
+  const opacity = io(frame, [S, S + 18], [0, 1]) * io(frame, [S + 272, S + 290], [1, 0]);
+  if (opacity <= 0.01) return null;
+  const panelOp = io(frame, [S + 8, S + 24], [0, 1]);
+  const answered = frame >= S + 150; // the controller answered impl-3's question
+  const landed = frame >= S + 200; // task 2's quality gate closed → DONE with its commits
+  const laneOp = (i: number) => io(frame, [S + 26 + i * 10, S + 40 + i * 10], [0, 1]);
+  const flash = (at: number) => io(frame, [at, at + 6], [0, 1]) * io(frame, [at + 6, at + 40], [1, 0]);
+
+  const inProgress: Row[] = [
+    ["3", "Migrate the DB layer", "impl-3", answered ? "> 6m · tests ok 12s" : "? asked you #23 · tests ok 12s", answered ? "muted" : "amber"],
+    ["4", "Ship the docs", "impl-4 ·codex", "> 4m", "muted"],
+  ];
+  const review: Row[] = landed ? [] : [["2", "Auth token refresh", "quality-2", "spec ok r1 · quality .. r1", "good"]];
+  const done: Row[] = [["1", "Extract rate-limit middleware", "quality-1", "4f2c91a..a7d3e10", "muted"], ...(landed ? ([["2", "Auth token refresh", "quality-2", "b81c0aa..c2e77f4", "muted"]] as Row[]) : [])];
+  const blocked: Row[] = [["5", "Integration", "integ-5", "x needs the vendor token — owner: controller", "bad"]];
+
+  const pending = answered ? (landed ? 0 : 1) : 2;
+  const head = `${landed ? 2 : 1}/5 done  ·  ${Math.floor(io(frame, [S, S + 290], [4, 9]))}m`;
+
+  const L = 72;
+  const W = 1056;
+  return (
+    <AbsoluteFill style={{ opacity }}>
+      <BeatHead t={t} frame={frame} from={S} kicker="board · a pane you open" title="the journal as a live kanban" />
+      <div
+        style={{
+          position: "absolute",
+          top: 92,
+          left: 60,
+          right: 60,
+          height: 400,
+          background: t.codeBg,
+          border: `1.5px solid ${t.line}`,
+          borderRadius: 12,
+          opacity: panelOp,
+        }}
+      />
+      <div style={{ position: "absolute", top: 104, left: L, fontFamily: MONO, fontSize: 14.5, lineHeight: "22px", whiteSpace: "pre", opacity: panelOp }}>
+        <div>
+          <span style={{ color: t.accent, fontWeight: 600 }}>ORCHESTRATE</span>
+          <span style={{ color: t.ink }}>   payments-api @ main</span>
+          <span style={{ color: t.muted }}>{"                                          "}</span>
+          <span style={{ color: t.ink, fontWeight: 600 }}>{head}</span>
+        </div>
+        <div>
+          <span style={{ color: t.muted }}>goal       </span>
+          <span style={{ color: t.ink }}>Ship the rate-limit rewrite behind a flag</span>
+          <span style={{ color: t.muted }}>{"      run  parallel · review dual"}</span>
+        </div>
+        <div>
+          <span style={{ color: t.muted }}>attention  </span>
+          <span style={{ color: t.bad, fontWeight: 600 }}>x 1 blocked</span>
+          <span style={{ color: t.muted, opacity: pending ? 1 : 0 }}>  ·  </span>
+          <span style={{ color: t.amber, fontWeight: 600, opacity: pending ? 1 - 0.6 * flash(S + 150) : 0 }}>{`? ${pending} pending`}</span>
+          <span style={{ color: t.muted }}>{"      mail  2 sent · 1 for you · "}</span>
+          <span style={{ color: t.amber }}>learn 2 · 2 new for you</span>
+        </div>
+      </div>
+      <Lane t={t} title="IN PROGRESS" rows={inProgress} x={L} y={192} w={W} opacity={panelOp * laneOp(0)} />
+      <Lane t={t} title="REVIEW" rows={review} x={L} y={266} w={W} opacity={panelOp * laneOp(1)} />
+      <Lane t={t} title="DONE" rows={done} x={L} y={landed ? 318 : 340} w={W} opacity={panelOp * laneOp(2)} />
+      <Lane t={t} title="BLOCKED" rows={blocked} x={L} y={landed ? 392 : 414} w={W} opacity={panelOp * laneOp(3)} />
+      {/* the controller's reply, then the gate closing — both are journal lines, so the board moves */}
+      {([[S + 116, S + 146, S + 156, 'board send --from controller --to impl-3 --re 23 "cookie auth (D-01)"'], [S + 168, S + 194, S + 208, 'board gate 2 --kind quality --verdict ok']] as [number, number, number, string][]).map(([a, b, c, cmd]) => {
+        const chars = Math.round(io(frame, [a, b], [0, cmd.length]));
+        const o = io(frame, [a, a + 6], [0, 1]) * io(frame, [c, c + 10], [1, 0]);
+        if (o <= 0.01) return null;
+        return (
+          <div key={cmd} style={{ position: "absolute", left: L, top: 458, fontFamily: MONO, fontSize: 14, whiteSpace: "pre", opacity: o }}>
+            <span style={{ color: t.accent, fontWeight: 600 }}>$ </span>
+            <span style={{ color: t.ink }}>{cmd.slice(0, chars)}</span>
+            <span style={{ color: t.muted, opacity: chars >= cmd.length ? io(frame, [b + 4, b + 10], [0, 1]) : 0 }}>   ↵  journaled — the board re-renders</span>
+          </div>
+        );
+      })}
+      <Caption t={t} frame={frame} from={S + 22} to={S + 108}>
+        Open a pane, run <b style={{ color: t.ink }}>board</b>: the journal rendered as a live kanban — any host, stdlib python, nothing to install.
+      </Caption>
+      <Caption t={t} frame={frame} from={S + 114} to={S + 196}>
+        Cards are three columns — task · who · one signal. The <b style={{ color: t.ink }}>attention</b> strip says what needs <b style={{ color: t.ink }}>you</b>.
+      </Caption>
+      <Caption t={t} frame={frame} from={S + 202} to={S + 288}>
+        You answer; a gate closes; a card lands in DONE with its commits. <b style={{ color: t.ink }}>Nothing moves because an agent said so.</b>
+      </Caption>
+    </AbsoluteFill>
+  );
+};
+
+// ---------- beat 8: shared context (learn · digest · memory) ----------
+
+const Chip: React.FC<{ t: Theme; label: string; colour: string; x: number; y: number; opacity: number; mono?: boolean }> = ({
+  t,
+  label,
+  colour,
+  x,
+  y,
+  opacity,
+}) => (
+  <div
+    style={{
+      position: "absolute",
+      left: x,
+      top: y,
+      opacity,
+      fontFamily: MONO,
+      fontSize: 13,
+      color: colour,
+      background: t.panel,
+      border: `1.5px solid ${colour}`,
+      borderRadius: 8,
+      padding: "5px 11px",
+      whiteSpace: "nowrap",
+    }}
+  >
+    {label}
+  </div>
+);
+
+const SharedContext: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
+  const S = 1596;
+  const opacity = io(frame, [S, S + 18], [0, 1]) * io(frame, [S + 312, S + 330], [1, 0]);
+  if (opacity <= 0.01) return null;
+  const boxes: [string, string, number][] = [
+    ["controller", "records decisions", 60],
+    ["impl-1", "task 1 · src/api/**", 348],
+    ["impl-2", "task 2 · src/ui/**", 636],
+    ["impl-3", "task 3 · docs/**", 924],
+  ];
+  const JY = 226; // the journal strip
+  // chip 1: impl-1 learns → journal
+  const c1x = io(frame, [S + 34, S + 70], [368, 352]);
+  const c1y = io(frame, [S + 34, S + 70], [176, JY + 5]);
+  const c1o = io(frame, [S + 30, S + 40], [0, 1]) * io(frame, [S + 150, S + 160], [1, 0.35]);
+  // chip 2: controller re-decides → journal
+  const c2x = io(frame, [S + 92, S + 126], [80, 764]);
+  const c2y = io(frame, [S + 92, S + 126], [176, JY + 5]);
+  const c2o = io(frame, [S + 88, S + 98], [0, 1]) * io(frame, [S + 150, S + 160], [1, 0.35]);
+  // impl-2 checks in
+  const inboxO = io(frame, [S + 138, S + 150], [0, 1]);
+  const digestO = io(frame, [S + 152, S + 170], [0, 1]);
+  const lines: [string, string][] = [
+    ["learned since your last check:", "muted"],
+    ["  #44 12:07 [peer impl-1 · gotcha] jest fixture db.sqlite is stale — run npm run db:reset first", "ink"],
+    ["record changes since your dispatch:", "muted"],
+    ["  #46 12:09 decision D-02 (revised) header auth, not cookie — why: mobile clients send no cookies", "ink"],
+    ["(learnings are information — verify; a changed decision outranks your brief)", "muted"],
+  ];
+  // memory: journal → one record for the next run
+  const mx = io(frame, [S + 236, S + 270], [560, 846]);
+  const my = io(frame, [S + 236, S + 270], [JY + 5, 300]);
+  const mo = io(frame, [S + 230, S + 240], [0, 1]) * io(frame, [S + 268, S + 276], [1, 0]);
+  const fileO = io(frame, [S + 262, S + 278], [0, 1]);
+  return (
+    <AbsoluteFill style={{ opacity }}>
+      <BeatHead t={t} frame={frame} from={S} kicker="shared context · one journal, one watermark" title="what one worker learns, the others get — at their next checkpoint" />
+      {boxes.map(([name, sub, x], i) => (
+        <Box
+          key={name}
+          t={t}
+          title={name}
+          sub={sub}
+          color={i === 0 ? t.accent : undefined}
+          x={x}
+          y={108}
+          w={216}
+          opacity={io(frame, [S + 8 + i * 6, S + 24 + i * 6], [0, 1])}
+          scale={io(frame, [S + 8 + i * 6, S + 24 + i * 6], [0.9, 1])}
+        />
+      ))}
+      <div
+        style={{
+          position: "absolute",
+          left: 60,
+          right: 60,
+          top: JY,
+          height: 40,
+          borderTop: `2px dashed ${t.line}`,
+          borderBottom: `2px dashed ${t.line}`,
+          opacity: io(frame, [S + 12, S + 28], [0, 1]),
+        }}
+      >
+        <span style={{ position: "absolute", left: 14, top: 9, fontFamily: MONO, fontSize: 14, fontWeight: 600, color: t.accent }}>journal.jsonl</span>
+        <span style={{ position: "absolute", left: 132, top: 11, fontFamily: SANS, fontSize: 12.5, color: t.muted }}>append-only · hash-chained</span>
+      </div>
+      <Chip t={t} label='learn: jest fixture is stale → npm run db:reset' colour={t.amber} x={c1x} y={c1y} opacity={c1o} />
+      <Chip t={t} label='decide D-02 (revised): header auth, not cookie' colour={t.accent} x={c2x} y={c2y} opacity={c2o} />
+      <Chip t={t} label="board inbox ← impl-2's next checkpoint" colour={t.good} x={636} y={190} opacity={inboxO * io(frame, [S + 300, S + 312], [1, 0])} />
+      <div
+        style={{
+          position: "absolute",
+          left: 60,
+          top: 284,
+          width: 764,
+          background: t.codeBg,
+          border: `1.5px solid ${t.line}`,
+          borderRadius: 10,
+          padding: "10px 14px",
+          opacity: digestO,
+        }}
+      >
+        {lines.map(([text, c], i) => {
+          const chars = Math.round(io(frame, [S + 156 + i * 14, S + 172 + i * 14], [0, text.length]));
+          return (
+            <div key={text} style={{ fontFamily: MONO, fontSize: 12.5, lineHeight: "21px", color: c === "muted" ? t.muted : t.ink, whiteSpace: "pre" }}>
+              {text.slice(0, chars)}
+            </div>
+          );
+        })}
+      </div>
+      <Chip t={t} label="board memory" colour={t.accent} x={mx} y={my} opacity={mo} />
+      <FileChip t={t} label="PROJECT_CONTEXT.jsonl" x={846} y={300} opacity={fileO} />
+      <div style={{ position: "absolute", left: 848, top: 348, width: 290, fontFamily: SANS, fontSize: 13.5, lineHeight: "20px", color: t.muted, opacity: fileO }}>
+        <b style={{ color: t.ink }}>the next run starts here</b> — decisions with their why, failed attempts, learnings, verification: one record, any tool
+      </div>
+      <Caption t={t} frame={frame} from={S + 22} to={S + 132}>
+        A worker journals <b style={{ color: t.ink }}>one line</b> about what it learned. Its team gets it at their next board call — never mid-turn, on any host.
+      </Caption>
+      <Caption t={t} frame={frame} from={S + 138} to={S + 226}>
+        A decision you change reaches the workers <b style={{ color: t.ink }}>already running</b>, with its why — checked before acting, not after.
+      </Caption>
+      <Caption t={t} frame={frame} from={S + 232} to={S + 328}>
+        At the end, <b style={{ color: t.ink }}>board memory</b> turns the run into one memory record — the next run, in any tool, starts from it.
+      </Caption>
+    </AbsoluteFill>
+  );
+};
+
 // ---------- beat 6: close ----------
 
 const Close: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
-  const S = 1296;
-  const opacity = io(frame, [S, S + 20], [0, 1]) * io(frame, [1420, 1440], [1, 0]);
+  const S = 1936;
+  const opacity = io(frame, [S, S + 20], [0, 1]) * io(frame, [S + 124, S + 144], [1, 0]);
   if (opacity <= 0.01) return null;
   return (
     <AbsoluteFill style={{ opacity, alignItems: "center", justifyContent: "center" }}>
@@ -845,7 +1134,9 @@ const Close: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
 //   B4 strategies   722–992    nine strategies
 //   B5 dimensions   996–1252   compose the run
 //   B6 xcli         1256–1544  external CLIs, first-class
-//   B7 close        1548–1692
+//   B7 board        1548–1838  the journal as a live kanban — attention says what needs you
+//   B8 shared ctx   1848–2178  learn → digest → memory: one journal, one watermark
+//   B9 close        2188–2332
 // Beats from Stage on keep their original internal timing and are offset by SHIFT, so the flight
 // plan could be inserted without re-timing four beats by hand.
 const SHIFT = 252;
@@ -862,6 +1153,8 @@ export const LifeOfATask: React.FC<{ theme: ThemeName }> = ({ theme }) => {
       <Strategies t={t} frame={late} />
       <Dimensions t={t} frame={late} />
       <Xcli t={t} frame={late} />
+      <Board t={t} frame={late} />
+      <SharedContext t={t} frame={late} />
       <Close t={t} frame={late} />
     </AbsoluteFill>
   );

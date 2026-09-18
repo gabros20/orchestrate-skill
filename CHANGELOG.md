@@ -10,6 +10,17 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.25.2] — 2026-09-18
+
+### Changed
+- Docs only. **Website:** the board and shared context are first-class sections — a faithful
+  rendering of the pane (header, attention and mail lines, three-column cards in every lane) and
+  mail · learn · memory with the checkpoint digest a worker sees; the two long steps in "How a run
+  works" are pointers; nav and meta updated. **Hero video:** two new beats — the board (a question
+  answered, a gate closed, a card landing in DONE) and shared context (a learning travelling to a
+  peer's inbox with a revised decision, then `board memory` for the next run); 2332 frames, both
+  themes and posters re-rendered. README and `docs/usage.md` mirror the structure.
+
 ## [1.25.1] — 2026-09-18
 
 ### Fixed

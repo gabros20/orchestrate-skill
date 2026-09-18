@@ -5,8 +5,10 @@ worktree, so it works from any pane or lane whose cwd is anywhere inside the rep
 Everything is derived from `.orchestrate/` — briefs, reports, findings, the ledger — plus ONE
 append-only, hash-chained stream, `.orchestrate/journal.jsonl`. Newest fact wins; a ledger line
 is final. The board is a VIEW, never a second record: transitions are the controller's to record;
-workers only observe (note · exec · send · inbox · wait · peers · vote), and a lane in a
-read-only sandbox degrades to a printed line instead of a traceback.
+workers only observe (note · exec · learn · send · inbox · wait · peers · vote), and a lane in a
+read-only sandbox degrades to a printed line instead of a traceback. Every worker-side call also
+hands over what the worker has not seen yet: mail, what peers learned, decisions and rails that
+changed since its dispatch — one watermark, delivered at the worker's own checkpoints.
 
 CONTROLLER — the loop
   init PLAN --strategy S [--review --engine --host --models r=t,.. --effort --isolation --trigger
@@ -20,7 +22,7 @@ CONTROLLER — the loop
   review N --kind K [--round --agent --model] · gate N --kind K --verdict ok|fail|warn [--round --findings]
   exec N --name X -- <cmd> · result N --name X --exit RC [--log]     a check THROUGH the journal
   nudge N --agent A · escalate N --agent A --to MODEL --why ".." · blocked N --msg ".."
-  decide ID "msg" [--owner --task] · rail "msg" · todo N [title]
+  decide ID "msg" [--why ".." --owner --task] · rail "msg" · todo N [title]     (re-deciding an id supersedes it)
   done N [--msg]                   writes the ledger line; refused over a failed gate or check
   check [--finish] [--replay] [--json] · finish --gate pass|fail --evidence PATH [--force --reason]
   wait --task N [--task M] [--timeout 0]   block until their work is on disk (exit 3: one cannot land)
@@ -30,8 +32,10 @@ LANES — a subprocess engine as one command
   lane-exit N --agent A --exit RC · receipt N --agent A [--tokens --calls --cost --session]
   (exit 125 = a dependency failed and the engine never started; 124 = the gate timed out)
 
-WORKERS — observations (every one also hands you your unread mail)
+WORKERS — observations (every one also hands you your unread mail, peers' learnings, record changes)
   note N "msg" --agent A · exec N --name X --agent A -- <cmd> · result N --name X --exit RC --agent A
+  learn N "one line" --agent A [--kind gotcha|failed|invariant|constraint|convention|fact|question] [--path P]
+       (what the next worker would re-pay — capped, deduped, team-scoped; depth goes in your report)
   send "msg" --from A --to <agent|controller|lead|all> [--ask] [--re SEQ] · inbox --agent A [--peek]
        (controller/lead resolve to YOUR dispatcher in a tree: a subtree's questions go to its lead)
   wait --agent A [--timeout S] · wait --agent A --task N [--or-mail: exit 5 when mail comes first] · peers --agent A
@@ -39,8 +43,10 @@ WORKERS — observations (every one also hands you your unread mail)
 
 VIEWS
   board (live kanban: q · j/k · enter · e · a · r · n) · watch [--here] · runs · show [-x --attention --json]
-  plan · agents · attention · task N · log [-n --json] · mail [--task N]
+  plan · agents · attention · task N · log [-n --json] · mail [--task N] · learn (the run's learnings)
   follow [--for controller --kinds .. --since SEQ --timeout S] · postmortem · resume [--no-probe] · path
+  memory [--observation|--handoff --scope a,b --out PATH]   the run as a project-context
+       record (JSON for `ctx append --input` / `ctx handoff --input`) — printed, never appended by the board
 """
 
 from __future__ import annotations
@@ -78,6 +84,10 @@ TASK_EVENTS = {"todo", "title", "dispatch", "return", "review", "gate", "nudge",
 # Mail is information, not conversation: hard caps keep two agents from talking instead of working.
 MAIL_CAP = 8        # sends per stint — beyond this the answer belongs in the report
 THREAD_CAP = 3      # replies-to-replies — beyond this it is a meeting, not a message
+# A learning is one line a peer would otherwise re-pay for; the report carries the depth.
+LEARN_CAP = 3       # learnings per stint
+LEARN_LEN = 300     # characters per learning
+LEARN_KINDS = ("gotcha", "failed", "invariant", "constraint", "convention", "fact", "question")   # project-context's learnings.type + failed (an attempt)
 WAIT_SLICE = 110    # default `board wait` timeout (s): under every harness's shell-tool timeout
 DONE_SHOW = 3  # done cards shown in contracted mode before "+N more"
 # Lanes are a PROJECTION of the canonical state × the open stint's role — declared with
@@ -497,6 +507,8 @@ class Stint:
         self.owns = str(ev.get("owns", ""))          # exclusive files/areas — what peers must ask before touching
         self.by = str(ev.get("by") or "controller")   # who dispatched this stint: the controller, or a lead (sub-orchestrator) — authority is lineage
         self.sent = 0                                 # mails sent during this stint (MAIL_CAP)
+        self.learned = 0                              # learnings journaled during this stint (LEARN_CAP)
+        self.seq = int(ev.get("seq") or 0)            # the dispatch's journal seq — record changes after it are news to this stint
         self.session = str(ev.get("session", ""))    # the engine's session id — resume by THIS, never "last"
         self.log = str(ev.get("log", ""))            # captured event stream / stdout, relative to .orchestrate/
         self.cmd_file = str(ev.get("cmd_file", ""))  # the wrapper script that launched the lane
@@ -520,6 +532,37 @@ class Mail:
         self.msg = clean(ev.get("msg", ""))
         self.re = int(ev.get("re") or 0)
         self.ask = bool(ev.get("ask"))
+
+
+class Learn:
+    """One journaled learning: a worker's discovery peers receive at their next checkpoint — information, never a transition."""
+
+    def __init__(self, ev: dict, ts: float):
+        self.seq = int(ev.get("seq", 0))
+        self.ts = ts
+        self.agent = clean(ev.get("agent", "")) or "?"
+        self.task = str(ev.get("task", ""))
+        self.kind = str(ev.get("kind") or "gotcha")
+        self.msg = clean(ev.get("msg", ""))
+        self.path = clean(ev.get("path", ""))
+        self.by = str(ev.get("by") or "controller")   # the sender's dispatcher — learnings travel within a team
+
+    def key(self) -> str:
+        return " ".join(self.msg.casefold().split())
+
+
+class Change:
+    """A decision or rail recorded after a worker was dispatched — its brief snapshot predates it."""
+
+    def __init__(self, ev: dict, ts: float, revised: bool):
+        self.seq = int(ev.get("seq", 0))
+        self.ts = ts
+        self.kind = str(ev.get("ev", ""))
+        self.id = str(ev.get("id") or "")
+        self.msg = clean(ev.get("msg", ""))
+        self.why = clean(ev.get("why", ""))
+        self.owner = str(ev.get("owner") or "")
+        self.revised = revised
 
 
 class Run:
@@ -569,13 +612,42 @@ class State:
         self.problems: list[str] = []
         self.meta: dict[str, str] = {}
         self.mail: list[Mail] = []
-        self.acks: dict[str, int] = {}   # agent -> highest seq it has read
+        self.learned: list[Learn] = []
+        self.changes: list[Change] = []   # decisions and rails, in journal order
+        self.acks: dict[str, int] = {}   # agent -> highest seq it has read (mail, learnings and changes share the watermark)
         self.run_checks: dict[str, dict[str, str]] = {}   # run-level checks (integration, final verification)
 
     def unread(self, agent: str) -> list[Mail]:
         """Mail an agent has not acked: direct, or broadcast from someone else."""
         seen = self.acks.get(agent, 0)
         return [m for m in self.mail if m.seq > seen and (m.to == agent or (m.to == "all" and m.sender != agent))]
+
+    def receives(self, agent: str, L: Learn) -> bool:
+        """Team scope: same dispatcher, the sender's lead, or the sender's own workers. The controller sees every learning."""
+        if agent == L.agent:
+            return False
+        if agent == "controller":
+            return True
+        s = self.open_stint(agent, "")
+        return bool(s) and (s.by == L.by or agent == L.by or s.by == L.agent)
+
+    def unread_learn(self, agent: str) -> list[Learn]:
+        seen = self.acks.get(agent, 0)
+        return [L for L in self.learned if L.seq > seen and self.receives(agent, L)]
+
+    def unread_changes(self, agent: str) -> list[Change]:
+        """Decisions and rails recorded after this stint's dispatch (its brief snapshot predates them), not yet handed over."""
+        if agent == "controller":
+            return []
+        s = self.open_stint(agent, "")
+        if not s:
+            return []
+        seen = max(self.acks.get(agent, 0), s.seq)
+        return [c for c in self.changes if c.seq > seen]
+
+    def digest(self, agent: str) -> list:
+        """Everything a checkpoint hands over, in one list: mail, learnings, record changes."""
+        return [*self.unread(agent), *self.unread_learn(agent), *self.unread_changes(agent)]
 
     def stint_of(self, agent: str) -> Stint | None:
         for s in reversed(self.stints):
@@ -900,6 +972,15 @@ def load(ws: Path, journal_only: bool = False) -> State:
             continue
         if kind == "rail":
             run.rails.append(clean(ev.get("msg", "")))
+            st.changes.append(Change(ev, ts, False))
+            continue
+        if kind == "learn":
+            L = Learn(ev, ts)
+            st.learned.append(L)
+            s = st.open_stint(L.agent, "")
+            if s:
+                s.learned += 1
+                s.heartbeat_ts = max(s.heartbeat_ts, ts)
             continue
         if kind == "adopt":
             run.adopted = clean(ev.get("msg", "")) or "adopted"
@@ -917,9 +998,11 @@ def load(ws: Path, journal_only: bool = False) -> State:
             st.acks[a] = max(st.acks.get(a, 0), int(ev.get("upto") or 0))
             continue
         if kind == "decide":
+            revised = any(d["id"] == ev.get("id") and d.get("src") == "journal" for d in run.decisions)   # the file mirror is not a prior
             run.decisions = [d for d in run.decisions if d["id"] != ev.get("id")]
-            run.decisions.append({"id": str(ev.get("id", "")), "msg": clean(ev.get("msg", "")),
-                                  "owner": str(ev.get("owner", "")), "task": str(ev.get("task", "")), "src": "journal"})
+            run.decisions.append({"id": str(ev.get("id", "")), "msg": clean(ev.get("msg", "")), "why": clean(ev.get("why", "")),
+                                  "owner": str(ev.get("owner", "")), "task": str(ev.get("task", "")), "src": "journal", "seq": seq})
+            st.changes.append(Change(ev, ts, revised))
             continue
         if kind == "finish":
             run.finish, run.finish_evidence, run.finish_ts = str(ev.get("gate", "")), str(ev.get("evidence", "")), ts
@@ -1492,6 +1575,8 @@ def card_details(t: Task, st: State, now: float, S: Style) -> list[tuple[str, Ro
         if s.exit_code is not None:
             segs.append((f" {d} exit {s.exit_code}", S.fg(OK) if s.exit_code == 0 else S.fg(BAD)))
         out.append(("attempt" if role_tier(s.role) == "worker" else "review", segs))
+    for x in [L for L in st.learned if L.task == t.id]:
+        out.append(("learned", [(f"[{x.kind}] ", DIM), (x.agent, BOLD), (f" {d} {x.msg}", "")] + ([(f" ({x.path})", DIM)] if x.path else [])))
     if t.gates:
         segs = []
         for k, v in t.gates.items():
@@ -1661,16 +1746,23 @@ def header_rows(st: State, W: int, now: float, S: Style) -> list[Row]:
                     segs.append((f"  {d}  ", DIM))
                 segs += [(f"{mk} {cnt[mk]} ", colour + BOLD), (word, DIM)]
         line("attention", segs)
-    if st.mail:
-        agents_ = {s.agent for s in st.open_stints()} | {"controller"}
-        unread_all = sum(len(st.unread(a)) for a in agents_)
-        mine = st.unread("controller")
-        asks = [m for m in mine if m.ask]
-        segs = [(f"{len(st.mail)} sent", DIM), (f"  {d}  {unread_all} unread", S.fg(WARN) if unread_all else DIM)]
-        if mine:
-            segs += [(f"  {d}  {len(mine)} for you", S.fg(WARN) + BOLD)]
-        if asks:
-            segs += [(f"  {d}  {len(asks)} question{'s' if len(asks) != 1 else ''}", S.fg(WARN) + BOLD)]
+    if st.mail or st.learned:
+        segs = []
+        if st.mail:
+            agents_ = {s.agent for s in st.open_stints()} | {"controller"}
+            unread_all = sum(len(st.unread(a)) for a in agents_)
+            mine = st.unread("controller")
+            asks = [m for m in mine if m.ask]
+            segs = [(f"{len(st.mail)} sent", DIM), (f"  {d}  {unread_all} unread", S.fg(WARN) if unread_all else DIM)]
+            if mine:
+                segs += [(f"  {d}  {len(mine)} for you", S.fg(WARN) + BOLD)]
+            if asks:
+                segs += [(f"  {d}  {len(asks)} question{'s' if len(asks) != 1 else ''}", S.fg(WARN) + BOLD)]
+        if st.learned:
+            new = len(st.unread_learn("controller"))
+            segs += [(f"  {d}  " if segs else "", DIM), (f"learn {len(st.learned)}", DIM)]
+            if new:
+                segs += [(f"  {d}  {new} new for you", S.fg(WARN) + BOLD)]
         line("mail", segs)
     if st.problems:
         line("journal", [(f"! {len(st.problems)} integrity problem(s) — board check", S.fg(BAD))])
@@ -2297,6 +2389,8 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
             findings.append(f"{s.agent} (task {s.task}): {len(old)} mail unread for {fmt_dur(now - old[0].ts)} — checkpoint reads missing (brief defect)")
         if s.sent >= MAIL_CAP:
             findings.append(f"{s.agent} (task {s.task}): {s.sent} mails this stint — chatter; the answer belongs in the report")
+        if s.learned >= LEARN_CAP:
+            findings.append(f"{s.agent} (task {s.task}): learnings at the cap ({LEARN_CAP}) — the report carries the rest; curate what landed")
     for m in st.mail:
         if m.to not in ("controller", "all") and st.acks.get(m.to, 0) < m.seq:
             s = st.stint_of(m.to)
@@ -2380,21 +2474,64 @@ def render_mail(st: State, task: str = "") -> str:
     return "\n".join(L)
 
 
-def render_inbox(st: State, agent: str) -> tuple[str, list[Mail]]:
-    items = st.unread(agent)
+def render_inbox(st: State, agent: str) -> tuple[str, list]:
+    """The checkpoint digest — mail, then what peers learned, then record changes since this stint's dispatch — and every
+    item it hands over (one watermark: acking the batch acks all three kinds)."""
+    items = st.digest(agent)
+    mail = [x for x in items if isinstance(x, Mail)]
+    learned = [x for x in items if isinstance(x, Learn)]
+    changes = [x for x in items if isinstance(x, Change)]
     if not items:
         return "board: no new mail", items
     L = []
     lead = st.lead_of(agent)
-    for m in items:
+    for m in mail:
         ask = " · ask" if m.ask else ""
         tag = "[controller]" if m.sender == "controller" else (f"[lead {m.sender}{ask}]" if m.sender == lead else f"[peer {m.sender}{ask}]")
         line = f"#{m.seq} {hhmm(m.ts)} {tag} {m.msg}"
         if m.ask and m.sender != agent:
             line += f"\n    reply: board send --from {agent} --to {m.sender} --re {m.seq} \"…\""
         L.append(line)
-    L.append("(controller and lead mail is an instruction; peer mail is information — reply only to an ask)")
+    if mail:
+        L.append("(controller and lead mail is an instruction; peer mail is information — reply only to an ask)")
+    if learned:
+        L.append("learned since your last check:" if agent != "controller" else "learned (curate: field-guide.md / decisions.md; the memory record carries them):")
+        for x in learned:
+            tag = "[controller" if x.agent == "controller" else (f"[lead {x.agent}" if x.agent == lead else f"[peer {x.agent}")
+            L.append(f"  #{x.seq} {hhmm(x.ts)} {tag} · {x.kind}] {x.msg}" + (f" ({x.path})" if x.path else "") + (f" — task {x.task}" if agent == "controller" else ""))
+    if changes:
+        L.append("record changes since your dispatch:")
+        for c in changes:
+            if c.kind == "decide":
+                L.append(f"  #{c.seq} {hhmm(c.ts)} decision {c.id}{' (revised)' if c.revised else ''} {c.msg}" +
+                         (f" — why: {c.why}" if c.why else "") + (f" — owner {c.owner}" if c.owner else ""))
+            else:
+                L.append(f"  #{c.seq} {hhmm(c.ts)} rail {c.msg}")
+    if (learned or changes) and agent != "controller":
+        L.append("(learnings are information — verify; a changed decision outranks your brief: reconcile, or return NEEDS_CONTEXT)")
     return "\n".join(L), items
+
+
+def ack(ws: Path, agent: str, items: list) -> None:
+    """One watermark for everything a checkpoint handed over."""
+    if not items:
+        return
+    observe(ws, "", actor="controller" if agent == "controller" else "worker", ev="ack", agent=agent, upto=max(x.seq for x in items),
+            count=sum(1 for x in items if isinstance(x, Mail)), learned=sum(1 for x in items if isinstance(x, Learn)),
+            changed=sum(1 for x in items if isinstance(x, Change)))
+
+
+def render_learned(st: State) -> str:
+    if not st.learned:
+        return "board: nothing learned yet — workers journal one line with  board learn N \"…\" --agent <you>"
+    kinds: dict[str, int] = {}
+    for x in st.learned:
+        kinds[x.kind] = kinds.get(x.kind, 0) + 1
+    L = [f"learned · {len(st.learned)} line(s) · {', '.join(f'{k} {n}' for k, n in sorted(kinds.items()))}"]
+    for x in st.learned:
+        t = st.tasks.get(x.task)
+        L.append(f"#{x.seq} {hhmm(x.ts)} [{x.kind}] {x.agent} (task {x.task}{' ' + t.title if t and t.title else ''}): {x.msg}" + (f" ({x.path})" if x.path else ""))
+    return "\n".join(L)
 
 
 def render_peers(st: State, agent: str) -> str:
@@ -2474,6 +2611,126 @@ def render_postmortem(st: State) -> str:
     return "\n".join(L)
 
 
+def project_memory(ws: Path) -> tuple[Path | None, int]:
+    """Whether the repo keeps project memory (the two files `ctx init` creates) — the board only DETECTS it; it never
+    runs `ctx`. Returns (repo root, entry count of the default ledger; 0 when the ledger lives elsewhere)."""
+    root = ws.resolve().parent
+    cfg, log = root / ".agent" / "project-context.json", root / ".agent" / "PROJECT_CONTEXT.jsonl"
+    if not (cfg.exists() or log.exists()):
+        return None, 0
+    n = 0
+    if log.exists():
+        try:
+            n = sum(1 for ln in log.read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip())
+        except OSError:
+            n = 0
+    return root, n
+
+
+def memory_hint(ws: Path, st: State, when: str) -> str:
+    """The command the controller can run — printed, never executed — when the repo keeps project memory."""
+    root, n = project_memory(ws)
+    if root is None:
+        return ""
+    if when == "init":
+        return (f"project memory: {n} entr{'y' if n == 1 else 'ies'} in .agent/PROJECT_CONTEXT.jsonl — "
+                "ctx context --scope <scope> --budget 1500 > .orchestrate/memory-<scope>.md  (and ctx attempts --outcome failed) · "
+                "pin the packet in briefs: read: .orchestrate/memory-<scope>.md — project memory")
+    kind = "append" if (when == "finish" and st.run.finish == "pass") else "handoff"
+    return (f"project memory: board memory --out .orchestrate/memory.json && "
+            f"ctx {kind} --agent orchestrate --session-id {st.run.id or 'RUN'} --input .orchestrate/memory.json  "
+            "(the run's decisions, learnings, attempts and verification, for the next run and the next tool)")
+
+
+def _strip(v):  # empty sections never reach the record
+    if isinstance(v, dict):
+        return {k: _strip(x) for k, x in v.items() if x not in (None, "", [], {})}
+    if isinstance(v, list):
+        return [_strip(x) for x in v]
+    return v
+
+
+def render_memory(st: State, kind: str, scopes: list[str]) -> dict:
+    """The run as ONE project-context record (observation when the final gate passed, else a handoff): what the next run
+    or the next tool needs — decisions with their why, attempts that failed, learnings, commits, verification, the frontier.
+    Paths only, never report bodies or raw logs. The board prints it; `ctx append --input` records it."""
+    run, d, ws = st.run, st.run.dims, st.ws
+    if not d:
+        sys.exit("board: memory needs a run record (board init) — a pre-journal workspace has no run to describe")
+    now = time.time()
+    tasks = st.ordered()
+    done = [t for t in tasks if t.state == "done"]
+    inv = finish_invalid(st)
+    finished = run.finish == "pass" and not inv
+    kind = kind or ("observation" if finished else "handoff")
+    goal = str(d.get("goal") or "")
+    ledger = []
+    if (ws / "progress.md").exists():
+        ledger = [ln.strip() for ln in (ws / "progress.md").read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip()]
+    ctx = [f"Orchestrated run {run.id or '?'} ({d.get('strategy') or '?'}" + (f", engine {d['engine']}" if d.get("engine") else "") +
+           f", review {d.get('review') or 'off'}) on branch {run.branch or '?'} from {run.base[:12] or '?'}. Goal: {goal or '(not recorded)'}. "
+           f"{len(done)}/{len(tasks)} task(s) accepted" +
+           (f"; final gate {run.finish}" + (f" (invalidated: {inv})" if inv else "") if run.finish else "; no final gate recorded") + "."]
+    if run.rails:
+        ctx.append("Rails: " + "; ".join(run.rails) + ".")
+    if ledger:
+        ctx.append("Ledger: " + " | ".join(ledger))
+    rec: dict = {"record_type": kind, "importance": "high", "scope": scopes,
+                 "task": {"id": run.id, "title": goal[:80], "status": "finished" if finished else "open"}, "context": "\n".join(ctx)}
+    rec["decisions"] = [{"decision": f"{x['id']}: {x['msg']}",
+                         "rationale": x.get("why") or ("rationale not recorded during the run (board decide --why)" +
+                                                        (f"; journal seq {x['seq']}" if x.get("seq") else "; from decisions.md")),
+                         "owner": x.get("owner") or ""} for x in run.decisions]
+    returns = {(str(e.get("task")), str(e.get("agent"))): clean(e.get("msg", "")) for e in st.events if e.get("ev") == "return"}
+    attempts = [{"approach": x.msg, "outcome": "failed", "evidence": f"task {x.task} by {x.agent}, journal #{x.seq}" + (f", {x.path}" if x.path else "")}
+                for x in st.learned if x.kind == "failed"]
+    for s in st.stints:
+        if s.status in ("BLOCKED", "NEEDS_CONTEXT", "REFUSED"):
+            t = st.tasks.get(s.task)
+            attempts.append({"approach": f"task {s.task} {t.title if t else ''} by {s.agent} ({s.model or '?'}" + (f", {s.engine}" if s.engine else "") + ")",
+                             "outcome": "abandoned" if s.status == "REFUSED" else "failed",
+                             "reason": returns.get((s.task, s.agent)) or s.status.lower().replace("_", " ")})
+    rec["attempts"] = attempts
+    learnings = [{"type": "open_question" if x.kind == "question" else x.kind, "statement": x.msg + (f" ({x.path})" if x.path else ""), "confidence": "likely"}
+                 for x in st.learned if x.kind != "failed"]
+    fg = ws / "field-guide.md"
+    if fg.exists():
+        for ln in fg.read_text(encoding="utf-8", errors="replace").splitlines():
+            ln = ln.strip()
+            if ln and not ln.startswith("#"):
+                learnings.append({"type": "gotcha", "statement": clean(ln.lstrip("-* ")), "confidence": "confirmed"})
+    rec["learnings"] = learnings
+    accepted = {t.id for t in done}
+    commits = [s.commits for s in st.stints if s.commits and s.task in accepted and s.status in ("DONE", "DONE_WITH_CONCERNS")]
+    artifacts = [{"path": f".orchestrate/{JOURNAL}", "type": "journal",
+                  "purpose": f"hash-chained run journal; archived to .orchestrate/archive/{run.id or '<run-id>'}/ by the next kickoff"}]
+    for t in tasks:
+        for p in ([t.report] if t.report else []) + t.findings:
+            artifacts.append({"path": p if p.startswith("/") else f".orchestrate/{p}", "type": "findings" if p.startswith("review-") else "report", "purpose": f"task {t.id} {t.title}"})
+    rec["changes"] = {"capture": "agent-authored", "commits": sorted(set(commits)), "artifacts": artifacts}
+    out_map = {"ok": "passed", "fail": "failed"}
+    ver = [{"check": f"task {t.id} {name}", "outcome": out_map.get(c["status"], "inconclusive"), "details": c.get("log") or ""}
+           for t in tasks for name, c in t.checks.items()]
+    ver += [{"check": name, "outcome": out_map.get(c["status"], "inconclusive"), "details": c.get("log") or ""} for name, c in st.run_checks.items()]
+    if run.finish:
+        ver.append({"check": "final-deliverable gate", "outcome": "passed" if finished else "failed", "details": run.finish_evidence + (f" — {inv}" if inv else "")})
+    rec["verification"] = ver
+    replied = {m.re for m in st.mail if m.re}
+    rec["current_state"] = {
+        "status": "finished" if finished else "in_progress",
+        "working": [f"task {t.id} {t.title}" + (f" — {t.final_note}" if t.final_note else "") for t in done],
+        "remaining": [f"task {t.id} {t.title} ({t.state.replace('_', ' ')})" for t in tasks if t.state not in ("done", "blocked")],
+        "blockers": [f"task {t.id} {t.title}: {t.note or t.detail}" for t in tasks if t.state == "blocked"],
+        "open_questions": [f"#{m.seq} {m.sender} -> {m.to}: {m.msg}" for m in st.mail if m.ask and m.seq not in replied]
+                          + [x.msg for x in st.learned if x.kind == "question"],
+        "next_steps": [f"{mk} task {t.id}: {why}" for mk, t, why in attention(st, now)],
+    }
+    rec["tags"] = [x for x in ("orchestrate", str(d.get("strategy") or ""), str(d.get("engine") or "")) if x]
+    out = _strip(rec)
+    out["scope"] = scopes   # required by the schema; [] means project-wide
+    return out
+
+
 def render_resume(st: State, probe: bool = True) -> str:
     now = time.time()
     run, d = st.run, st.run.dims
@@ -2530,11 +2787,17 @@ def render_resume(st: State, probe: bool = True) -> str:
             L.append(f"- #{m.seq} from {m.sender}{' [ask]' if m.ask else ''}: {m.msg}")
         if not mine:
             L.append("- nothing unread for the controller")
+    if st.learned:
+        L.append("## Learned (workers' one-liners — promote to field-guide.md / decisions.md, or let the memory record carry them)")
+        for x in st.learned[-12:]:
+            L.append(f"- [{x.kind}] {x.agent} · task {x.task}: {x.msg}" + (f" ({x.path})" if x.path else ""))
+        if len(st.learned) > 12:
+            L.append(f"- … {len(st.learned) - 12} more: board learn")
     if run.decisions:
         L.append("## Key decisions")
         for dec in run.decisions[-8:]:
             owner = f" ({dec['owner']})" if dec.get("owner") else ""
-            L.append(f"- {dec['id']}{owner}: {dec['msg']}")
+            L.append(f"- {dec['id']}{owner}: {dec['msg']}" + (f" — why: {dec['why']}" if dec.get("why") else ""))
         if len(run.decisions) > 8:
             L.append(f"- … {len(run.decisions) - 8} more in .orchestrate/decisions.md")
     L.append("## Files & pointers" + (" (probed)" if probe else ""))
@@ -2571,6 +2834,10 @@ def render_resume(st: State, probe: bool = True) -> str:
     L.append("## Handoff rule")
     L.append("State above is generated; NOT_PROVEN marks claims no artifact backs. Add the WHY — decisions' reasons, traps & "
              "dead ends — then probe-test it (shared-handoff.md). Trust the ledger + git log over any summary, this one included.")
+    hint = memory_hint(ws, st, "handoff")
+    if hint:
+        L.append("## Project memory")
+        L.append(f"- {hint}")
     return "\n".join(L)
 
 
@@ -2603,7 +2870,7 @@ def to_json(st: State) -> dict:
                    "findings": t.findings, "note": t.note}
                   for t in st.ordered()],
         "stints": [vars(s) for s in st.stints],
-        "mail": [vars(m) for m in st.mail], "acks": st.acks,
+        "mail": [vars(m) for m in st.mail], "learn": [vars(x) for x in st.learned], "acks": st.acks,
         "attention": [{"mark": mk, "task": t.id, "why": why} for mk, t, why in attention(st, now)],
         "problems": st.problems,
     }
@@ -2634,7 +2901,7 @@ def render_wrapper(ws: Path, task: str, agent: str, engine: str, model: str, eff
     if after:
         deps = " ".join(f"--task {shlex.quote(x)}" for x in after)
         # exit 3 (a dependency cannot land) / 2 (unknown task) → 125: the engine never starts; 124 stays a timeout
-        gate = (f"{me_q} wait --agent {agent_q} {deps} --timeout 0 > {shlex.quote(str(ws / (log[:-6] + '.wait')))} 2>&1 "
+        gate = (f"{me_q} wait --agent {agent_q} {deps} --timeout 0 --peek > {shlex.quote(str(ws / (log[:-6] + '.wait')))} 2>&1 "
                 f"|| {{ rc=$?; [ \"$rc\" = 124 ] || rc=125; {me_q} lane-exit {task_q} --agent {agent_q} --exit \"$rc\"; exit \"$rc\"; }}")
     script = "\n".join([
         "#!/bin/sh",
@@ -2744,16 +3011,18 @@ def observe(ws: Path, fallback: str = "", actor: str = "worker", **fields: objec
 
 
 def deliver(ws: Path, agent: str) -> None:
-    """Piggyback delivery: any board call a worker makes also hands over its unread mail (and acks it)."""
+    """Piggyback delivery: any board call a worker makes also hands over its digest — unread mail, peers' learnings,
+    record changes since its dispatch — and acks the batch."""
     if not agent or agent == "controller":
         return
     st = load(ws)
-    items = st.unread(agent)
+    text, items = render_inbox(st, agent)
     if not items:
         return
-    print(f"mail for {agent}:")
-    print(render_inbox(st, agent)[0])
-    observe(ws, "", ev="ack", agent=agent, upto=max(m.seq for m in items), count=len(items))
+    if any(isinstance(x, Mail) for x in items):
+        print(f"mail for {agent}:")
+    print(text)
+    ack(ws, agent, items)
 
 
 def follow(ws: Path, since: int, kinds: set[str] | None, for_: str, timeout: int) -> int:
@@ -2877,6 +3146,9 @@ def cmd_init(ws: Path, args: argparse.Namespace) -> None:
     if dims:
         print("board: run.md Resolved block written; next: `board plan` → gate → `board plan approved`")
     print("board: open a pane and run  board  (or .orchestrate/board) to watch")
+    hint = memory_hint(ws, load(ws), "init")
+    if hint:
+        print(f"board: {hint}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2895,20 +3167,28 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("check"); p.add_argument("--finish", action="store_true", help="the pre-finish gate: strict"); p.add_argument("--json", action="store_true")
     p.add_argument("--replay", action="store_true", help="cold replay: derive from the journal alone and diff against the disk view")
     sub.add_parser("postmortem")
+    me = os.environ.get("BOARD_AGENT") or None   # inside a launched lane the worker's own name — no worker-side call needs --agent
     p = sub.add_parser("send", help="mail: information between agents, never a transition")
-    p.add_argument("msg"); p.add_argument("--from", dest="sender", required=True); p.add_argument("--to", required=True)
+    p.add_argument("msg"); p.add_argument("--from", dest="sender", default=me, required=me is None); p.add_argument("--to", required=True)
     p.add_argument("--re", type=int, help="seq of the mail this answers"); p.add_argument("--ask", action="store_true", help="a question — the recipient owes ONE reply")
     p.add_argument("--push", action="store_true", help="print the host's native push binding for the recipient (never run)")
-    p = sub.add_parser("inbox"); p.add_argument("--agent", required=True); p.add_argument("--peek", action="store_true"); p.add_argument("--json", action="store_true")
+    p = sub.add_parser("inbox"); p.add_argument("--agent", default=me, required=me is None); p.add_argument("--peek", action="store_true"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("wait", help="rendezvous: block until mail arrives, or until --task N's work is on disk (exit 3: it cannot land, 124: timeout)")
-    p.add_argument("--agent", default="controller"); p.add_argument("--timeout", type=int, default=WAIT_SLICE, help="seconds; 0 = no deadline")
+    p.add_argument("--agent", default=me or "controller"); p.add_argument("--timeout", type=int, default=WAIT_SLICE, help="seconds; 0 = no deadline")
     p.add_argument("--task", action="append", help="wait for this task's work instead of for mail (repeatable: all must have landed)")
     p.add_argument("--or-mail", action="store_true", help="with --task: return 5 as soon as mail for --agent arrives (a lead waiting on its workers must answer their asks)")
+    p.add_argument("--peek", action="store_true", help="never ack: a wrapper waiting on behalf of an engine that has not started must not consume its digest")
     p = sub.add_parser("mail"); p.add_argument("--task"); p.add_argument("--json", action="store_true")
-    p = sub.add_parser("peers"); p.add_argument("--agent", required=True)
+    p = sub.add_parser("peers"); p.add_argument("--agent", default=me, required=me is None)
     p = sub.add_parser("vote", help="one reviewer's verdict; the gate is derived by quorum (panel = majority, consensus = any-deny)")
-    p.add_argument("task"); p.add_argument("--kind", required=True); p.add_argument("--agent", required=True)
+    p.add_argument("task"); p.add_argument("--kind", required=True); p.add_argument("--agent", default=me, required=me is None)
     p.add_argument("--verdict", choices=["ok", "fail", "warn"], required=True); p.add_argument("--why"); p.add_argument("--round", type=int)
+    p = sub.add_parser("learn", help="a worker's one-line discovery, handed to its team at their next board call — information, never a transition; no args: list the run's learnings")
+    p.add_argument("task", nargs="?"); p.add_argument("msg", nargs="?"); p.add_argument("--agent", default=me)
+    p.add_argument("--kind", choices=LEARN_KINDS, default="gotcha"); p.add_argument("--path", help="the file or area it is about"); p.add_argument("--json", action="store_true")
+    p = sub.add_parser("memory", help="the run as one project-context record (JSON for `ctx append --input` / `ctx handoff --input`) — printed, never appended")
+    g = p.add_mutually_exclusive_group(); g.add_argument("--observation", action="store_true"); g.add_argument("--handoff", action="store_true")
+    p.add_argument("--scope", help="comma list of project-context scopes ([] = project-wide)"); p.add_argument("--out", help="write the JSON here instead of stdout")
     p = sub.add_parser("launch", help="the lane as one command: wrapper written, session pinned, dispatch journaled, started, receipt on exit")
     p.add_argument("task"); p.add_argument("--agent", help="<role>-<task>[-tag]; omitted = derived from --role and the task"); p.add_argument("--engine", required=True, choices=sorted(ENGINES))
     p.add_argument("--model", required=True); p.add_argument("--effort"); p.add_argument("--role"); p.add_argument("--owns")
@@ -2927,11 +3207,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--kinds", help="comma list: mail,return,exit,check,vote,note,…"); p.add_argument("--for", dest="for_", help="controller: only what needs you")
     p.add_argument("--since", type=int, help="journal seq to start after (default: now)"); p.add_argument("--timeout", type=int, default=0)
     p = sub.add_parser("exec", help="run a check THROUGH the journal: board exec N --name tests [--agent you] -- npm test")
-    p.add_argument("task"); p.add_argument("--name", required=True); p.add_argument("--agent", help="a worker running its own check")
+    p.add_argument("task"); p.add_argument("--name", required=True); p.add_argument("--agent", default=me, help="a worker running its own check")
     p.add_argument("command", nargs="*")
     p = sub.add_parser("result", help="journal a check that ran elsewhere")
     p.add_argument("task"); p.add_argument("--name", required=True); p.add_argument("--exit", type=int, required=True)
-    p.add_argument("--dur"); p.add_argument("--log"); p.add_argument("--msg"); p.add_argument("--agent")
+    p.add_argument("--dur"); p.add_argument("--log"); p.add_argument("--msg"); p.add_argument("--agent", default=me)
     p = sub.add_parser("resume"); p.add_argument("--no-probe", action="store_true")
     p = sub.add_parser("task"); p.add_argument("task")
     sub.add_parser("attention")
@@ -2952,7 +3232,7 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("msg")
         else:
             p.add_argument("--msg")
-        p.add_argument("--agent")
+        p.add_argument("--agent", default=me if name == "note" else None)
         p.add_argument("--model")
         p.add_argument("--engine")
         if name == "dispatch":
@@ -2972,7 +3252,8 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--verdict", choices=["ok", "fail", "warn"], required=True); p.add_argument("--findings")
         if name == "escalate":
             p.add_argument("--to", required=True); p.add_argument("--why", required=True)
-    p = sub.add_parser("decide"); p.add_argument("id"); p.add_argument("msg"); p.add_argument("--owner"); p.add_argument("--task")
+    p = sub.add_parser("decide"); p.add_argument("id"); p.add_argument("msg"); p.add_argument("--why", help="the rationale — the least recoverable fact; the memory record carries it")
+    p.add_argument("--owner"); p.add_argument("--task")
     p = sub.add_parser("rail"); p.add_argument("msg")
     p = sub.add_parser("finish"); p.add_argument("--gate", choices=["pass", "fail"], required=True)
     p.add_argument("--evidence"); p.add_argument("--msg"); p.add_argument("--force", action="store_true"); p.add_argument("--reason")
@@ -3168,12 +3449,11 @@ def main(argv: list[str]) -> int:
         agent = clean(args.agent)
         out, items = render_inbox(st, agent)
         if args.json:
-            print(json.dumps([vars(m) for m in items], ensure_ascii=False, indent=1, default=str))
+            print(json.dumps([vars(m) for m in items if isinstance(m, Mail)], ensure_ascii=False, indent=1, default=str))
         else:
             print(out)
         if items and not args.peek:
-            observe(ws, "", actor="controller" if agent == "controller" else "worker", ev="ack", agent=agent,
-                    upto=max(m.seq for m in items), count=len(items))
+            ack(ws, agent, items)
     elif cmd == "wait":
         agent = clean(args.agent)
         deadline = (time.time() + args.timeout) if args.timeout > 0 else float("inf")   # 0 = forever (wrappers)
@@ -3194,9 +3474,10 @@ def main(argv: list[str]) -> int:
                     print(f"board: no such task {', '.join(unknown)} — nothing to wait for (planned tasks: {', '.join(t.id for t in st.ordered()) or 'none'})")
                     return 2
                 if args.or_mail and st.unread(agent):   # a lead waiting on its workers wakes for their questions
-                    print(render_inbox(st, agent)[0])
-                    observe(ws, "", actor="controller" if agent == "controller" else "worker", ev="ack", agent=agent,
-                            upto=max(m.seq for m in st.unread(agent)), count=len(st.unread(agent)))
+                    text, items = render_inbox(st, agent)
+                    print(text)
+                    if not args.peek:
+                        ack(ws, agent, items)
                     print("board: mail arrived while you waited — answer it (reply ONLY to an ask), then wait again")
                     return 5
                 failed = [(d, dep_failed(st, d)) for d in deps if dep_failed(st, d)]
@@ -3204,7 +3485,8 @@ def main(argv: list[str]) -> int:
                     for d, why in failed:
                         print(f"board: task {d.id} {d.title} cannot land — {why}; this input will not arrive "
                               f"(return NEEDS_CONTEXT naming it, or the controller re-dispatches task {d.id})")
-                    deliver(ws, agent)
+                    if not args.peek:
+                        deliver(ws, agent)
                     return 3
                 landed = [d for d in deps if dep_landed(st, d)]
                 if len(landed) == len(deps):
@@ -3214,7 +3496,8 @@ def main(argv: list[str]) -> int:
                                  f"lane exited rc={s.exit_code}, report on disk (not yet returned by the controller)" if s else d.state)
                         print(f"task {d.id} {d.title}: {state}" + (f" · commits {s.commits}" if s and s.commits else "")
                               + (f" · report {rp if rp.startswith('/') else '.orchestrate/' + rp}" if (rp := d.report or (f'task-{d.id}-report.md' if (ws / f'task-{d.id}-report.md').exists() else '')) else ""))
-                    deliver(ws, agent)
+                    if not args.peek:
+                        deliver(ws, agent)
                     return 0
                 if time.time() >= deadline:
                     open_ = ", ".join(f"task {x}" for x, d in zip(args.task, deps) if not (d and dep_landed(st, d)))
@@ -3222,11 +3505,11 @@ def main(argv: list[str]) -> int:
                     return 124
                 idle()
                 continue
-            items = st.unread(agent)
-            if items:
-                print(render_inbox(st, agent)[0])
-                observe(ws, "", actor="controller" if agent == "controller" else "worker", ev="ack", agent=agent,
-                        upto=max(m.seq for m in items), count=len(items))
+            if st.unread(agent):   # wakes on MAIL; the digest (learnings, record changes) rides along
+                text, items = render_inbox(st, agent)
+                print(text)
+                if not args.peek:
+                    ack(ws, agent, items)
                 return 0
             if time.time() >= deadline:
                 print(f"board: no mail for {agent} in {args.timeout}s — continue with your brief, or return NEEDS_CONTEXT if you cannot")
@@ -3364,11 +3647,14 @@ def main(argv: list[str]) -> int:
                 actor=args.agent or "worker", task=args.task, ev="note", msg=args.msg, agent=args.agent)
         deliver(ws, clean(args.agent or ""))
     elif cmd == "decide":
-        append_event(ws, ev="decide", id=args.id, msg=args.msg, owner=args.owner, task=args.task)
+        prior = any(x["id"] == args.id and x.get("src") == "journal" for x in load(ws).run.decisions)
+        append_event(ws, ev="decide", id=args.id, msg=args.msg, why=args.why, owner=args.owner, task=args.task)
         ws.mkdir(parents=True, exist_ok=True)
         with (ws / "decisions.md").open("a", encoding="utf-8") as fh:
-            fh.write(f"- {args.id} — {clean(args.msg)}" + (f" (owner: {args.owner})" if args.owner else "") +
-                     (f" [task {args.task}]" if args.task else "") + "\n")
+            fh.write(f"- {args.id} — {clean(args.msg)}" + (f" · why: {clean(args.why)}" if args.why else "") + (f" (owner: {args.owner})" if args.owner else "") +
+                     (f" [task {args.task}]" if args.task else "") + (" (supersedes the earlier " + args.id + ")" if prior else "") + "\n")
+        if prior:
+            print(f"board: {args.id} revised — open workers see it at their next board call; a worker whose brief cites it may return NEEDS_CONTEXT")
     elif cmd == "rail":
         append_event(ws, ev="rail", msg=args.msg)
         write_resolved(ws)
@@ -3391,6 +3677,53 @@ def main(argv: list[str]) -> int:
                      goal_hash=sha(str(st.run.dims.get("goal", ""))), forced=bool(args.force), reason=args.reason)
         write_resolved(ws)
         print(f"board: finish recorded — final gate {args.gate}" + (" (forced)" if args.force else ""))
+        hint = memory_hint(ws, load(ws), "finish")
+        if hint:
+            print(f"board: {hint}")
+    elif cmd == "learn":
+        st = load(ws)
+        if not args.task:   # the read view
+            print(json.dumps([vars(x) for x in st.learned], ensure_ascii=False, indent=1, default=str) if args.json else render_learned(st))
+            return 0
+        agent = clean(args.agent or "")
+        msg = " ".join(clean(args.msg or "").split())
+        if not msg:
+            sys.exit("board: learn needs one line — board learn N \"what the next worker would re-pay\" --agent <you>")
+        if not agent:
+            sys.exit("board: learn needs --agent <you> (set automatically as BOARD_AGENT inside a launched lane)")
+        if len(msg) > LEARN_LEN:
+            sys.exit(f"board: a learning is one line (≤{LEARN_LEN} chars) — depth goes in your report")
+        s = st.open_stint(agent, "") if agent != "controller" else None
+        if agent != "controller" and not s:
+            sys.exit(f"board: {agent} has no open stint — a returned agent's learnings belong in its report")
+        if s and s.learned >= LEARN_CAP:
+            sys.exit(f"board: {agent} has journaled {s.learned} learnings this stint (cap {LEARN_CAP}) — the rest goes in your report's surprise: line")
+        key = " ".join(msg.casefold().split())
+        dup = next((x for x in st.learned if x.key() == key), None)
+        if dup:
+            sys.exit(f"board: already learned by {dup.agent} at #{dup.seq} — nothing to add")
+        fallback = f"board learn {args.task} {shlex.quote(msg)} --agent {agent} --kind {args.kind}" + (f" --path {shlex.quote(args.path)}" if args.path else "")
+        ev = observe(ws, fallback, actor=agent if agent != "controller" else "controller", task=args.task, ev="learn", agent=agent,
+                     kind=args.kind, msg=msg, path=args.path, by=st.lead_of(agent))
+        if not ev:
+            return 0
+        L = Learn(ev, time.time())
+        who = sorted({x.agent for x in st.open_stints() if st.receives(x.agent, L)})
+        print(f"board: learned #{ev['seq']} [{args.kind}] — reaches " + (", ".join(who) if who else "no open peer yet (later workers get it at their first checkpoint)")
+              + " and the controller, each at its next board call")
+        deliver(ws, agent)
+    elif cmd == "memory":
+        st = load(ws)
+        kind = "observation" if args.observation else ("handoff" if args.handoff else "")
+        scopes = [x.strip() for x in (args.scope or "").split(",") if x.strip()]
+        rec = render_memory(st, kind, scopes)
+        text = json.dumps(rec, ensure_ascii=False, indent=1)
+        if args.out:
+            Path(args.out).write_text(text + "\n", encoding="utf-8")
+            verb = "append" if rec["record_type"] == "observation" else "handoff"
+            print(f"board: {rec['record_type']} written -> {args.out} · record it: ctx {verb} --agent orchestrate --session-id {st.run.id or 'RUN'} --input {args.out}")
+        else:
+            print(text)
     return 0
 
 
@@ -3401,16 +3734,18 @@ def selftest() -> int:
     import io
 
     def run(*argv: str, expect_fail: bool = False) -> str:
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+        buf, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
             try:
                 rc = main(list(argv))
             except SystemExit as exc:
                 rc = exc.code if isinstance(exc.code, int) else 1
+                if not isinstance(exc.code, int) and exc.code:
+                    err.write(str(exc.code))
         if expect_fail:
             assert rc not in (0, None), f"{argv}: expected failure, got exit {rc}"
         else:
-            assert rc in (0, None), f"{argv}: exit {rc}\n{buf.getvalue()}"
+            assert rc in (0, None), f"{argv}: exit {rc}\n{buf.getvalue()}\n{err.getvalue()}"
         return buf.getvalue()
 
     # every subcommand the parser knows is in the help, grouped by role — the help can never go stale again
@@ -3898,6 +4233,139 @@ def selftest() -> int:
         assert "task 3" in out and "done" in out and base in out, out
         peers = run("peers", "--agent", "impl-4-b")
         assert "returned (their work is on disk" in peers and "impl-3-dep" in peers and "board wait --agent <you> --task N" in peers, peers
+
+        # --- learn: a worker's one-liner reaches its team at their next checkpoint; one watermark for the whole digest ----------
+        assert "learn" not in TASK_EVENTS, "a learning after finish is not work"
+        run("learn", "4", "x", "--agent", "nobody-9", expect_fail=True)                      # no open stint
+        run("learn", "3", "x", "--agent", "impl-3-dep", expect_fail=True)                    # returned → the report
+        run("dispatch", "4", "--agent", "impl-4-l", "--model", "sonnet")
+        run("learn", "4", "y" * (LEARN_LEN + 1), "--agent", "impl-4-l", expect_fail=True)     # one line
+        run("learn", "4", "  ", "--agent", "impl-4-l", expect_fail=True)
+        run("learn", "4", "x", expect_fail=True)                                              # no agent, no BOARD_AGENT
+        run("dispatch", "3", "--agent", "impl-3-l", "--model", "sonnet")
+        out = run("learn", "4", "jest fixture db.sqlite is stale — run npm run db:reset first", "--agent", "impl-4-l", "--path", "tests/fixtures")
+        assert "learned #" in out and "impl-3-l" in out and "controller" in out, out
+        run("learn", "3", "JEST  fixture db.sqlite is stale — run npm run db:reset first", "--agent", "impl-3-l", expect_fail=True)   # duplicate, case/space-insensitive
+        out = run("inbox", "--agent", "impl-3-l")
+        assert "learned since your last check" in out and "[peer impl-4-l · gotcha] jest fixture" in out and "(tests/fixtures)" in out and "verify" in out, out
+        assert "no new mail" in run("inbox", "--agent", "impl-3-l"), "the batch is acked as one"
+        assert "jest fixture" not in run("inbox", "--agent", "impl-4-l"), "a sender never receives its own learning"
+        ctrl = run("inbox", "--agent", "controller")
+        assert "learned (curate" in ctrl and "jest fixture" in ctrl and "task 4" in ctrl and "record changes" not in ctrl, ctrl
+        # record changes since dispatch: a decision or rail after the stint started is news; before it, the brief already carried it
+        run("decide", "D-02", "cookie auth", "--why", "browser clients keep the session")
+        out = run("decide", "D-02", "header auth", "--why", "mobile clients send no cookies")
+        assert "revised" in out, out
+        run("rail", "no npm publish from lanes")
+        out = run("inbox", "--agent", "impl-4-l")
+        assert "record changes since your dispatch" in out and "decision D-02 cookie auth — why: browser clients" in out \
+            and "decision D-02 (revised) header auth" in out and "rail no npm publish" in out and "outranks your brief" in out, out
+        assert "no new mail" in run("inbox", "--agent", "impl-4-l")
+        assert "record changes" not in run("inbox", "--agent", "controller"), "the controller wrote them"
+        run("dispatch", "3", "--agent", "impl-3-m", "--model", "sonnet")
+        out = run("inbox", "--agent", "impl-3-m")
+        assert "record changes" not in out and "learned since" in out and "jest fixture" in out, "a later worker gets the backlog of learnings, not the record it was briefed on:\n" + out
+        assert "why: browser clients" in (ws / "decisions.md").read_text() and "supersedes the earlier D-02" in (ws / "decisions.md").read_text()
+        # one watermark: mail + learning in one batch — both shown, both acked; --peek acks nothing
+        run("send", "moving tests/helpers.ts", "--from", "impl-4-l", "--to", "impl-3-l")
+        run("learn", "4", "npm test needs NODE_OPTIONS=--experimental-vm-modules", "--agent", "impl-4-l", "--kind", "constraint")
+        out = run("inbox", "--agent", "impl-3-l", "--peek")
+        assert "[peer impl-4-l] moving tests" in out and "[peer impl-4-l · constraint] npm test" in out, out
+        out = run("inbox", "--agent", "impl-3-l")
+        assert "moving tests" in out and "npm test needs" in out, out
+        assert "no new mail" in run("inbox", "--agent", "impl-3-l")
+        acks = [e for e in load(ws).events if e.get("ev") == "ack" and e.get("agent") == "impl-3-l"]
+        assert acks[-1].get("count") == 1 and acks[-1].get("learned") == 1, acks[-1]
+        # the cap, and check names it
+        run("learn", "4", "third one", "--agent", "impl-4-l")
+        run("learn", "4", "fourth one", "--agent", "impl-4-l", expect_fail=True)
+        assert any("learnings at the cap" in f for f in check(load(ws))), check(load(ws))
+        # team scope in a tree: a subtree's learnings stay with the subtree and its lead; the lead's reach its workers and its peers
+        run("todo", "3.5", "Sub")
+        run("dispatch", "3", "--agent", "lead-3-x", "--model", "opus", "--role", "sub-orchestrator")
+        run("dispatch", "3.5", "--agent", "impl-3.5", "--model", "sonnet", "--by", "lead-3-x")
+        out = run("learn", "3.5", "subtree gotcha: the sub api needs a token", "--agent", "impl-3.5")
+        assert "lead-3-x" in out and "impl-4-l" not in out and "impl-3-m" not in out, out
+        assert "subtree gotcha" not in run("inbox", "--agent", "impl-4-l")
+        out = run("inbox", "--agent", "lead-3-x")
+        assert "[peer impl-3.5 · gotcha] subtree gotcha" in out, out
+        run("learn", "3", "lead says: rate limit is 10 rps", "--agent", "lead-3-x", "--kind", "invariant")
+        assert "[lead lead-3-x · invariant] lead says" in run("inbox", "--agent", "impl-3.5"), "a lead's learning reaches its workers, tagged lead"
+        assert "[peer lead-3-x · invariant] lead says" in run("inbox", "--agent", "impl-3-m"), "and its peers under the same dispatcher"
+        out = run("learn", "4", "controller learned: CI needs the seed step", "--agent", "controller")
+        assert "learned #" in out and "impl-3-m" in out, out
+        # BOARD_AGENT: inside a lane no worker-side call needs --agent
+        os.environ["BOARD_AGENT"] = "impl-3-m"
+        try:
+            out = run("learn", "3", "env default line")
+            assert "[controller · gotcha] controller learned" in out, "the learn call itself delivers the lane's digest:\n" + out
+            assert load(ws).learned[-1].agent == "impl-3-m"
+            assert "no new mail" in run("inbox"), "inbox defaults to the lane's own name"
+        finally:
+            os.environ.pop("BOARD_AGENT", None)
+        # a read-only lane prints the learn line to carry in the return
+        for f in (ws / JOURNAL, ws / ".journal.lock"):
+            f.chmod(0o444)
+        try:
+            out = run("learn", "3", "ro line", "--agent", "impl-3-m", "--kind", "fact")
+            assert "not writable" in out and "board learn 3 'ro line' --agent impl-3-m --kind fact" in out, out
+        finally:
+            for f in (ws / JOURNAL, ws / ".journal.lock"):
+                f.chmod(0o644)
+        # views
+        show = run("show", "--no-color")
+        assert "learn " in show and "new for you" in show, show
+        assert json.loads(run("show", "--json"))["learn"]
+        lst = run("learn")
+        assert "[gotcha] impl-4-l (task 4" in lst and "constraint 1" in lst, lst
+        assert "[constraint] impl-4-l" in run("task", "4") or "constraint" in run("task", "4"), run("task", "4")
+        res = run("resume")
+        assert "## Learned" in res and "jest fixture" in res and "D-02: header auth — why: mobile clients" in res and "project memory" not in res, res
+        # memory: the run as one project-context record — handoff while open, observation when the final gate stands
+        run("learn", "3", "tried sqlite in-memory for tests — the migrations need a file", "--agent", "impl-3-m", "--kind", "failed")
+        run("decide", "D-03", "no ORM", "--owner", "controller")   # no --why: the record says so instead of inventing one
+        run("exec", "3", "--name", "unit", "--agent", "impl-3-m", "--", sys.executable, "-c", "pass")
+        rec = json.loads(run("memory"))
+        assert rec["record_type"] == "handoff" and rec["current_state"]["status"] == "in_progress" and rec["task"]["id"] == load(ws).run.id, rec
+        assert all(d["rationale"] for d in rec["decisions"]) and any("mobile clients" in d["rationale"] for d in rec["decisions"]) \
+            and any("not recorded" in d["rationale"] for d in rec["decisions"]), rec["decisions"]
+        assert any("dependency task 2 failed" in a.get("reason", "") for a in rec["attempts"]) and any("sqlite in-memory" in a["approach"] and a["outcome"] == "failed" for a in rec["attempts"]), rec["attempts"]
+        assert any(l["type"] == "gotcha" for l in rec["learnings"]) and any(l["type"] == "constraint" for l in rec["learnings"]) \
+            and not any("sqlite in-memory" in l["statement"] for l in rec["learnings"]), rec["learnings"]
+        assert any(v["check"] == "task 3 unit" and v["outcome"] == "passed" and v["details"].startswith("raw/") for v in rec["verification"]), rec["verification"]
+        assert rec["changes"]["capture"] == "agent-authored" and "commits" not in rec["changes"] and any(a["type"] == "journal" for a in rec["changes"]["artifacts"]), rec["changes"]   # no accepted stint carried commits → no empty list either
+        assert rec["scope"] == [] and "orchestrate" in rec["tags"] and rec["current_state"]["remaining"] and rec["current_state"]["next_steps"], rec
+        rec = json.loads(run("memory", "--observation", "--scope", "auth, api"))
+        assert rec["record_type"] == "observation" and rec["scope"] == ["auth", "api"]
+        out = run("memory", "--out", str(ws / "memory.json"))
+        assert "ctx handoff --agent orchestrate --session-id" in out and json.loads((ws / "memory.json").read_text())["record_type"] == "handoff", out
+        # hints appear only when the repo keeps project memory (the files `ctx init` creates); the board never runs ctx
+        (ws / "raw").mkdir(exist_ok=True)
+        (ws / "raw" / "final.md").write_text("fail — tasks open\n")
+        assert "project memory" not in run("finish", "--gate", "fail", "--evidence", "raw/final.md", "--msg", "still open")
+        (Path(tmp) / ".agent").mkdir()
+        (Path(tmp) / ".agent" / "PROJECT_CONTEXT.jsonl").write_text('{"record_type":"observation"}\n')
+        out = run("finish", "--gate", "fail", "--evidence", "raw/final.md", "--msg", "still open")
+        assert "project memory: board memory --out" in out and "ctx handoff --agent orchestrate" in out, out
+        rec = json.loads(run("memory"))
+        assert any(v["check"] == "final-deliverable gate" and v["outcome"] == "failed" for v in rec["verification"]), rec["verification"]
+        assert "## Project memory" in run("resume") and "ctx handoff" in run("resume")
+        out = run("init", "plan.md", "--resume")
+        assert "project memory: 1 entry" in out and "ctx context --scope" in out, out
+        # a gated lane's wrapper waits AS the engine but is not the engine: --peek shows and never acks (observed live: a
+        # wrapper's wait consumed the learning the engine was launched to receive)
+        run("return", "4", "--agent", "impl-4-l", "--status", "DONE")
+        run("send", "for the engine, not the wrapper", "--from", "controller", "--to", "impl-3-m")
+        run("learn", "3.5", "gate test: a fixture the engine must hear about", "--agent", "impl-3.5")
+        out = run("wait", "--agent", "impl-3-m", "--task", "4", "--timeout", "1", "--peek")
+        assert "task 4" in out and "for the engine" not in out, out
+        assert len(load(ws).unread("impl-3-m")) == 1 and not any(e.get("agent") == "impl-3-m" and e.get("ev") == "ack" and int(e.get("upto") or 0) >= load(ws).mail[-1].seq for e in load(ws).events), "peek must not ack"
+        out = run("wait", "--agent", "impl-3-m", "--task", "4", "--timeout", "1")
+        assert "for the engine" in out and "gate test" not in out, out   # impl-3.5's learning stays in its subtree; the mail is delivered and acked
+        assert not load(ws).unread("impl-3-m")
+        assert "--peek" in run("launch", "3", "--agent", "impl-3-gatepeek", "--engine", "grok", "--model", "m", "--after", "4", "--dry-run", "--", "plan.md"), "the wrapper's gate never acks"
+        for tid, a in (("3", "impl-3-l"), ("3", "impl-3-m"), ("3.5", "impl-3.5"), ("3", "lead-3-x")):
+            run("return", tid, "--agent", a, "--status", "DONE")
         subprocess.run(["git", "checkout", "-q", "-b", "elsewhere"], check=True)
         assert "(you: elsewhere)" in run("show", "--no-color"), "viewer's branch is named when it differs from the run's"
         subprocess.run(["git", "checkout", "-q", "main"], check=True)
@@ -3932,6 +4400,7 @@ def selftest() -> int:
         st = load(ws)
         assert workspace_shape(ws, st)[0] == "pre-journal" and st.tasks["1"].state == "done" and st.tasks["2"].state == "todo"
         assert any("predates the journal" in f for f in check(st)), check(st)
+        run("memory", expect_fail=True)   # no run record to describe
         run("init", "plan.md", "--strategy", "staged", "--goal", "Adopt me", expect_fail=True)
         assert (ws / "progress.md").exists() and not (ws / "archive").exists(), "refusal must leave the ledger where it is"
         out = run("init", "plan.md", "--resume", "--strategy", "staged", "--review", "dual", "--goal", "Adopt me")

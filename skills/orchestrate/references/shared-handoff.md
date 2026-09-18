@@ -68,3 +68,20 @@ measured worst failure mode of compression.
   `inconclusive` under `--replay`) — never a bare `init`, which is refused over live work.
 - Sub-orchestrators and long loop runs should write a handoff at budget exhaustion as part of
   stopping cleanly (`shared-safety-rails.md`).
+
+## Across runs — project memory
+
+A run's workspace is archived by the next kickoff; what it learned is not, unless the repo keeps
+project memory (`.agent/PROJECT_CONTEXT.jsonl`, the `project-context` skill — any tool reads and
+writes it). Orchestrate never depends on it and never runs `ctx`; it composes when the files are
+there and stays silent when they are not:
+- **Kickoff** (`board init` prints the line): the CONTROLLER pulls one bounded packet per scope
+  (`ctx context --scope <x> --budget 1500 > .orchestrate/memory-<x>.md`, plus `ctx attempts
+  --outcome failed`) and pins it in the briefs — past decisions, failed approaches and gotchas
+  reach every worker as pointers. Workers never call `ctx`: a linked worktree has no ledger.
+- **Finish or handoff** (`board finish` / `board resume` print the line): `board memory --out
+  .orchestrate/memory.json` renders the run as ONE record — an observation when the final gate
+  stands, else a handoff — with decisions and their why, failed attempts (`learn --kind failed`,
+  BLOCKED/REFUSED returns), learnings, commits, verification and the frontier; then `ctx append`
+  or `ctx handoff --agent orchestrate --session-id <run> --input …` records it. The record's
+  `task.id` is the run id, so a run is one entry the next run or the next tool can recall.

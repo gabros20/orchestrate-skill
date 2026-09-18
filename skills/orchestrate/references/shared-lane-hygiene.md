@@ -27,8 +27,11 @@ map); each item generalizes to any subprocess engine.
    to inspect; `--fg` blocks; `--after N` makes the wrapper wait for task N's work before the engine
    starts — a dependent lane that is not running cannot burn tokens waiting; if that work cannot
    land (N returned BLOCKED/REFUSED, or its lane died with no report) the wrapper exits 125 and
-   the engine never starts. The wrapper exports `ORCHESTRATE_WS` and puts this `board` on PATH,
-   so a lane in any worktree journals to the right run. A hand-written wrapper is still fine (`board dispatch --cmd-file`)
+   the engine never starts; the gate waits `--peek`, so it never consumes the mail and learnings the
+   engine was launched to receive. The wrapper exports `ORCHESTRATE_WS`, `BOARD_AGENT` (the default
+   for every worker-side `--agent`) and puts this `board` on PATH, so a lane in any worktree
+   journals to the right run — a login shell that puts an older `~/.local/bin/board` first wins,
+   so keep the installed copy current (`install.sh`). A hand-written wrapper is still fine (`board dispatch --cmd-file`)
    — the point is that a background shell can silently drop redirects, and a lane that prints
    "Reading prompt from stdin…" into the wrong file is indistinguishable from a hung one.
 3. **Prompt from a file** (`- < spec.md`, `--prompt-file`, `-f`, `@spec.md`); positional prompts +

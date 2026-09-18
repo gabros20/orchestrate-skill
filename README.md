@@ -162,6 +162,10 @@ on every host (no server, no host feature), with
 hard caps so two agents can never talk instead of working; `board peers` tells a parallel worker who
 else is working and what they own. In a hierarchy, authority is lineage: a sub-orchestrator that
 dispatches `--by` itself becomes its workers' lead — their questions route to it, its mail binds them. Panels vote (`board vote`): majority or any-deny, derived.
+What a worker learns the hard way is one `board learn` line, handed to its team at their next board
+call along with any decision recorded since their dispatch — checked before acting, never mid-turn;
+`board memory` renders the run as one [`project-context`](https://github.com/gabros20/project-context)
+record so the next run, in any tool, starts from what this one learned.
 
 `install.sh` puts `board` on your PATH; every workspace also carries a zero-install copy. Existing
 `.orchestrate/` folders from older versions are adopted (`board init … --resume`), never restarted.

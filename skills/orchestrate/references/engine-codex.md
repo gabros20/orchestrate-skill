@@ -49,8 +49,10 @@ cat "$OUT"; git -C /path/to/repo status --short   # read the result; inspect wha
   `~/.codex/agents/<name>.toml` — `name`, `description`, `model`, `model_reasoning_effort`,
   `developer_instructions`, optional `sandbox_mode` (NOT `sandbox`); pin cheap research tiers there.
 - Sandbox `--sandbox read-only|workspace-write|danger-full-access`; network inside via
-  `-c sandbox_workspace_write.network_access=true`. `exec` takes **no `-a`** (0.149+);
-  `--approve-for-me` routes approvals through automatic review under workspace-write. NEVER
+  `-c sandbox_workspace_write.network_access=true`. `exec` takes **no `-a`** (0.149+) and no
+  `--full-auto`; `--approve-for-me` routes approvals through automatic review under
+  workspace-write but **cannot be combined with `--sandbox`** (0.154), so it never fits the launch
+  template — a `board launch` Codex lane runs on the sandbox alone. NEVER
   `--dangerously-bypass-approvals-and-sandbox`. Web search is top-level `codex --search` only —
   `exec` has no search flag and no `web_search` config key exists.
 - Guardian (0.153+): a vendor-side approval-review layer that survives compaction and isolates

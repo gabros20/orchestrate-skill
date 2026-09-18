@@ -10,6 +10,27 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.25.1] — 2026-09-18
+
+### Fixed
+- **`board launch --engine codex` refuses an approval extra up front.** Codex 0.154 rejects
+  `--approve-for-me` together with the template's `--sandbox workspace-write`, and `--full-auto`
+  is not an `exec` flag; the lane used to die with exit 2 after its dispatch was journaled. The
+  docs (`strategy-xcli.md`, `engine-codex.md`, `shared-engines.md`) now say a Codex lane runs on
+  the sandbox alone.
+- **`board memory` no longer counts lanes that never ran as failed attempts.** A
+  BLOCKED/NEEDS_CONTEXT/REFUSED stint is an attempt only when it has a usage receipt or any
+  observation of its own — controller mistakes at launch are not project knowledge.
+
+### Added
+- `board check` and `board launch` print a note when the `board` on PATH differs from the running
+  script: engines run commands through a login shell, so a stale installed copy silently wins over
+  the wrapper's PATH (observed live) — `install.sh` refreshes it.
+- `board check` names a brief or card on disk for a task the plan never queued (it becomes a task
+  and blocks finish).
+- The checkpoint digest shows the newest 12 learnings and counts the earlier ones (`board learn`
+  lists them all); the ack still covers the batch.
+
 ## [1.25.0] — 2026-09-18
 
 ### Added

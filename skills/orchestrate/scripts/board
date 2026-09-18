@@ -87,6 +87,7 @@ THREAD_CAP = 3      # replies-to-replies — beyond this it is a meeting, not a 
 # A learning is one line a peer would otherwise re-pay for; the report carries the depth.
 LEARN_CAP = 3       # learnings per stint
 LEARN_LEN = 300     # characters per learning
+LEARN_SHOW = 12     # newest learnings a checkpoint shows; the rest are one `board learn` away
 LEARN_KINDS = ("gotcha", "failed", "invariant", "constraint", "convention", "fact", "question")   # project-context's learnings.type + failed (an attempt)
 WAIT_SLICE = 110    # default `board wait` timeout (s): under every harness's shell-tool timeout
 DONE_SHOW = 3  # done cards shown in contracted mode before "+N more"
@@ -416,6 +417,7 @@ class Task:
         self.heartbeat_ts = 0.0   # notes and events — never liveness
         self.gate_entries: list[tuple[float, int, str, str]] = []  # (ts, attempt, kind, "ok r1"/"fail r2"/".. r1")
         self.attempt = 0
+        self.journaled = False    # some journal event names this task (a brief alone is not a plan)
         self.note = ""
         self.final = ""
         self.final_note = ""
@@ -1017,6 +1019,7 @@ def load(ws: Path, journal_only: bool = False) -> State:
                                                                         "dur": str(ev.get("dur", "")), "log": str(ev.get("log", ""))}
             continue
         t = get(str(tid))
+        t.journaled = True
         if ev.get("title"):
             t.title = clean(str(ev["title"])[:80])
         if kind == "todo":
@@ -2340,6 +2343,9 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
         pass
     for t in st.ordered():
         s = t.state
+        if st.run.dims and not st.run.adopted and not t.journaled and s == "todo" and \
+                ((ws / f"task-{t.id}-brief.md").exists() or (ws / f"card-{t.id}.md").exists()):
+            findings.append(f"task {t.id}: brief on disk but never queued — a stray brief becomes a task and blocks finish; plan heading or `board todo {t.id}`, or remove the file")
         if is_stale(t, now):
             findings.append(f"task {t.id}: in progress, no artifact delta for {fmt_dur(now - t.last_activity)} — disk check, then ONE nudge")
         if t.dispatched and not t.returned and s not in ("in_progress", "done"):
@@ -2496,6 +2502,9 @@ def render_inbox(st: State, agent: str) -> tuple[str, list]:
         L.append("(controller and lead mail is an instruction; peer mail is information — reply only to an ask)")
     if learned:
         L.append("learned since your last check:" if agent != "controller" else "learned (curate: field-guide.md / decisions.md; the memory record carries them):")
+        if len(learned) > LEARN_SHOW:
+            L.append(f"  … {len(learned) - LEARN_SHOW} earlier — board learn lists them all")
+            learned = learned[-LEARN_SHOW:]
         for x in learned:
             tag = "[controller" if x.agent == "controller" else (f"[lead {x.agent}" if x.agent == lead else f"[peer {x.agent}")
             L.append(f"  #{x.seq} {hhmm(x.ts)} {tag} · {x.kind}] {x.msg}" + (f" ({x.path})" if x.path else "") + (f" — task {x.task}" if agent == "controller" else ""))
@@ -2682,10 +2691,11 @@ def render_memory(st: State, kind: str, scopes: list[str]) -> dict:
                                                         (f"; journal seq {x['seq']}" if x.get("seq") else "; from decisions.md")),
                          "owner": x.get("owner") or ""} for x in run.decisions]
     returns = {(str(e.get("task")), str(e.get("agent"))): clean(e.get("msg", "")) for e in st.events if e.get("ev") == "return"}
+    worked = {str(e.get("agent")) for e in st.events if e.get("ev") in ("note", "check", "learn", "vote") and e.get("agent")} | {m.sender for m in st.mail}
     attempts = [{"approach": x.msg, "outcome": "failed", "evidence": f"task {x.task} by {x.agent}, journal #{x.seq}" + (f", {x.path}" if x.path else "")}
                 for x in st.learned if x.kind == "failed"]
     for s in st.stints:
-        if s.status in ("BLOCKED", "NEEDS_CONTEXT", "REFUSED"):
+        if s.status in ("BLOCKED", "NEEDS_CONTEXT", "REFUSED") and (s.tokens or s.agent in worked):   # a lane that never ran is not an attempt
             t = st.tasks.get(s.task)
             attempts.append({"approach": f"task {s.task} {t.title if t else ''} by {s.agent} ({s.model or '?'}" + (f", {s.engine}" if s.engine else "") + ")",
                              "outcome": "abandoned" if s.status == "REFUSED" else "failed",
@@ -3010,6 +3020,22 @@ def observe(ws: Path, fallback: str = "", actor: str = "worker", **fields: objec
         return None
 
 
+def path_skew() -> str:
+    """The `board` a login shell would run, when it is not this script. Engines run commands through `zsh -lc`, which
+    re-sources the profile and puts an installed copy ahead of the wrapper's PATH — a stale one silently wins."""
+    try:
+        me = Path(__file__).resolve()
+        other = shutil.which("board")
+        if not other:
+            return ""
+        o = Path(other).resolve()
+        if o == me or o.read_bytes() == me.read_bytes():
+            return ""
+    except OSError:
+        return ""
+    return f"the board on PATH ({o}) differs from this script — lanes run through a login shell may use it; ./install.sh (or cp) refreshes it"
+
+
 def deliver(ws: Path, agent: str) -> None:
     """Piggyback delivery: any board call a worker makes also hands over its digest — unread mail, peers' learnings,
     record changes since its dispatch — and acks the batch."""
@@ -3332,6 +3358,8 @@ def main(argv: list[str]) -> int:
         else:
             for f in findings:
                 print(f"check: {f}")
+            if path_skew():
+                print(f"check: note — {path_skew()}")
             print("board: check OK — journal and disk agree" if not findings else f"board: {len(findings)} finding(s)")
         return 1 if findings else 0
     elif cmd == "resume":
@@ -3347,12 +3375,16 @@ def main(argv: list[str]) -> int:
             sys.exit(f"board: spec {spec} does not exist")
         cwd = Path(args.cwd).resolve() if args.cwd else Path(git("rev-parse", "--show-toplevel") or os.getcwd())
         tpl = ENGINES[args.engine]
+        extra = shlex.split(args.extra or "")
+        if args.engine == "codex" and any(x in ("--approve-for-me", "--full-auto") for x in extra):
+            sys.exit("board: codex exec refuses --approve-for-me together with the template's --sandbox workspace-write, and --full-auto "
+                     "is not an exec flag — the Codex lane posture is the sandbox alone: drop --extra (engine-codex.md)")
         session = str(__import__("uuid").uuid4()) if tpl["session"] == "pin" else ""
         st0 = load(ws)
         agent = check_agent(clean(args.agent), st0, str(args.task), args.role or "") if args.agent else agent_name(st0, str(args.task), args.role or "")
         after = [x.strip() for x in (args.after or "").split(",") if x.strip()]
         script, log, usage = render_wrapper(ws, str(args.task), agent, args.engine, args.model, args.effort or "", session, spec, cwd,
-                                            shlex.split(args.extra or ""), after)
+                                            extra, after)
         if args.dry_run:
             print(script, end="")
             return 0
@@ -3375,6 +3407,8 @@ def main(argv: list[str]) -> int:
         print(f"board: lane {agent} launched (pid {proc.pid}, {args.engine} {args.model} @ {args.effort or 'high'})" +
               (f" · queued after task {', '.join(after)} — the engine starts when their work is on disk" if after else "") +
               (f" · session {session}" if session else "") + f"\n       log .orchestrate/{log} · wrapper .orchestrate/{cmd_file} · exit and receipt are journaled when it ends")
+        if path_skew():
+            print(f"board: note — {path_skew()}")
     elif cmd == "lane-exit":
         agent = clean(args.agent)
         append_event(ws, task=args.task, ev="exit", agent=agent, exit=args.exit)
@@ -4325,11 +4359,15 @@ def selftest() -> int:
         run("learn", "3", "tried sqlite in-memory for tests — the migrations need a file", "--agent", "impl-3-m", "--kind", "failed")
         run("decide", "D-03", "no ORM", "--owner", "controller")   # no --why: the record says so instead of inventing one
         run("exec", "3", "--name", "unit", "--agent", "impl-3-m", "--", sys.executable, "-c", "pass")
+        run("dispatch", "4", "--agent", "impl-4-w", "--model", "sonnet")
+        run("note", "4", "started", "--agent", "impl-4-w")
+        run("return", "4", "--agent", "impl-4-w", "--status", "BLOCKED", "--msg", "vendor API down")   # it ran → an attempt
         rec = json.loads(run("memory"))
         assert rec["record_type"] == "handoff" and rec["current_state"]["status"] == "in_progress" and rec["task"]["id"] == load(ws).run.id, rec
         assert all(d["rationale"] for d in rec["decisions"]) and any("mobile clients" in d["rationale"] for d in rec["decisions"]) \
             and any("not recorded" in d["rationale"] for d in rec["decisions"]), rec["decisions"]
-        assert any("dependency task 2 failed" in a.get("reason", "") for a in rec["attempts"]) and any("sqlite in-memory" in a["approach"] and a["outcome"] == "failed" for a in rec["attempts"]), rec["attempts"]
+        assert not any("dependency task" in a.get("reason", "") for a in rec["attempts"]), "a lane that never ran is not an attempt:\n" + str(rec["attempts"])
+        assert any("vendor API down" in a.get("reason", "") for a in rec["attempts"]) and any("sqlite in-memory" in a["approach"] and a["outcome"] == "failed" for a in rec["attempts"]), rec["attempts"]
         assert any(l["type"] == "gotcha" for l in rec["learnings"]) and any(l["type"] == "constraint" for l in rec["learnings"]) \
             and not any("sqlite in-memory" in l["statement"] for l in rec["learnings"]), rec["learnings"]
         assert any(v["check"] == "task 3 unit" and v["outcome"] == "passed" and v["details"].startswith("raw/") for v in rec["verification"]), rec["verification"]
@@ -4364,6 +4402,24 @@ def selftest() -> int:
         assert "for the engine" in out and "gate test" not in out, out   # impl-3.5's learning stays in its subtree; the mail is delivered and acked
         assert not load(ws).unread("impl-3-m")
         assert "--peek" in run("launch", "3", "--agent", "impl-3-gatepeek", "--engine", "grok", "--model", "m", "--after", "4", "--dry-run", "--", "plan.md"), "the wrapper's gate never acks"
+        run("launch", "3", "--agent", "impl-3-codexbad", "--engine", "codex", "--model", "m", "--extra=--approve-for-me", "--dry-run", "--", "plan.md", expect_fail=True)   # refused before anything is journaled
+        assert not any(e.get("agent") == "impl-3-codexbad" for e in load(ws).events)
+        # a stray brief is a task nobody planned — check says so; the file gone, the finding goes
+        (ws / "task-9-brief.md").write_text("# Task 9: Stray\n")
+        assert any("task 9: brief on disk but never queued" in f for f in check(load(ws))), check(load(ws))
+        (ws / "task-9-brief.md").unlink()
+        assert not any("never queued" in f for f in check(load(ws)))
+        # the backlog a late worker receives is bounded
+        for a in ("impl-4-x", "impl-4-y"):
+            run("dispatch", "4", "--agent", a, "--model", "sonnet")
+            for i in range(LEARN_CAP):
+                run("learn", "4", f"{a} learning {i}", "--agent", a)
+        run("dispatch", "4", "--agent", "impl-4-z", "--model", "sonnet")
+        out = run("inbox", "--agent", "impl-4-z")
+        shown = [l for l in out.splitlines() if l.startswith("  #")]
+        assert len(shown) == LEARN_SHOW and "earlier — board learn" in out, out
+        for a in ("impl-4-x", "impl-4-y", "impl-4-z"):
+            run("return", "4", "--agent", a, "--status", "DONE")
         for tid, a in (("3", "impl-3-l"), ("3", "impl-3-m"), ("3.5", "impl-3.5"), ("3", "lead-3-x")):
             run("return", tid, "--agent", a, "--status", "DONE")
         subprocess.run(["git", "checkout", "-q", "-b", "elsewhere"], check=True)

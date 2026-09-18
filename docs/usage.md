@@ -329,6 +329,28 @@ never a status, never liveness — liveness is artifact deltas only) and `board 
 invariants (a worker saying "done" is a proposal; the gate is the transition), only the controller
 writes the transition lines above; a journal lock serializes parallel writers. Titles, notes and decisions are sanitised before they reach the terminal. `board --help` groups every command by role — the controller loop, lanes, worker observations, views.
 
+### What the pane shows
+
+```text
+  ORCHESTRATE   payments-api @ main                                    1/5 done  ·  4m
+  goal       Ship the rate-limit rewrite behind a flag
+  attention  x 1 blocked/failed  ·  ? 2 pending
+  mail       2 sent  ·  1 for you  ·  1 question  ·  learn 2  ·  2 new for you
+
+  ╭─ IN PROGRESS ───────────────────────────────────────────────────────────── 2 ─╮
+  │  3  Migrate the DB layer   impl-3         ? asked you #23 · 6m · tests ok 12s │
+  │  4  Ship the docs          impl-4 ·codex  > 4m                                │
+  ╰───────────────────────────────────────────────────────────────────────────────╯
+  ╭─ REVIEW ────────────────────────────────────────────────────────────────── 1 ─╮
+  │  2  Auth token refresh     quality-2      spec ok r1 · quality .. r1          │
+  ╰───────────────────────────────────────────────────────────────────────────────╯
+```
+
+Three columns per card — task · who · one signal. *Who* is the agent responsible right now
+(`<role>-<task>`, with a suffix only when it deviates from the run's defaults); *signal* is one
+thing per state: `~ after N` queued, `> elapsed`, `! stale`, `? asked you #n`, `x reason`, gate
+marks under review, the commit range when done.
+
 ### Views
 
 | Command | What it shows |

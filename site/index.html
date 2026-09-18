@@ -6,7 +6,7 @@
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f7fa">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#12151d">
 <title>orchestrate — nine subagent orchestration strategies for AI coding agents</title>
-<meta name="description" content="orchestrate is a Claude Code skill offering nine subagent-orchestration strategies, auto-triaged and gated, from staged fan-out to loops and adversarial planning.">
+<meta name="description" content="orchestrate is an agent skill offering nine subagent-orchestration strategies, auto-triaged and gated, with a live terminal kanban and shared context between parallel agents — on any coding CLI.">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://orchestrate-skill.vercel.app/">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -128,6 +128,28 @@
   .pledger .ok{color:var(--good)}
   .pcap{font-size:13.5px; color:var(--muted); margin:14px 0 0; max-width:68ch}
   .pcap b{color:var(--ink)}
+
+  /* the board — a faithful rendering of the pane */
+  .board{background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:16px 18px 14px; margin-top:20px; font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:12.5px; line-height:1.75; overflow-x:auto; white-space:pre; color:var(--muted)}
+  .board .k{color:var(--muted)} .board .v{color:var(--ink)} .board .h{color:var(--accent); font-weight:600}
+  .board .x{color:var(--bad); font-weight:600} .board .q{color:var(--amber); font-weight:600} .board .ok{color:var(--good)}
+  .board .lane{display:block; margin:12px 0 0; border:1px solid var(--line); border-radius:7px; padding:6px 12px 5px; position:relative; background:var(--panel); white-space:pre; min-width:max-content}
+  .board .lane::before{content:attr(data-lane); position:absolute; top:-10px; left:10px; padding:0 6px; background:var(--panel); color:var(--accent); font-weight:600; letter-spacing:.08em; font-size:11px}
+  .board .lane .n{color:var(--muted)} .board .lane .t{color:var(--ink)} .board .lane .w{color:var(--ink); font-weight:600}
+  .board .keys{margin-top:12px; color:var(--muted); font-size:11.5px}
+  .board .keys b{color:var(--ink); font-weight:600}
+  .bcap{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px; margin-top:16px}
+  .bcap div{font-size:13.5px; color:var(--muted); line-height:1.5; border-left:3px solid var(--line); padding-left:12px}
+  .bcap div b{display:block; color:var(--ink); font-family:ui-monospace,Menlo,monospace; font-size:12.5px; margin-bottom:2px}
+  .bcap div.x{border-color:var(--bad)} .bcap div.q{border-color:var(--amber)} .bcap div.ok{border-color:var(--good)} .bcap div.a{border-color:var(--accent)}
+
+  /* shared context — three channels and the digest a worker sees */
+  .ctx{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; margin-top:20px}
+  .ctx .card h3 em{font-style:normal; font-size:11px; color:var(--muted); border:none; padding:0; margin-left:8px; font-family:system-ui}
+  .digest{margin-top:20px}
+  .digest .term{font-size:12.5px}
+  .term .m{color:var(--amber)} .term .i{color:var(--ink)} .term .g{color:var(--good)}
+  .digest .pcap{margin-top:12px}
 
   /* numbered step timeline (same family as .tl) */
   .steps{margin-top:20px; counter-reset:step}
@@ -323,7 +345,7 @@
 <span class="p">/orchestrate</span> plan.md</div>
   <p class="hosts"><span class="hl">runs on</span><span class="ref">Claude Code</span><span>Codex</span><span>Cursor</span><span>Antigravity</span><span>opencode</span><span>Grok Build</span><span>Hermes</span><span>Kimi Code</span><span>Pi</span></p>
   <nav class="secnav" aria-label="page sections">
-    <a href="#idea">the idea</a><a href="#strat">choose a strategy</a><a href="#gates">safety</a>
+    <a href="#idea">the idea</a><a href="#board">the board</a><a href="#context">shared context</a><a href="#strat">choose a strategy</a><a href="#gates">safety</a>
     <a href="#tokens">cost</a><a href="#start">start</a>
   </nav>
 </header>
@@ -375,8 +397,77 @@
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-bot"/></svg>dispatch</b><span>The controller writes a brief and sends a fresh subagent to do exactly that task, on an explicitly chosen model.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-shield-check"/></svg>gate</b><span><b>Gates</b> review each result — first against the brief, then for quality. Failures loop back until clean.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-scroll-text"/></svg>ledger</b><span>Each finished task becomes one line in the <b>ledger</b>, <code>progress.md</code>. A resumed run trusts the ledger, not memory.</span></div>
-    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-receipt"/></svg>journal&nbsp;+&nbsp;board</b><span>Every step above is one line in a hash-chained <b>journal</b>, written only by the controller. <code>board</code> renders it as a live kanban in a pane you open — cards with agents, gates and test checks (<code>tests ok 12s</code>), an attention strip, a priced flight plan, a resume receipt. Panels vote (<code>board vote</code>: majority or any-deny, derived). A subprocess lane is one command (<code>board launch</code>): its wrapper sleeps in the shell until its inputs are on disk (<code>--after N</code>, zero tokens) and never starts the engine if an input cannot land; read-only lanes degrade to a printed line instead of failing; <code>brief-check</code> names the dependencies between briefs. Any host, stdlib python3; older workspaces are adopted, not restarted; <code>board --help</code> is grouped by role.</span></div>
-    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-messages-square"/></svg>mail</b><span>Parallel agents talk through the same journal, on any host, with no server and no host feature. <code>board peers</code> tells a worker who else is working and what they own; <code>board send</code> carries information ("I will touch your area", "the interface changed") or a question (<code>--ask</code>, then <code>board wait</code> until the answer lands). Delivery rides on the recipient's own board calls, never mid-turn. Mail from the controller — or from the lead that dispatched you, in a hierarchy — is tagged an <b>instruction</b>; mail from a peer is <b>information</b> to verify. A subtree's questions go to its lead, and reach the controller only if the lead goes quiet. Loop-proof by construction: 8 sends per stint, threads 3 deep, no duplicates, no mail to an agent that has returned — beyond that the answer belongs in the report. When the record is complete, the channel stays silent: disk first, controller decisions second, mail last. What a worker learns the hard way — a stale fixture, a failed approach, an invariant — is one <code>board learn</code> line: capped, deduped, handed to its team at their next board call together with any decision the controller recorded since their dispatch, so no two workers pay for the same discovery and a changed plan reaches the ones already running. At the end, <code>board memory</code> renders the run as one <a href="https://github.com/gabros20/project-context">project-context</a> record — decisions with their why, failed attempts, learnings, verification — so the next run, in any tool, starts from what this one learned; the board prints the command and never runs it.</span></div>
+    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-receipt"/></svg>journal&nbsp;+&nbsp;board</b><span>Every step above is one line in a hash-chained <b>journal</b>, written only by the controller — and <code>board</code> renders it as a live kanban in a pane you open, with an attention strip that says what needs you. <a href="#board">The board ↓</a></span></div>
+    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-messages-square"/></svg>shared&nbsp;context</b><span>Parallel agents share one journal, not a chat: <b>mail</b> for questions, <b>learn</b> for what a peer would otherwise re-pay, a changed decision delivered to the workers already running, and <b>memory</b> that carries the run into the next one. <a href="#context">Shared context ↓</a></span></div>
+  </div>
+</section>
+
+<section id="board">
+  <h2><svg class="lu" aria-hidden="true"><use href="#lu-receipt"/></svg>The board</h2>
+  <p>Open a pane in the repo and run <code>board</code>. The journal renders as a live kanban —
+  any host, stdlib python, nothing to install — and re-renders on every artifact delta. Cards are
+  three columns, <b>task · who · one signal</b>, so the eye scans columns, not prose; the
+  <b>attention</b> strip is the "what needs me" list people keep asking coordinators for.</p>
+  <div class="board" role="img" aria-label="The board pane: a header with goal, run dimensions, budget, attention and mail counts; then lanes IN PROGRESS, REVIEW, DONE and BLOCKED, each card showing the task, the agent responsible and one signal."><span class="h">ORCHESTRATE</span>   <span class="v">payments-api @ main</span>                                                    <span class="v">1/5 done  ·  4m</span>
+<span class="k">goal       </span><span class="v">Ship the rate-limit rewrite behind a flag</span>
+<span class="k">run        </span><span class="v">parallel  ·  review dual  ·  host Claude Code</span>
+<span class="k">models     </span><span class="v">worker sonnet  ·  reviewer opus</span>
+<span class="k">budget     </span><span class="v">agents 6/8  ·  tokens 412k/150k-600k</span>
+<span class="k">checks     </span><span class="ok">3/3 ok</span>
+<span class="k">decisions  </span><span class="v">1  ·  latest D-01 cookie auth, not header</span>
+<span class="k">attention  </span><span class="x">x 1 blocked/failed</span>  ·  <span class="q">? 2 pending</span>
+<span class="k">mail       </span><span class="v">2 sent  ·  2 unread  ·  </span><span class="q">1 for you  ·  1 question</span><span class="v">  ·  learn 2  ·  </span><span class="q">2 new for you</span>
+<span class="lane" data-lane="IN PROGRESS · 2"><span class="n">3</span>  <span class="t">Migrate the DB layer        </span> <span class="w">impl-3       </span> <span class="q">? asked you #23</span> <span class="k">· 6m · </span><span class="ok">tests ok 12s</span>
+<span class="n">4</span>  <span class="t">Ship the docs               </span> <span class="w">impl-4 ·codex</span> <span class="k">&gt; 4m</span></span>
+<span class="lane" data-lane="REVIEW · 1"><span class="n">2</span>  <span class="t">Auth token refresh          </span> <span class="w">quality-2    </span> <span class="ok">spec ok r1</span> <span class="k">· quality .. r1</span></span>
+<span class="lane" data-lane="DONE · 1"><span class="n">1</span>  <span class="t">Extract rate-limit middleware</span> <span class="w">quality-1    </span> <span class="k">4f2c91a..a7d3e10</span></span>
+<span class="lane" data-lane="BLOCKED · 1"><span class="n">5</span>  <span class="t">Integration                 </span> <span class="w">integ-5      </span> <span class="x">x</span> <span class="k">needs the vendor token — owner: controller, next: add it to .env.example</span></span>
+<span class="keys"><b>j/k</b> focus a card  ·  <b>enter</b> its lineage  ·  <b>e</b> expand all  ·  <b>a</b> attention only  ·  <b>n</b> next run  ·  <b>r</b> reload  ·  <b>q</b> quit</span></div>
+  <div class="bcap">
+    <div class="q"><b>? asked you #23</b>a worker parked in <code>board wait</code> with a question; the reply command is one keypress away in <code>board attention</code>.</div>
+    <div class="x"><b>x needs the vendor token</b>blocked carries an owner and a next action — or it is abandoned, not blocked, and <code>board check</code> says so.</div>
+    <div class="ok"><b>spec ok r1 · quality .. r1</b>gates in fixed order; a panel's votes render as its quorum. Nothing lands because an agent said it was done.</div>
+    <div class="a"><b>impl-4 ·codex</b>names are <code>&lt;role&gt;-&lt;task&gt;</code>, so who and where read from the name; a suffix appears only when a card deviates from the run's defaults.</div>
+  </div>
+  <p class="pcap" style="margin-top:16px">Under the pane: <code>board attention</code> (most urgent first), <code>board check</code>
+  (chain integrity, dispatched-never-returned, done over a failed gate, drift, budget — exit 1 while
+  any remain), <code>board resume</code> (the handoff's state layer with a receipt), <code>board
+  postmortem</code>. External-CLI lanes are one command each (<code>board launch … --after N</code>:
+  the wrapper sleeps in the shell until its inputs are on disk — zero tokens — and never starts the
+  engine if an input cannot land). Reference: <a href="https://github.com/gabros20/orchestrate-skill/blob/main/docs/usage.md#the-journal-flight-plan--board--resume">docs/usage.md</a>.</p>
+</section>
+
+<section id="context">
+  <h2><svg class="lu" aria-hidden="true"><use href="#lu-messages-square"/></svg>Shared context</h2>
+  <p>The hard part of parallel agents is not running them — it is that each one knows only its own
+  history, so they redo each other's work, collide, and never hear that the plan changed.
+  orchestrate's answer is the boring one that works: <b>one place that records what was already
+  done, checked before acting</b>. The journal is that place, and every worker-side call hands
+  over what the worker has not seen yet — under one watermark, never mid-turn, on any host.</p>
+  <div class="ctx cards">
+    <div class="card"><div class="top"><h3>mail<em>questions &amp; heads-ups</em></h3></div>
+      <div class="use"><code>board send</code> carries information ("I will touch your area", "the interface changed") or a question (<code>--ask</code>, then <code>board wait</code> until the answer lands). Mail from the controller — or from the lead that dispatched you — is an <b>instruction</b>; peer mail is <b>information</b> to verify. Loop-proof by construction: 8 sends per stint, threads 3 deep, no duplicates, no mail to an agent that has returned.</div></div>
+    <div class="card"><div class="top"><h3>learn<em>what a peer would re-pay</em></h3></div>
+      <div class="use">A stale fixture, a failed approach, an invariant: one <code>board learn</code> line, capped and deduped, handed to the worker's team at their next board call — and to the controller, who curates the run-wide ones into the field guide. A decision you change mid-run reaches the workers already running as a <b>record change</b>, with its why, so they reconcile or return <code>NEEDS_CONTEXT</code> instead of finishing against a stale brief.</div></div>
+    <div class="card"><div class="top"><h3>memory<em>across runs, across tools</em></h3></div>
+      <div class="use"><code>board memory</code> renders the run as one <a href="https://github.com/gabros20/project-context">project-context</a> record — decisions with their why, failed attempts, learnings, verification, the frontier — so the next run, in any tool, starts from what this one learned. No dependency: the board prints the <code>ctx</code> command when the repo keeps project memory and stays silent when it does not.</div></div>
+  </div>
+  <div class="digest">
+    <p style="margin:18px 0 0"><b>What a worker sees</b> at its next checkpoint — one <code>board inbox</code>, one watermark:</p>
+    <div class="term"><span class="c">$ board inbox                       # inside a lane, BOARD_AGENT is already set</span>
+<span class="p">mail for impl-3:</span>
+<span class="i">#28 12:58 [peer impl-2] renamed src/auth/session.ts — import path moves</span>
+<span class="c">(controller and lead mail is an instruction; peer mail is information — reply only to an ask)</span>
+<span class="p">learned since your last check:</span>
+<span class="i">  #26 12:58 [peer impl-4 · fact] the docs build reads VERSION from package.json, not from the tag</span>
+<span class="p">record changes since your dispatch:</span>
+<span class="i">  #31 12:58 decision D-01 (revised) cookie auth, not header — why: browser clients keep the session</span>
+<span class="c">(learnings are information — verify; a changed decision outranks your brief: reconcile, or return NEEDS_CONTEXT)</span></div>
+    <p class="pcap">In a hierarchy, authority is lineage: a sub-orchestrator that dispatches <code>--by</code> itself
+    becomes its workers' lead — their questions route to it, its mail binds them, their learnings stay
+    in the subtree until the controller carries them across. <b>Live-verified:</b> a worker's learning
+    reached a gated worktree lane at its first inbox; the lane passed its check on the first try and
+    quoted the learning in its report.</p>
   </div>
 </section>
 
@@ -686,7 +777,7 @@ git clone https://github.com/gabros20/orchestrate-skill.git &amp;&amp; cd orches
   v.autoplay = true;
   v.playsInline = true;
   v.setAttribute("playsinline", "");
-  v.setAttribute("aria-label", "Animated explainer: one agent's context fills up; the run prints a flight plan — a topology tree with the model and reasoning effort per agent, the gates, the rails and the budget — and waits for approval before anything spawns; then a controller writes brief files, fresh workers return reports and are discarded, gates stamp each report, and a ledger records every task; then the skill's nine strategies, the composable run dimensions (review, models, isolation, trigger, budget), and dispatching external coding CLIs as sandboxed workers.");
+  v.setAttribute("aria-label", "Animated explainer: one agent's context fills up; the run prints a flight plan — a topology tree with the model and reasoning effort per agent, the gates, the rails and the budget — and waits for approval before anything spawns; then a controller writes brief files, fresh workers return reports and are discarded, gates stamp each report, and a ledger records every task; then the skill's nine strategies, the composable run dimensions (review, models, isolation, trigger, budget), and dispatching external coding CLIs as sandboxed workers; then the board — the journal as a live kanban whose attention strip says what needs you — and shared context: a worker's one-line learning reaching its peers at their next checkpoint together with a revised decision, and the run becoming one memory record for the next run.");
   function apply() {
     var theme = document.documentElement.getAttribute("data-theme") || (mq.matches ? "dark" : "light");
     v.poster = "assets/life-of-a-task-" + theme + "-poster.png";

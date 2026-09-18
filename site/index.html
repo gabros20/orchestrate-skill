@@ -345,8 +345,8 @@
 <span class="p">/orchestrate</span> plan.md</div>
   <p class="hosts"><span class="hl">runs on</span><span class="ref">Claude Code</span><span>Codex</span><span>Cursor</span><span>Antigravity</span><span>opencode</span><span>Grok Build</span><span>Hermes</span><span>Kimi Code</span><span>Pi</span></p>
   <nav class="secnav" aria-label="page sections">
-    <a href="#idea">the idea</a><a href="#board">the board</a><a href="#context">shared context</a><a href="#strat">choose a strategy</a><a href="#gates">safety</a>
-    <a href="#tokens">cost</a><a href="#start">start</a>
+    <a href="#idea">the idea</a><a href="#run">how a run works</a><a href="#board">the board</a><a href="#context">shared context</a>
+    <a href="#strat">choose a strategy</a><a href="#gates">safety</a><a href="#knobs">the knobs</a><a href="#tokens">cost</a><a href="#start">start</a>
   </nav>
 </header>
 
@@ -397,24 +397,23 @@
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-bot"/></svg>dispatch</b><span>The controller writes a brief and sends a fresh subagent to do exactly that task, on an explicitly chosen model.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-shield-check"/></svg>gate</b><span><b>Gates</b> review each result — first against the brief, then for quality. Failures loop back until clean.</span></div>
     <div><b><svg class="lu" aria-hidden="true"><use href="#lu-scroll-text"/></svg>ledger</b><span>Each finished task becomes one line in the <b>ledger</b>, <code>progress.md</code>. A resumed run trusts the ledger, not memory.</span></div>
-    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-receipt"/></svg>journal&nbsp;+&nbsp;board</b><span>Every step above is one line in a hash-chained <b>journal</b>, written only by the controller — and <code>board</code> renders it as a live kanban in a pane you open, with an attention strip that says what needs you. <a href="#board">The board ↓</a></span></div>
-    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-messages-square"/></svg>shared&nbsp;context</b><span>Parallel agents share one journal, not a chat: <b>mail</b> for questions, <b>learn</b> for what a peer would otherwise re-pay, a changed decision delivered to the workers already running, and <b>memory</b> that carries the run into the next one. <a href="#context">Shared context ↓</a></span></div>
+    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-receipt"/></svg>journal&nbsp;+&nbsp;board</b><span>Every step above is one line in a tamper-evident log. Open a second terminal and type <code>board</code>: the log becomes a live kanban, with a strip that says what needs you. <a href="#board">The board ↓</a></span></div>
+    <div><b><svg class="lu" aria-hidden="true"><use href="#lu-messages-square"/></svg>shared&nbsp;context</b><span>Workers share one record instead of chatting. Questions, lessons learned, and decisions you change mid-run reach them the next time they check in. <a href="#context">Shared context ↓</a></span></div>
   </div>
 </section>
 
 <section id="board">
   <h2><svg class="lu" aria-hidden="true"><use href="#lu-receipt"/></svg>The board</h2>
-  <p>Open a pane in the repo and run <code>board</code>. The journal renders as a live kanban —
-  any host, stdlib python, nothing to install — and re-renders on every artifact delta. Cards are
-  three columns, <b>task · who · one signal</b>, so the eye scans columns, not prose; the
-  <b>attention</b> strip is the "what needs me" list people keep asking coordinators for.</p>
-  <div class="board" role="img" aria-label="The board pane: a header with goal, run dimensions, budget, attention and mail counts; then lanes IN PROGRESS, REVIEW, DONE and BLOCKED, each card showing the task, the agent responsible and one signal."><span class="h">ORCHESTRATE</span>   <span class="v">payments-api @ main</span>                                                    <span class="v">1/5 done  ·  4m</span>
+  <p>You should not have to read logs to know where a run stands. Open a second terminal in the
+  repo and type <code>board</code>. You get a live kanban of the run: what is queued, who is
+  working on what, what is under review, what is done, what is stuck. It updates by itself as
+  files land. It runs in any terminal and needs nothing but python.</p>
+  <div class="board" role="img" aria-label="The board: a header with the goal, the run settings, budget, what needs attention and mail counts; then lanes IN PROGRESS, REVIEW, DONE and BLOCKED, each card showing the task, the agent responsible and one status signal."><span class="h">ORCHESTRATE</span>   <span class="v">payments-api @ main</span>                                                    <span class="v">1/5 done  ·  4m</span>
 <span class="k">goal       </span><span class="v">Ship the rate-limit rewrite behind a flag</span>
 <span class="k">run        </span><span class="v">parallel  ·  review dual  ·  host Claude Code</span>
 <span class="k">models     </span><span class="v">worker sonnet  ·  reviewer opus</span>
 <span class="k">budget     </span><span class="v">agents 6/8  ·  tokens 412k/150k-600k</span>
 <span class="k">checks     </span><span class="ok">3/3 ok</span>
-<span class="k">decisions  </span><span class="v">1  ·  latest D-01 cookie auth, not header</span>
 <span class="k">attention  </span><span class="x">x 1 blocked/failed</span>  ·  <span class="q">? 2 pending</span>
 <span class="k">mail       </span><span class="v">2 sent  ·  2 unread  ·  </span><span class="q">1 for you  ·  1 question</span><span class="v">  ·  learn 2  ·  </span><span class="q">2 new for you</span>
 <span class="lane" data-lane="IN PROGRESS · 2"><span class="n">3</span>  <span class="t">Migrate the DB layer        </span> <span class="w">impl-3       </span> <span class="q">? asked you #23</span> <span class="k">· 6m · </span><span class="ok">tests ok 12s</span>
@@ -422,116 +421,53 @@
 <span class="lane" data-lane="REVIEW · 1"><span class="n">2</span>  <span class="t">Auth token refresh          </span> <span class="w">quality-2    </span> <span class="ok">spec ok r1</span> <span class="k">· quality .. r1</span></span>
 <span class="lane" data-lane="DONE · 1"><span class="n">1</span>  <span class="t">Extract rate-limit middleware</span> <span class="w">quality-1    </span> <span class="k">4f2c91a..a7d3e10</span></span>
 <span class="lane" data-lane="BLOCKED · 1"><span class="n">5</span>  <span class="t">Integration                 </span> <span class="w">integ-5      </span> <span class="x">x</span> <span class="k">needs the vendor token — owner: controller, next: add it to .env.example</span></span>
-<span class="keys"><b>j/k</b> focus a card  ·  <b>enter</b> its lineage  ·  <b>e</b> expand all  ·  <b>a</b> attention only  ·  <b>n</b> next run  ·  <b>r</b> reload  ·  <b>q</b> quit</span></div>
+<span class="keys"><b>j/k</b> focus a card  ·  <b>enter</b> its history  ·  <b>e</b> expand all  ·  <b>a</b> attention only  ·  <b>n</b> next run  ·  <b>r</b> reload  ·  <b>q</b> quit</span></div>
   <div class="bcap">
-    <div class="q"><b>? asked you #23</b>a worker parked in <code>board wait</code> with a question; the reply command is one keypress away in <code>board attention</code>.</div>
-    <div class="x"><b>x needs the vendor token</b>blocked carries an owner and a next action — or it is abandoned, not blocked, and <code>board check</code> says so.</div>
-    <div class="ok"><b>spec ok r1 · quality .. r1</b>gates in fixed order; a panel's votes render as its quorum. Nothing lands because an agent said it was done.</div>
-    <div class="a"><b>impl-4 ·codex</b>names are <code>&lt;role&gt;-&lt;task&gt;</code>, so who and where read from the name; a suffix appears only when a card deviates from the run's defaults.</div>
+    <div class="q"><b>? asked you #23</b>A worker has a question. It stops and waits for your answer instead of guessing. The board tells you, and hands you the reply command.</div>
+    <div class="x"><b>x needs the vendor token</b>A stuck task always names who owns it and what happens next. If it does not, the board calls it abandoned, not blocked.</div>
+    <div class="ok"><b>spec ok r1 · quality .. r1</b>Every result is reviewed twice before it counts: first against what was asked, then for quality. The card shows which review passed and which is still running.</div>
+    <div class="a"><b>impl-4 ·codex</b>Agent names say what they do and on which task. <code>impl-4</code> implements task 4. The suffix means it runs on Codex instead of the run's default model.</div>
   </div>
-  <p class="pcap" style="margin-top:16px">Under the pane: <code>board attention</code> (most urgent first), <code>board check</code>
-  (chain integrity, dispatched-never-returned, done over a failed gate, drift, budget — exit 1 while
-  any remain), <code>board resume</code> (the handoff's state layer with a receipt), <code>board
-  postmortem</code>. External-CLI lanes are one command each (<code>board launch … --after N</code>:
-  the wrapper sleeps in the shell until its inputs are on disk — zero tokens — and never starts the
-  engine if an input cannot land). Reference: <a href="https://github.com/gabros20/orchestrate-skill/blob/main/docs/usage.md#the-journal-flight-plan--board--resume">docs/usage.md</a>.</p>
+  <p class="pcap" style="margin-top:16px">A few commands sit under the pane. <code>board attention</code> lists what needs you, most
+  urgent first. <code>board check</code> audits the run and refuses to count a task as finished
+  when a review failed or a file it claims to have written is missing. <code>board resume</code>
+  writes the handoff a fresh session needs to pick the run up where it stopped. Full reference:
+  <a href="https://github.com/gabros20/orchestrate-skill/blob/main/docs/usage.md#the-journal-flight-plan--board--resume">docs/usage.md</a>.</p>
 </section>
 
 <section id="context">
   <h2><svg class="lu" aria-hidden="true"><use href="#lu-messages-square"/></svg>Shared context</h2>
-  <p>The hard part of parallel agents is not running them — it is that each one knows only its own
-  history, so they redo each other's work, collide, and never hear that the plan changed.
-  orchestrate's answer is the boring one that works: <b>one place that records what was already
-  done, checked before acting</b>. The journal is that place, and every worker-side call hands
-  over what the worker has not seen yet — under one watermark, never mid-turn, on any host.</p>
+  <p>Running several agents at once is easy. The hard part is that each one only knows what it did
+  itself. Two of them hit the same broken test setup and both lose an hour to it. One changes an
+  interface and nobody hears. You change a decision halfway through, and the workers already
+  running never see it.</p>
+  <p>orchestrate keeps one shared record for the run, and every worker reads it each time it checks
+  in. Three kinds of thing travel through it.</p>
   <div class="ctx cards">
-    <div class="card"><div class="top"><h3>mail<em>questions &amp; heads-ups</em></h3></div>
-      <div class="use"><code>board send</code> carries information ("I will touch your area", "the interface changed") or a question (<code>--ask</code>, then <code>board wait</code> until the answer lands). Mail from the controller — or from the lead that dispatched you — is an <b>instruction</b>; peer mail is <b>information</b> to verify. Loop-proof by construction: 8 sends per stint, threads 3 deep, no duplicates, no mail to an agent that has returned.</div></div>
-    <div class="card"><div class="top"><h3>learn<em>what a peer would re-pay</em></h3></div>
-      <div class="use">A stale fixture, a failed approach, an invariant: one <code>board learn</code> line, capped and deduped, handed to the worker's team at their next board call — and to the controller, who curates the run-wide ones into the field guide. A decision you change mid-run reaches the workers already running as a <b>record change</b>, with its why, so they reconcile or return <code>NEEDS_CONTEXT</code> instead of finishing against a stale brief.</div></div>
-    <div class="card"><div class="top"><h3>memory<em>across runs, across tools</em></h3></div>
-      <div class="use"><code>board memory</code> renders the run as one <a href="https://github.com/gabros20/project-context">project-context</a> record — decisions with their why, failed attempts, learnings, verification, the frontier — so the next run, in any tool, starts from what this one learned. No dependency: the board prints the <code>ctx</code> command when the repo keeps project memory and stays silent when it does not.</div></div>
+    <div class="card"><div class="top"><h3>mail<em>questions and heads-ups</em></h3></div>
+      <div class="use">A worker can tell a peer "I am about to change the file you depend on", or ask you a question and wait for the answer. A message from you is an instruction. A message from another worker is information, to be checked. Everyone has a hard cap on how much they can send, so two agents can never chat instead of working.</div></div>
+    <div class="card"><div class="top"><h3>learn<em>lessons, while the run is still going</em></h3></div>
+      <div class="use">When a worker finds something the others would trip over too, a stale test fixture, an approach that does not work, it writes one line. The other workers see that line the next time they check in, before they run into it themselves. If you change a decision mid-run, the workers already running see that as well, with your reason.</div></div>
+    <div class="card"><div class="top"><h3>memory<em>from one run to the next</em></h3></div>
+      <div class="use">When the run ends, <code>board memory</code> writes one record of what happened: the decisions and why, what failed, what was learned, what was verified. The next run starts from it, even in a different coding tool. The record uses the <a href="https://github.com/gabros20/project-context">project-context</a> format; orchestrate works fine without that skill installed.</div></div>
   </div>
   <div class="digest">
-    <p style="margin:18px 0 0"><b>What a worker sees</b> at its next checkpoint — one <code>board inbox</code>, one watermark:</p>
-    <div class="term"><span class="c">$ board inbox                       # inside a lane, BOARD_AGENT is already set</span>
+    <p style="margin:18px 0 0">This is what a worker sees when it checks in:</p>
+    <div class="term"><span class="c">$ board inbox</span>
 <span class="p">mail for impl-3:</span>
-<span class="i">#28 12:58 [peer impl-2] renamed src/auth/session.ts — import path moves</span>
-<span class="c">(controller and lead mail is an instruction; peer mail is information — reply only to an ask)</span>
+<span class="i">#28 12:58 [peer impl-2] renamed src/auth/session.ts — import path moves</span>   <span class="c"># a peer's heads-up</span>
 <span class="p">learned since your last check:</span>
-<span class="i">  #26 12:58 [peer impl-4 · fact] the docs build reads VERSION from package.json, not from the tag</span>
+<span class="i">  #26 12:58 [peer impl-4] the docs build reads VERSION from package.json, not from the tag</span>   <span class="c"># a lesson another worker paid for</span>
 <span class="p">record changes since your dispatch:</span>
-<span class="i">  #31 12:58 decision D-01 (revised) cookie auth, not header — why: browser clients keep the session</span>
-<span class="c">(learnings are information — verify; a changed decision outranks your brief: reconcile, or return NEEDS_CONTEXT)</span></div>
-    <p class="pcap">In a hierarchy, authority is lineage: a sub-orchestrator that dispatches <code>--by</code> itself
-    becomes its workers' lead — their questions route to it, its mail binds them, their learnings stay
-    in the subtree until the controller carries them across. <b>Live-verified:</b> a worker's learning
-    reached a gated worktree lane at its first inbox; the lane passed its check on the first try and
-    quoted the learning in its report.</p>
+<span class="i">  #31 12:58 decision D-01 (revised) cookie auth, not header — why: browser clients keep the session</span>   <span class="c"># changed after impl-3 started</span></div>
+    <p class="pcap">None of this interrupts a worker mid-task. Updates arrive when the worker checks in, and every
+    board command does that for it. That is also why it works the same on every coding CLI: no
+    server, no plugin, one file both sides read. Tested live: one worker's lesson reached a second
+    worker before its first test run, and that worker passed on the first try.</p>
   </div>
 </section>
 
-<section id="knobs">
-  <h2><svg class="lu" aria-hidden="true"><use href="#lu-sliders-horizontal"/></svg>One preset, ten knobs</h2>
-  <p>A <b>strategy</b> is a preset, not a product. orchestrate has ten <b>dimensions</b> — knobs
-  like how work splits, who reviews it, which engine runs it at which reasoning effort, and
-  whether the flight plan gates on your approval (<code>confirm</code>, on by default). Each of the nine strategies is
-  just a named preset over those knobs. Learn one command and you've learned all nine.</p>
-  <p>Any knob you set yourself overrides its preset value. That's the whole override model:</p>
-  <div class="ov">
-    <div class="term ovcmd"><span class="p">/orchestrate</span> plan.md strategy=staged <span style="color:var(--amber);font-weight:600">engine=codex</span>   <span class="c"># one preset, one override</span></div>
-    <div class="ovcard">
-      <h3>staged<em>the preset…</em></h3>
-      <div class="ovrow"><i>topology</i><b>staged</b></div>
-      <div class="ovrow"><i>planning</i><b>plan-first</b></div>
-      <div class="ovrow"><i>review</i><b>dual</b></div>
-      <div class="ovrow"><i>engine</i><b>claude</b></div>
-      <div class="ovrow"><i>isolation</i><b>off</b></div>
-      <div class="ovrow"><i>trigger</i><b>once</b></div>
-    </div>
-    <div class="ovcard">
-      <h3>staged + your override<em>…after your one flag</em></h3>
-      <div class="ovrow"><i>topology</i><b>staged</b></div>
-      <div class="ovrow"><i>planning</i><b>plan-first</b></div>
-      <div class="ovrow"><i>review</i><b>dual</b></div>
-      <div class="ovrow hit"><i>engine</i><span><s>claude</s> <b>codex</b></span></div>
-      <div class="ovrow"><i>isolation</i><b>off</b></div>
-      <div class="ovrow"><i>trigger</i><b>once</b></div>
-    </div>
-  </div>
-  <p style="margin-top:16px">That one line means: Codex implements every task, Claude still reviews
-  every result. Strategies compose the same way — <code class="mono">strategy=loop
-  topology=parallel</code> makes each loop cycle fan out.</p>
-  <p>The knobs you'll actually type — most runs touch two or three:</p>
-  <div class="tblwrap"><table>
-    <tr><th>knob</th><th>what it controls</th><th>default</th></tr>
-    <tr><td class="dim">strategy</td><td>the run shape — one of the nine below</td><td><code>auto</code> → triage picks</td></tr>
-    <tr><td class="dim">review</td><td>which gates run on each result</td><td><code>dual</code> — spec, then quality</td></tr>
-    <tr><td class="dim">engine</td><td>who executes — <code>claude</code>, <code>codex</code>, <code>grok</code>, <code>cursor</code>, <code>agy</code>, <code>opencode</code>, <code>hermes</code>, <code>kimi</code>, <code>pi</code>, or <code>mixed</code></td><td><code>claude</code></td></tr>
-    <tr><td class="dim">models</td><td>which model tier does which job</td><td>tier map (appendix)</td></tr>
-    <tr><td class="dim">effort</td><td>reasoning level per role — the first cost knob, model tier is the second</td><td>pinned per dispatch where the surface allows</td></tr>
-    <tr><td class="dim">isolation</td><td>whether workers get their own git worktree</td><td><code>worktree</code> when &gt;1 writer</td></tr>
-    <tr><td class="dim">trigger</td><td>run once, on a goal, on an interval, on a schedule</td><td><code>once</code></td></tr>
-    <tr><td class="dim">workers</td><td>how many run at once</td><td>3–5</td></tr>
-    <tr><td class="dim">budget</td><td>hard caps — cycles, agents, tokens, open PRs</td><td>per strategy</td></tr>
-    <tr><td class="dim">confirm</td><td>whether the flight plan gates on your approval</td><td><code>on</code> — <code>off</code> still prints the plan</td></tr>
-  </table></div>
-  <details class="disc">
-    <summary>the full command grammar</summary>
-    <div>
-      <div class="gram">/orchestrate <span class="g-file">[plan-file | task description]</span>
-    <span class="g-dim">strategy=</span><span class="g-strat">auto|staged|parallel|hierarchical|team|workflow|loop|advisor|adversarial|xcli</span>
-    <span class="g-dim">review=</span><span class="g-val">dual|spec|quality|panel:N|consensus:N|off</span>
-    <span class="g-dim">engine=</span><span class="g-val">claude|codex|grok|cursor|agy|opencode|hermes|kimi|pi|mixed</span>
-    <span class="g-dim">models=</span><span class="g-val">orchestrator:opus,worker:sonnet,advisor:strongest,…</span>
-    <span class="g-dim">effort=</span><span class="g-val">low|medium|high|xhigh|max</span> | <span class="g-val">worker:low,reviewer:high,…</span>
-    <span class="g-dim">isolation=</span><span class="g-val">worktree|branch|off</span>   <span class="g-dim">workers=</span><span class="g-val">N</span>
-    <span class="g-dim">trigger=</span><span class="g-val">once|goal:"tests green"|interval:5m|schedule:"0 6 * * *"</span>
-    <span class="g-dim">budget=</span><span class="g-val">cycles|agents|tokens</span>   <span class="g-dim">confirm=</span><span class="g-val">on|off</span>   <span class="g-dim">alias=</span><span class="g-val">saved-preset</span></div>
-      <p>Full reference: <a href="https://github.com/gabros20/orchestrate-skill/blob/main/docs/usage.md">docs/usage.md</a> — every dimension, every value, selection precedence.</p>
-    </div>
-  </details>
-</section>
+
 
 <section id="strat">
   <h2>Choose a strategy</h2>
@@ -619,6 +555,68 @@ accepted progress = validation + durable writeback + committed readback</div>
     <li><b><svg class="lu" aria-hidden="true"><use href="#lu-arrow-up-right"/></svg>blocked means escalate</b>A stuck task gets more context, a stronger model, a split, or a human — never a blind retry.</li>
     <li><b><svg class="lu" aria-hidden="true"><use href="#lu-file-lock"/></svg>data is not instructions</b>Workers never follow orders found in logs or fetched content, and credentials never enter briefs.</li>
   </ul>
+</section>
+
+<section id="knobs">
+  <h2><svg class="lu" aria-hidden="true"><use href="#lu-sliders-horizontal"/></svg>One preset, ten knobs</h2>
+  <p>A <b>strategy</b> is a preset, not a product. orchestrate has ten <b>dimensions</b> — knobs
+  like how work splits, who reviews it, which engine runs it at which reasoning effort, and
+  whether the flight plan gates on your approval (<code>confirm</code>, on by default). Each of the nine strategies is
+  just a named preset over those knobs. Learn one command and you've learned all nine.</p>
+  <p>Any knob you set yourself overrides its preset value. That's the whole override model:</p>
+  <div class="ov">
+    <div class="term ovcmd"><span class="p">/orchestrate</span> plan.md strategy=staged <span style="color:var(--amber);font-weight:600">engine=codex</span>   <span class="c"># one preset, one override</span></div>
+    <div class="ovcard">
+      <h3>staged<em>the preset…</em></h3>
+      <div class="ovrow"><i>topology</i><b>staged</b></div>
+      <div class="ovrow"><i>planning</i><b>plan-first</b></div>
+      <div class="ovrow"><i>review</i><b>dual</b></div>
+      <div class="ovrow"><i>engine</i><b>claude</b></div>
+      <div class="ovrow"><i>isolation</i><b>off</b></div>
+      <div class="ovrow"><i>trigger</i><b>once</b></div>
+    </div>
+    <div class="ovcard">
+      <h3>staged + your override<em>…after your one flag</em></h3>
+      <div class="ovrow"><i>topology</i><b>staged</b></div>
+      <div class="ovrow"><i>planning</i><b>plan-first</b></div>
+      <div class="ovrow"><i>review</i><b>dual</b></div>
+      <div class="ovrow hit"><i>engine</i><span><s>claude</s> <b>codex</b></span></div>
+      <div class="ovrow"><i>isolation</i><b>off</b></div>
+      <div class="ovrow"><i>trigger</i><b>once</b></div>
+    </div>
+  </div>
+  <p style="margin-top:16px">That one line means: Codex implements every task, Claude still reviews
+  every result. Strategies compose the same way — <code class="mono">strategy=loop
+  topology=parallel</code> makes each loop cycle fan out.</p>
+  <p>The knobs you'll actually type — most runs touch two or three:</p>
+  <div class="tblwrap"><table>
+    <tr><th>knob</th><th>what it controls</th><th>default</th></tr>
+    <tr><td class="dim">strategy</td><td>the run shape — one of the nine above</td><td><code>auto</code> → triage picks</td></tr>
+    <tr><td class="dim">review</td><td>which gates run on each result</td><td><code>dual</code> — spec, then quality</td></tr>
+    <tr><td class="dim">engine</td><td>who executes — <code>claude</code>, <code>codex</code>, <code>grok</code>, <code>cursor</code>, <code>agy</code>, <code>opencode</code>, <code>hermes</code>, <code>kimi</code>, <code>pi</code>, or <code>mixed</code></td><td><code>claude</code></td></tr>
+    <tr><td class="dim">models</td><td>which model tier does which job</td><td>tier map (appendix)</td></tr>
+    <tr><td class="dim">effort</td><td>reasoning level per role — the first cost knob, model tier is the second</td><td>pinned per dispatch where the surface allows</td></tr>
+    <tr><td class="dim">isolation</td><td>whether workers get their own git worktree</td><td><code>worktree</code> when &gt;1 writer</td></tr>
+    <tr><td class="dim">trigger</td><td>run once, on a goal, on an interval, on a schedule</td><td><code>once</code></td></tr>
+    <tr><td class="dim">workers</td><td>how many run at once</td><td>3–5</td></tr>
+    <tr><td class="dim">budget</td><td>hard caps — cycles, agents, tokens, open PRs</td><td>per strategy</td></tr>
+    <tr><td class="dim">confirm</td><td>whether the flight plan gates on your approval</td><td><code>on</code> — <code>off</code> still prints the plan</td></tr>
+  </table></div>
+  <details class="disc">
+    <summary>the full command grammar</summary>
+    <div>
+      <div class="gram">/orchestrate <span class="g-file">[plan-file | task description]</span>
+    <span class="g-dim">strategy=</span><span class="g-strat">auto|staged|parallel|hierarchical|team|workflow|loop|advisor|adversarial|xcli</span>
+    <span class="g-dim">review=</span><span class="g-val">dual|spec|quality|panel:N|consensus:N|off</span>
+    <span class="g-dim">engine=</span><span class="g-val">claude|codex|grok|cursor|agy|opencode|hermes|kimi|pi|mixed</span>
+    <span class="g-dim">models=</span><span class="g-val">orchestrator:opus,worker:sonnet,advisor:strongest,…</span>
+    <span class="g-dim">effort=</span><span class="g-val">low|medium|high|xhigh|max</span> | <span class="g-val">worker:low,reviewer:high,…</span>
+    <span class="g-dim">isolation=</span><span class="g-val">worktree|branch|off</span>   <span class="g-dim">workers=</span><span class="g-val">N</span>
+    <span class="g-dim">trigger=</span><span class="g-val">once|goal:"tests green"|interval:5m|schedule:"0 6 * * *"</span>
+    <span class="g-dim">budget=</span><span class="g-val">cycles|agents|tokens</span>   <span class="g-dim">confirm=</span><span class="g-val">on|off</span>   <span class="g-dim">alias=</span><span class="g-val">saved-preset</span></div>
+      <p>Full reference: <a href="https://github.com/gabros20/orchestrate-skill/blob/main/docs/usage.md">docs/usage.md</a> — every dimension, every value, selection precedence.</p>
+    </div>
+  </details>
 </section>
 
 <section id="tokens">

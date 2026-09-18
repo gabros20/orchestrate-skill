@@ -10,6 +10,14 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.25.3] — 2026-09-18
+
+### Changed
+- Docs only. Website rewritten for first-time readers: the board and shared-context sections say
+  what the tool helps with and how it works in plain words, the page order is now idea → how a run
+  works → the board → shared context → choose a strategy → safety → the knobs → cost → start, and
+  the nav follows it.
+
 ## [1.25.2] — 2026-09-18
 
 ### Changed

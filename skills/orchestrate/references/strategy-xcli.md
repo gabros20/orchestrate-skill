@@ -68,8 +68,10 @@ and their stdout lands in YOUR context; the contract is the filter.
   every one was a flags fact, journaled as a note.
 - **The lane is one command.** `board launch N --agent A --engine codex --model M -- spec.md`
   writes the wrapper, pins the session, journals the dispatch, starts the lane and journals its
-  exit and receipt (`shared-lane-hygiene.md` 2/4/7). Approval and sandbox flags are never in the
-  template — `--extra='--approve-for-me'` / `--extra='--always-approve'` says you chose them.
+  exit and receipt (`shared-lane-hygiene.md` 2/4/7). Approval-bypass flags are never in the
+  template — `--extra='--always-approve'` (Grok) says you chose them. The Codex template carries
+  `--sandbox workspace-write`, the safe posture, and `codex exec` refuses `--approve-for-me`
+  alongside it, so a Codex lane takes no approval extra at all (`launch` refuses one up front).
   `--dry-run` shows the wrapper before anything runs; the `exit` event puts a dead lane in
   attention ("exited rc=1 with no return") before you would otherwise notice.
 - **Shared tree, two writers** (`isolation=off` on purpose): the board derives the rail — commit

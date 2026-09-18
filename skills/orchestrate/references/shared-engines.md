@@ -26,7 +26,7 @@ per session; every verified date is the day the fact was checked, not a guarante
 
 | Engine | Session id | Resume by id | Receipt | Lane cap | Hermetic flags | `board launch` template |
 |---|---|---|---|---|---|---|
-| Codex | `thread.started` in `--json` | `codex exec resume <id> - < nudge.md` | `turn.completed.usage` (root turn only) | quota + `--worktree` | spec-preamble opt-out of `~/.codex/AGENTS.md` | **live** 2026-09-16 |
+| Codex | `thread.started` in `--json` | `codex exec resume <id> - < nudge.md` | `turn.completed.usage` (root turn only) | quota + `--worktree` | spec-preamble opt-out of `~/.codex/AGENTS.md`; the template's `--sandbox workspace-write` is the posture — no approval extra (`--approve-for-me` conflicts with `--sandbox`) | **live** 2026-09-18 |
 | Grok | `-s $(uuidgen)` pre-pinned | `grok -r <id> --prompt-file` | `grok usage <id>` | `--max-turns` | `--no-subagents` | **live** 2026-09-16 |
 | Claude | `--session-id $(uuidgen)` | `claude -p --resume <id>` | final `result` event | `--max-budget-usd` | `--bare`, `--restricted` | **live** 2026-09-16 |
 | Cursor | latest only | `cursor-agent --continue` | — (docs) | — | `--trust` fail-closed | dry-run (docs) |

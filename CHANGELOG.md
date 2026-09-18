@@ -10,6 +10,34 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.25.0] — 2026-09-18
+
+### Added
+- **`board learn` — shared context between open workers.** A worker's one-line discovery (`--kind
+  gotcha|failed|invariant|constraint|convention|fact|question`, optional `--path`) is journaled as
+  an observation and handed to its team — same dispatcher, its lead, its own workers; the
+  controller sees all — at their next board call. Capped (3 per stint, 300 chars), deduped
+  run-wide, refused for a returned agent; a read-only lane prints the line to carry in its return.
+  `board learn` alone lists the run's learnings; the header counts them; `board task N`, `show
+  --json` and `board resume` carry them; `board check` names a stint at the cap.
+- **The checkpoint digest.** Every worker-side call now hands over, under one watermark, unread
+  mail, learnings since the last check, and the decisions and rails recorded **after** the
+  stint's dispatch (`(revised)` when a decision id was re-decided) — a plan change reaches a
+  running worker at its next checkpoint, never mid-turn, and the one-snapshot rule stands: the
+  worker reconciles or returns NEEDS_CONTEXT. `--peek` acks nothing.
+- **`board memory`** — the run as ONE `project-context` record (observation when the final gate
+  stands, else a handoff): decisions with their why, attempts from `learn --kind failed` and
+  BLOCKED/REFUSED returns, learnings, accepted commits, artifacts by path, checks as
+  verification, the frontier as `current_state`. `board init`, `finish` and `resume` print the
+  `ctx` command only when the repo keeps `.agent/PROJECT_CONTEXT.jsonl`; the board never runs it.
+- `board decide … --why "…"` records the rationale (mirrored to `decisions.md`; re-deciding an id
+  supersedes it). Inside a launched lane `BOARD_AGENT` is the default for every worker-side
+  `--agent` / `--from`.
+- Skill text: the WORKER block gains the learn sentence (≈531 tokens, measured); priming anatomy
+  pins a project-memory packet when the repo keeps one; `shared-handoff.md` gains "Across runs";
+  parallel, team, hierarchical, sub-orchestrator, monitoring and contracts references say where
+  learnings travel. Design record: `docs/designs/v1.25.0-shared-context.md`.
+
 ## [1.24.0] — 2026-09-17
 
 ### Changed

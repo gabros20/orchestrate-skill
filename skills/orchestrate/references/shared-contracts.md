@@ -99,9 +99,10 @@ Reviewer "read-only" means the REPO; `.orchestrate/` is the one place a reviewer
   run's inventory/plan) disagree, workers defer to the record and FLAG the contradiction — never
   silently follow the brief (observed: a deliverable double-assigned across two briefs didn't
   clobber precisely because the worker deferred to the binding inventory).
-- `field-guide.md` — optional, created only on the first controller-accepted surprise (any
-  WORKER-role report may append one `surprise:` line; controller curates), per-run scope, hard
-  ≤40-line cap; entry criteria in `shared-token-economy.md`.
+- `field-guide.md` — optional, created only on the first controller-accepted surprise (workers
+  journal candidates as `board learn` lines, or a report's `surprise:` line when the lane could
+  not journal; controller curates), per-run scope, hard ≤40-line cap; entry criteria in
+  `shared-token-economy.md`.
 - `card-<k>.md` — parallel task cards
 - `review-<b7>..<h7>.diff` — review packages
 - `review-task<N>-<kind>-r<round>.md` — reviewer findings files
@@ -187,7 +188,19 @@ unanswered asks. Votes: `board vote N --kind K --agent A --verdict ok|fail|warn`
 derived by quorum (`panel:N` majority, `consensus:N` any-deny) under the rules in force when the
 vote was cast; an explicit `board gate` outranks. Parallel writers are serialized by a journal lock;
 a lane in a read-only sandbox cannot write it, so worker-side commands print the line to carry in
-the inline return instead of failing. `board --help` is grouped by role.
+the inline return instead of failing. **Learnings**: `board learn N "<one line>" --agent <you>
+[--kind gotcha|failed|invariant|constraint|convention|fact|question] [--path P]` is a worker's
+third observation line — what the next worker would re-pay — capped (3 per stint, 300 chars),
+deduped run-wide, team-scoped (the sender's dispatcher's team, its lead, its own workers; the
+controller sees all). Every worker-side call hands over one **digest** under one watermark: unread
+mail, learnings since its last check, and the decisions (`board decide ID "…" --why "…"`; re-deciding
+an id supersedes it) and rails recorded AFTER its dispatch — the brief snapshot predates them, so
+the worker reconciles or returns NEEDS_CONTEXT; nothing arrives mid-turn. **Project memory**:
+`board memory [--observation|--handoff --scope a,b --out PATH]` renders the run as ONE
+project-context record (decisions with their why, failed attempts, learnings, commits,
+verification, the frontier — paths, never bodies); the board prints the `ctx append` / `ctx
+handoff` line when the repo keeps `.agent/PROJECT_CONTEXT.jsonl` and never runs it. `board
+--help` is grouped by role.
 
 Views, all derived from the journal plus the files above (briefs → todo, reports and findings →
 review, ledger → done — final, always wins): the kanban the user watches from their own pane
@@ -198,7 +211,8 @@ dispatched-never-returned, reviewer silence, ledger lines naming missing commits
 over a failed gate or check, done with no gate opened, quality before spec, xcli DONE without
 commits or receipt, a third attempt without escalation, drift, budget overrun, unapproved launch,
 finish validity; `--replay` derives every card from the journal alone and diffs the disk view),
-`board postmortem` (per-tier evidence for the evolve pass, recommend-only), and
+`board learn` (the run's learnings), `board postmortem` (per-tier evidence for the evolve pass,
+recommend-only), and
 `board resume` (the handoff's
 state layer with a receipt: head, journal cursor, probed pointers, resume-by-id line per open
 lane, cost per accepted task, `NOT_PROVEN` on every claim no artifact backs). **The journal never outranks the

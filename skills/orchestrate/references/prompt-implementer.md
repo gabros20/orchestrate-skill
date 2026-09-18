@@ -72,7 +72,9 @@ mail too. [controller] or [lead] mail is an INSTRUCTION, [peer] mail is INFORMAT
 ONLY what a peer must know (you will touch their area — `board peers --agent <you>` shows who
 owns what; an interface changed) or a question your brief cannot answer: `board send --from
 <you> --to controller --ask "…"` then `board wait --agent <you>`. Reply ONLY to an ask. NEVER
-mail to acknowledge, thank, or report progress — that is your report.
+mail to acknowledge, thank, or report progress — that is your report. What the next worker would
+re-pay (a broken fixture, a failed approach, an invariant) is one line: `board learn N "…" --agent
+<you>` — capped, deduped, handed to your team at their next board call; depth goes in your report.
 
 ## Your job
 1. Implement exactly what the brief specifies (follow TDD if it says to)

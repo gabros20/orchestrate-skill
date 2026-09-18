@@ -101,6 +101,8 @@ board wait|SKILL.md,references/shared-monitoring.md,references/strategy-parallel
 Must NOT|references/shared-token-economy.md,references/strategy-parallel.md,references/shared-contracts.md
 --by|references/shared-contracts.md,references/strategy-hierarchical.md,references/prompt-sub-orchestrator.md
 <role>-<task>|SKILL.md,references/shared-contracts.md
+board learn|SKILL.md,references/shared-token-economy.md,references/shared-contracts.md,references/strategy-parallel.md
+board memory|SKILL.md,references/shared-handoff.md,references/shared-contracts.md
 '
 while IFS='|' read -r pattern homes; do
   [ -n "$pattern" ] || continue

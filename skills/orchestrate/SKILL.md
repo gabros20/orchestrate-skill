@@ -137,7 +137,9 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 
 ## Core workflow
 
-1. Inspect the task, plan, repository state, host capabilities, and stop condition.
+1. Inspect the task, plan, repository state, host capabilities, and stop condition — and the
+   repo's project memory when it keeps one (`board init` names it): one `ctx context --scope`
+   packet per scope, pinned in the briefs, so the run starts from what earlier runs learned.
 2. Resolve strategy, dimensions, roles, models, budget, isolation, review, and degradation.
 3. Initialize `.orchestrate/` with [workspace](scripts/workspace); record the resolved run with
    [board](scripts/board) — `board init PLAN --strategy … --goal "…"` writes the `## Resolved`
@@ -160,7 +162,9 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    (`board review` / `board gate` / `board vote`), every machine check (`board exec N --name
    tests -- <cmd>`), every recovery (`board nudge` / `board escalate`). Agents talk through the
    journal, never mid-turn: `board send` / `inbox` / `wait` — information and questions only,
-   capped, loop-proof; dispatch parallel workers with `--owns` so `board peers` tells each one
+   capped, loop-proof; `board learn N "…"` is a worker's one-line discovery, handed to its team
+   at their next board call together with any decision you recorded since their dispatch;
+   dispatch parallel workers with `--owns` so `board peers` tells each one
    who else is working. Monitor without duplicating agents: `board attention`, `board inbox
    --agent controller`, `board check`, and one blocking `board wait --task N --timeout 0` in a
    background shell per landing you wait on (exit 3 = it cannot land). Integrate through the
@@ -170,13 +174,15 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 8. Close each gated unit with `board done N` (it writes the ledger line; refused over a failed
    gate or check); `board check --finish` must be clean and `board finish --gate pass|fail --evidence`
    recorded before you finish or hand off (`board resume` is the handoff's state layer, with a
-   receipt; `board postmortem` feeds the evolve pass). Finish only when the stop condition is verified.
+   receipt; `board postmortem` feeds the evolve pass; `board memory` renders the run as one
+   project-context record when the repo keeps project memory). Finish only when the stop
+   condition is verified.
 
 Use [toolbox](scripts/toolbox) to inventory available tools once and reuse the recorded result.
 The journal (`.orchestrate/journal.jsonl`) is the run's spine and the board a view over it, never
 a second record; `board --help` is grouped by role — the controller records transitions, workers
-only observe (`board note` / `exec --agent <you>` / mail; a read-only lane prints the line to
-carry in its return instead of failing), the user watches from a pane of their own (`board`).
+only observe (`board note` / `exec --agent <you>` / `learn` / mail; a read-only lane prints the
+line to carry in its return instead of failing), the user watches from a pane of their own (`board`).
 
 ## Artifact contract
 

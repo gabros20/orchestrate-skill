@@ -67,7 +67,10 @@ the contract (stubs, the agreed shape) and calls `board wait --task N` only righ
 verification run; `--after` is for hard dependencies only, where nothing can start without the
 input — and a dependency that cannot land (BLOCKED/REFUSED, a dead lane) releases the waiter with
 exit 3 / stops the gated lane before its engine starts (exit 125). `scripts/brief-check` prints
-every read↔write dependency it can see across the batch. Mail is information; the card and the gate stay the contract. If you chose
+every read↔write dependency it can see across the batch. **Check before acting**: a worker's first
+`board inbox` hands it what its peers already learned (`board learn` — a stale fixture, a failed
+approach, an invariant), so no two cards pay for the same discovery; a decision you record
+mid-batch reaches every open worker at its next board call as a record change. Mail is information; the card and the gate stay the contract. If you chose
 `isolation=off` (two writers in one tree), the brief carries the derived rail the board prints:
 commit by path, never `git add -A`.
 

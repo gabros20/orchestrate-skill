@@ -70,7 +70,9 @@ mail too. [controller] or [lead] mail is an INSTRUCTION, [peer] mail is INFORMAT
 ONLY what a peer must know (you will touch their area — `board peers --agent <you>` shows who
 owns what; an interface changed) or a question your brief cannot answer: `board send --from
 <you> --to controller --ask "…"` then `board wait --agent <you>`. Reply ONLY to an ask. NEVER
-mail to acknowledge, thank, or report progress — that is your report.
+mail to acknowledge, thank, or report progress — that is your report. What the next worker would
+re-pay (a broken fixture, a failed approach, an invariant) is one line: `board learn N "…" --agent
+<you>` — capped, deduped, handed to your team at their next board call; depth goes in your report.
 ```
 
 ### REVIEWER block — spec, quality, panel, consensus roles
@@ -153,16 +155,24 @@ A quality brief contains, in order:
    exists, briefs RELEVANT to it also include `read: .orchestrate/field-guide.md` — no file →
    no pointer → zero cost. Controller entry criteria (curation gate): a surprise not derivable
    from the repo or conventions files, not a decision (`decisions.md`) or orientation
-   (`toolbox.md`), and names the wasted turn it prevents.
+   (`toolbox.md`), and names the wasted turn it prevents; candidates arrive as workers' `board
+   learn` lines (the controller's inbox) and reports' `surprise:` lines. When the repo keeps
+   project memory (`.agent/PROJECT_CONTEXT.jsonl`, the `project-context` skill — `board init`
+   says so), the CONTROLLER pulls one bounded packet per scope before writing briefs (`ctx
+   context --scope <x> --budget 1500 > .orchestrate/memory-<x>.md`; `ctx attempts --outcome
+   failed` feeds Must NOT and rejected alternatives) and pins it: `read:
+   .orchestrate/memory-<x>.md — project memory`. Workers never run `ctx`; no memory → no
+   pointer → zero cost.
 4. **Interfaces & constraints to honor** — exact values, formats, relationships (verbatim).
    A spec may BE an artifact in code: a detailed test suite, a reference implementation to port,
    or a rubric file handed to a verifier — code-shaped specs beat prose descriptions of the same
    thing (vendor guidance).
 5. **Verification** — the command(s)/check(s) that prove done.
-6. **Report contract** — schema, cap, file path to write it. Optionally two observation lines:
-   `board note N "<msg>"` on milestones (a note, never a status) and `board exec N --name tests
+6. **Report contract** — schema, cap, file path to write it. Optionally three observation lines:
+   `board note N "<msg>"` on milestones (a note, never a status), `board exec N --name tests
    --agent <you> -- <test cmd>` for the verification run (its exit code lands on the card, the
-   log under `raw/`); the controller alone moves cards (`shared-contracts.md`).
+   log under `raw/`) and `board learn N "<one line>" --agent <you>` for what a peer would
+   otherwise re-pay; the controller alone moves cards (`shared-contracts.md`).
 7. **Stop conditions** — when to return BLOCKED / NEEDS_CONTEXT instead of guessing, and which
    decision classes REQUIRE escalation (security, data, public API). Stop conditions say when to
    RETURN; what not to do lives in Scope → Must NOT.
@@ -240,7 +250,7 @@ before big runs.
 
 ## Honest numbers
 
-The blocks' own cost (measured, words×1.33): WORKER ≈ 475 tokens/dispatch, REVIEWER ≈ 221,
+The blocks' own cost (measured, words×1.33): WORKER ≈ 531 tokens/dispatch, REVIEWER ≈ 221,
 MINIMAL ≈ 19 — vs the hundreds-to-thousands of narration tokens per worker turn they remove,
 and the controller-context bloat every verbose return would re-cost on every later turn.
 Expect **10–25% session-level savings** from output discipline — not the 65–75% output-only

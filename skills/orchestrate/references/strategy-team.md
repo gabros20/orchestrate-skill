@@ -58,7 +58,9 @@ focused teammates beat five scattered ones. Never assign implementation to read-
   ride on `board send`: dispatch each teammate with `--owns`, tell them the others exist
   (`board peers --agent <you>` is live), and expect mail ONLY for "I will touch your area" and
   for questions (`--ask` + `board wait`); the caps (`MAIL_CAP`, `THREAD_CAP`) stop a thread from
-  turning into a meeting — a thread that hits the cap is a decision for you, not for them.
+  turning into a meeting — a thread that hits the cap is a decision for you, not for them. What
+  a teammate learns the hard way rides the same channel as a `board learn` line (capped, team-wide,
+  delivered at the next board call) — never as a broadcast mail.
 - **Plan-approval gate for risky work**: spawn with "require plan approval"; the teammate stays
   read-only until you approve its plan — give yourself explicit approval criteria up front.
 - **File conflicts**: teams do NOT worktree-isolate teammates. Partition file ownership in the

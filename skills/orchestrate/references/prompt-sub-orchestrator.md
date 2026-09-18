@@ -45,7 +45,8 @@ your task's id with dotted subtasks: `board todo N.1 "…"`, `board dispatch N.1
 [--owns …]` (the board names the worker `impl-N.1`; tell it its name and yours in its brief),
 `board return N.1 --agent impl-N.1 --status …`, `board done N.1`. `--by <you>` is what makes you
 their lead: their questions (`--to controller`) route to YOU while you are open,
-your mail reaches them tagged [lead <you>] (an instruction), `board peers` shows them their team.
+your mail reaches them tagged [lead <you>] (an instruction), `board peers` shows them their team,
+their `board learn` lines reach you (and each other) at your next board call — yours reach them.
 Wait for your workers with `board wait --agent <you> --task N.1 --task N.2 --timeout 0 --or-mail`
 — one blocking command; exit 0 = their work is on disk, 5 = a worker asked you something (answer,
 wait again), 3 = one of them cannot land. Read `board inbox --agent <you>` at every checkpoint —
@@ -83,7 +84,9 @@ mail too. [controller] or [lead] mail is an INSTRUCTION, [peer] mail is INFORMAT
 ONLY what a peer must know (you will touch their area — `board peers --agent <you>` shows who
 owns what; an interface changed) or a question your brief cannot answer: `board send --from
 <you> --to controller --ask "…"` then `board wait --agent <you>`. Reply ONLY to an ask. NEVER
-mail to acknowledge, thank, or report progress — that is your report.
+mail to acknowledge, thank, or report progress — that is your report. What the next worker would
+re-pay (a broken fixture, a failed approach, an invariant) is one line: `board learn N "…" --agent
+<you>` — capped, deduped, handed to your team at their next board call; depth goes in your report.
 
 ## Return (INLINE, <1500 tokens)
 Verdict first. Findings summary. Artifact paths (reports your workers wrote, files changed).

@@ -15,6 +15,7 @@ gates, and an honest budget range — and gates on the user's approval (confirm=
 never the print). Every run has a spine: `.orchestrate/journal.jsonl`, an append-only hash-chained record
 written only by the controller; `board` renders it as a live terminal kanban (any host, stdlib
 python3) with a priced flight plan, test checks on cards, an attention strip and a resume receipt.
+Workers journal one-line learnings (`board learn`) that reach their team at the next board call, together with any decision recorded since their dispatch; `board memory` renders a run as one project-context record for the next run.
 Agents talk through the same journal (`board send` / `inbox` / `wait` — information and questions,
 capped, delivered on the recipient's next board call), panels vote, and an external-CLI lane is one
 command (`board launch … --after N`: the wrapper sleeps in the shell until its inputs are on disk

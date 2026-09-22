@@ -299,7 +299,7 @@ board gate 3 --kind spec --verdict ok --round 1 --findings review-task3-spec-r1.
 board exec 3 --name tests -- npm test                    # a machine check THROUGH the journal: raw/ log, exit, duration → `tests ok 12s` on the card
 board dispatch 4 --agent impl-4 --model sonnet --owns "src/api/**"   # ownership on the record → `board peers` tells workers who owns what
 board dispatch 3.1 --model sonnet --by lead-3                                # a sub-orchestrator's subtree: dotted subtasks named impl-3.1 under lead-3; --by makes the lead (its mail = instruction; their asks route to it)
-board launch 4 --agent impl-4-grok --engine grok --model grok-4.6 --effort high --owns "src/api/**" \
+board launch 4 --agent impl-4-grok --engine grok --model grok-4.7 --effort high --owns "src/api/**" \
              --extra='--always-approve' -- .orchestrate/task-4-brief.md   # the lane as ONE command: wrapper, session, dispatch, start; `exit` + `receipt` journaled when it ends
 board receipt 4 --agent impl-4-grok                        # fetch (grok usage / codex log / claude result / hermes usage-file) or state --tokens --calls --cost
 board follow --for controller                             # your watch: one line per event that needs you; ends on finish

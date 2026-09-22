@@ -339,12 +339,12 @@ hardening stay in `references/strategy-xcli.md`):
   `$CODEX_HOME` (default `~/.codex`); Codex is also available as an MCP server (`codex mcp-server`).
 - **Grok** (`grok -p`) — `--output-format plain|json|streaming-json`; sessions via `--cwd
   <path> -m <model> -s <uuid>` (the session id must be a UUID on CLI ≥0.2.x); resume via `-r <id>`
-  or continue-last via `-c`. Models: the API flagship is `grok-4.5` (500k context, coding/agentic,
-  reasoning effort `low|medium|high` with high default), but the CLI ships its own shorter list —
-  run `grok models` before pinning (0.2.101 exposes only `grok-composer-2.5-fast` and
-  `grok-build`). Approval is all-or-nothing (`--always-approve`) — prefer read-only tasks, or
-  babysit it. Sessions on disk at `~/.grok/sessions`; a long-lived JSON-RPC surface exists via
-  `grok agent stdio` (ACP). No reasoning-effort flag in the CLI; effort is an API-side knob.
+  or continue-last via `-c`. Models (CLI 1.0.40, verified 2026-09-22): `grok-4.7` is the default
+  and the flagship (500k context, coding/agentic), `grok-4.7-build-fast` is the same model about
+  twice as fast at twice the price, `grok-4.6` and `grok-4.5` stay listed — run `grok models`
+  before pinning. `--reasoning-effort low|medium|high|xhigh` (high default). Approval is
+  all-or-nothing (`--always-approve`) — prefer read-only tasks, or babysit it. Sessions on disk at
+  `~/.grok/sessions`; a long-lived JSON-RPC surface exists via `grok agent stdio` (ACP).
 - **Claude Code as a subprocess** (for symmetry or a separate account) — `claude -p --bare
   --output-format stream-json --max-turns N --model <tier> --permission-mode acceptEdits --agents
   '{"worker":{...}}' "task"`. `--bare` disables auto-discovery for scripts/CI (auth via env);

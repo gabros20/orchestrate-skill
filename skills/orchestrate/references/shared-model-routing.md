@@ -94,8 +94,8 @@ end, never renumber.
    routing over downgrading the whole run.
 8. **Effort is the FIRST cost knob; model tier is the second.** Flags: Claude `--effort low..max`,
    codex `-c model_reasoning_effort=none|minimal|low|medium|high|xhigh|max` (medium default; enum
-   live-verified 2026-08-07, `shared-engines.md`), grok-4.5 API `reasoning_effort=low|medium|high`
-   (high default; no CLI flag as of grok CLI 0.2.106), pi `--thinking
+   live-verified 2026-08-07, `shared-engines.md`), grok CLI `--reasoning-effort low|medium|high|xhigh`
+   (high default; `max`/`minimal` are errors — live-verified 2026-09-22 on 1.0.40), pi `--thinking
    off|minimal|low|medium|high|xhigh|max` (docs-verified 2026-08-13); kimi's is in rule 9.
    Use low/medium liberally wherever quality holds; step up to xhigh/max for demanding agentic
    work — and re-run an effort sweep for the model you are actually dispatching instead of
@@ -114,9 +114,12 @@ end, never renumber.
    increases thinking-tag and tool-call leakage into user-facing text (vendor guidance).
 9. Engine tier map — codex (verified 2026-07-13): `gpt-5.6-luna` ≈ cheap worker ·
    `gpt-5.6-terra` ≈ standard worker/reviewer · `gpt-5.6-sol` ≈ reasoner/advisor/peer.
-   Grok (verified 2026-07-14): `grok-4.5` = flagship (500k ctx, coding/agentic/reasoning) ≈
-   reasoner/advisor/peer; grok CLI (0.2.106, verified 2026-07-20) defaults to `grok-4.5` as its
-   sole listed model — lists drift, re-verify with `grok models` before pinning. Kimi (verified
+   Grok (live-verified 2026-09-22, CLI 1.0.40): `grok-4.7` = flagship (500k ctx, $2/$6 per M,
+   coding/agentic/reasoning; the CLI's default) ≈ reasoner/advisor/peer and a strong worker ·
+   `grok-4.7-build-fast` = the same model ~2× faster at ~2× the price ≈ latency-critical lane only
+   (budget-relevant, not a cheap tier) · `grok-4.6` / `grok-4.5` = previous flagships, still
+   listed. No cheap Grok tier exists — route cheap work to another engine. Lists drift; re-verify
+   with `grok models` before pinning. Kimi (verified
    2026-07-20, live 0.28.0): `k3` = flagship (1M ctx on
    Allegretto+ membership, 256k below; `reasoning_effort: low|high|max`, default `high` — set via
    config.toml or `/effort`, NOT a CLI

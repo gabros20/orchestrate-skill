@@ -10,6 +10,22 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.25.7] — 2026-09-22
+
+### Changed
+
+- **Grok 4.7.** Engine block, model routing and the xcli strategy restamped against grok CLI
+  1.0.40 (live-verified): `grok-4.7` is the default and the flagship (500k context, $2/$6 per M
+  tokens), `grok-4.7-build-fast` is the same model about twice as fast at twice the price (a
+  latency lane, never a cheap tier), `grok-4.6` and `grok-4.5` stay listed. A lane pinned
+  `grok-4.7` reports its receipt under `grok-4.7-build` — documented as the same model, not
+  drift. `--reasoning-effort` takes `low|medium|high|xhigh`; the 1.0.40 flags are listed.
+
+### Fixed
+
+- `board launch --engine grok --effort max` (or any value outside `low|medium|high|xhigh`) is
+  refused before anything is journaled — the CLI errors on it before the model runs.
+
 ## [1.25.6] — 2026-09-18
 
 ### Fixed

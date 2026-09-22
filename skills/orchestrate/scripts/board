@@ -122,6 +122,7 @@ RESUME_CMD = {
 # how the brief reaches the engine (stdin | flag | text). `session`: "pin" (board mints the id) or "stream"
 # (read from the log after exit). `receipt`: how usage is captured after exit. Approval and sandbox flags
 # are deliberately absent — pass them with --extra, knowingly (grok --always-approve, codex --approve-for-me…).
+GROK_EFFORT = ("low", "medium", "high", "xhigh")   # grok CLI 1.0.40: any other value is an error before the model runs
 ENGINES = {
     "grok": {"argv": ["grok", "--cwd", "{repo}", "-m", "{model}", "--reasoning-effort", "{effort}", "-s", "{session}",
                       "--prompt-file", "{spec}", "--output-format", "json"], "prompt": "flag", "session": "pin",
@@ -3376,6 +3377,9 @@ def main(argv: list[str]) -> int:
         cwd = Path(args.cwd).resolve() if args.cwd else Path(git("rev-parse", "--show-toplevel") or os.getcwd())
         tpl = ENGINES[args.engine]
         extra = shlex.split(args.extra or "")
+        if args.engine == "grok" and args.effort and args.effort not in GROK_EFFORT:
+            sys.exit(f"board: grok --reasoning-effort takes {'|'.join(GROK_EFFORT)} — {args.effort!r} is refused by the CLI "
+                     "before the lane starts (engine-grok.md)")
         if args.engine == "codex" and any(x in ("--approve-for-me", "--full-auto") for x in extra):
             sys.exit("board: codex exec refuses --approve-for-me together with the template's --sandbox workspace-write, and --full-auto "
                      "is not an exec flag — the Codex lane posture is the sandbox alone: drop --extra (engine-codex.md)")
@@ -4101,9 +4105,9 @@ def selftest() -> int:
         try:
             dry = run("launch", "3", "--agent", "impl-3-lane", "--engine", "codex", "--model", "gpt-5.6-terra", "--dry-run", "--", "plan.md")
             assert "codex exec" in dry and "lane-exit 3" in dry and "< " in dry and not (ws / "raw" / "lane-3-task3-lane.sh").exists(), dry
-            dry = run("launch", "3", "--agent", "impl-3-gated", "--engine", "grok", "--model", "grok-4.6", "--after", "1,2", "--dry-run", "--", "plan.md")
+            dry = run("launch", "3", "--agent", "impl-3-gated", "--engine", "grok", "--model", "grok-4.7", "--after", "1,2", "--dry-run", "--", "plan.md")
             assert "wait --agent impl-3-gated --task 1 --task 2 --timeout 0" in dry and dry.index("wait --agent") < dry.index("grok --cwd"), dry
-            out = run("launch", "3", "--agent", "impl-3-lane", "--engine", "grok", "--model", "grok-4.6", "--effort", "high",
+            out = run("launch", "3", "--agent", "impl-3-lane", "--engine", "grok", "--model", "grok-4.7", "--effort", "high",
                       "--owns", "app.py", "--extra=--always-approve", "--fg", "--", "plan.md")
             assert "finished rc=0" in out, out
             st = load(ws)
@@ -4111,7 +4115,7 @@ def selftest() -> int:
             assert s and s.session and s.cmd_file and s.exit_code == 0 and s.tokens == 12345 and s.calls == 7 and s.owns == "app.py", vars(s)
             assert "--always-approve" in (ws / s.cmd_file).read_text() and (ws / s.log).exists()
             run("done", "1", "--msg", "round two: landed")                                  # task 1 landed → the gate opens at once
-            out = run("launch", "3", "--agent", "impl-3-after", "--engine", "grok", "--model", "grok-4.6", "--after", "1", "--fg", "--", "plan.md")
+            out = run("launch", "3", "--agent", "impl-3-after", "--engine", "grok", "--model", "grok-4.7", "--after", "1", "--fg", "--", "plan.md")
             assert "finished rc=0" in out and load(ws).stint_of("impl-3-after").after == ["1"], out
             assert any("exited rc=0 but no task-3-report.md" in why for _, _, why in attention(st, time.time())), "the worktree-report hint"
             assert "export ORCHESTRATE_WS=" in (ws / load(ws).stint_of("impl-3-after").cmd_file).read_text(), "the lane's env carries the run"
@@ -4121,7 +4125,7 @@ def selftest() -> int:
             assert "cannot land" in out and "plan wrong" in out, out
             assert "no such task" in run("wait", "--task", "99", "--timeout", "1", expect_fail=True)         # --agent defaults to controller
             calls = (shim / "grok.calls").read_text().count("x")
-            run("launch", "3", "--agent", "impl-3-doomed", "--engine", "grok", "--model", "grok-4.6", "--after", "2", "--fg", "--", "plan.md", expect_fail=True)
+            run("launch", "3", "--agent", "impl-3-doomed", "--engine", "grok", "--model", "grok-4.7", "--after", "2", "--fg", "--", "plan.md", expect_fail=True)
             s = load(ws).stint_of("impl-3-doomed")
             assert s and s.exit_code == 125 and s.tokens == 0 and (shim / "grok.calls").read_text().count("x") == calls, "a doomed lane never starts its engine"
             assert any("never started" in why and "impl-3-doomed" in why for _, _, why in attention(load(ws), time.time()))
@@ -4129,7 +4133,7 @@ def selftest() -> int:
             run("return", "3", "--agent", "impl-3-doomed", "--status", "BLOCKED", "--msg", "dependency task 2 failed")
             # a queued lane sits in the todo lane (nothing runs, nothing to nudge) until its dependency lands or fails
             run("todo", "6", "late input")
-            run("launch", "3", "--agent", "impl-3-queued", "--engine", "grok", "--model", "grok-4.6", "--after", "6", "--", "plan.md")
+            run("launch", "3", "--agent", "impl-3-queued", "--engine", "grok", "--model", "grok-4.7", "--after", "6", "--", "plan.md")
             time.sleep(0.6)
             show = run("show", "--no-color")
             todo_box = show.split(lane_label("todo"), 1)[1].split(lane_label("in_progress"), 1)[0]
@@ -4404,6 +4408,9 @@ def selftest() -> int:
         assert "--peek" in run("launch", "3", "--agent", "impl-3-gatepeek", "--engine", "grok", "--model", "m", "--after", "4", "--dry-run", "--", "plan.md"), "the wrapper's gate never acks"
         run("launch", "3", "--agent", "impl-3-codexbad", "--engine", "codex", "--model", "m", "--extra=--approve-for-me", "--dry-run", "--", "plan.md", expect_fail=True)   # refused before anything is journaled
         assert not any(e.get("agent") == "impl-3-codexbad" for e in load(ws).events)
+        run("launch", "3", "--agent", "impl-3-grokmax", "--engine", "grok", "--model", "grok-4.7", "--effort", "max", "--dry-run", "--", "plan.md", expect_fail=True)   # grok has no max
+        assert not any(e.get("agent") == "impl-3-grokmax" for e in load(ws).events)
+        assert "--reasoning-effort xhigh" in run("launch", "3", "--agent", "impl-3-grokx", "--engine", "grok", "--model", "grok-4.7", "--effort", "xhigh", "--dry-run", "--", "plan.md")
         # a stray brief is a task nobody planned — check says so; the file gone, the finding goes
         (ws / "task-9-brief.md").write_text("# Task 9: Stray\n")
         assert any("task 9: brief on disk but never queued" in f for f in check(load(ws))), check(load(ws))

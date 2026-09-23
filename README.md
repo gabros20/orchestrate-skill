@@ -173,6 +173,7 @@ board exec 3 --name tests -- npm test   # a check through the journal: exit + du
 board check --replay                    # reconciliation: chain, gates, receipts, journal vs disk
 board resume                            # the handoff's state layer, with a receipt and resume-by-id lines
 board reap [--kill]                     # what the run left running (servers, watchers) · finish refuses leftovers
+board version                           # this release; on a run: its start release and what changed since
 board postmortem                        # per-tier evidence for routing, recommend-only
 ```
 

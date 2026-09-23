@@ -71,3 +71,8 @@ map); each item generalizes to any subprocess engine.
     an open lane engine-first), `--keep PID --why` keeps it on the record. `board check` flags
     leftovers; the finish gate refuses them. Never touched: the caller's ancestry, `board` calls,
     other runs, tty-attached, shared daemons (Codex app-server, Grok leader, tmux).
+12. **Upgrade mid-run by the migration lines.** `board version`: the release the run started on and
+    every release since. `none` = additive, upgrade in place (lanes pick up the new board at their
+    next call; the installer swaps files atomically). `action` = do it, then `board version --ack V
+    --msg`; until then a check finding, finish refuses. Every event carries `v`; mixed writers = a
+    stale copy on some lane's PATH (install.sh). An older board never writes a newer-schema journal.

@@ -31,6 +31,8 @@ LANES — a subprocess engine as one command
   launch N --agent A --engine E --model M [--effort --owns --after N,M --cwd --extra='..' --dry-run --fg] -- spec.md
   lane-exit N --agent A --exit RC · receipt N --agent A [--tokens --calls --cost --session]
   (exit 125 = a dependency failed and the engine never started; 124 = the gate timed out)
+  reap [--agent A] [--kill --all --pid P --keep P --why ".." --grace S --json]   what the run left running:
+       list (default) · --kill stops it TERM→KILL (an open lane = stop the lane) · --all adds owner-unknown + live lanes
 
 WORKERS — observations (every one also hands you your unread mail, peers' learnings, record changes)
   note N "msg" --agent A · exec N --name X --agent A -- <cmd> · result N --name X --exit RC --agent A
@@ -523,6 +525,8 @@ class Stint:
         self.calls = 0                                # model calls, from the receipt
         self.cost = 0.0                               # USD, from the receipt when the engine reports one
         self.reported = ""                            # the report file's own Status line, seen at return
+        self.cwd = str(ev.get("cwd", ""))             # where a launched lane runs — leftovers are found by it
+        self.reaped = False                           # stopped by `board reap`
 
 
 class Mail:
@@ -618,6 +622,8 @@ class State:
         self.mail: list[Mail] = []
         self.learned: list[Learn] = []
         self.changes: list[Change] = []   # decisions and rails, in journal order
+        self.kept: list[dict] = []        # processes the controller chose to leave running (`board reap --keep`)
+        self.leftovers: dict[str, list[dict]] = {}   # agent -> processes its lane left running (journaled at lane-exit)
         self.acks: dict[str, int] = {}   # agent -> highest seq it has read (mail, learnings and changes share the watermark)
         self.run_checks: dict[str, dict[str, str]] = {}   # run-level checks (integration, final verification)
 
@@ -1008,6 +1014,19 @@ def load(ws: Path, journal_only: bool = False) -> State:
                                   "owner": str(ev.get("owner", "")), "task": str(ev.get("task", "")), "src": "journal", "seq": seq})
             st.changes.append(Change(ev, ts, revised))
             continue
+        if kind == "leftover":
+            st.leftovers[str(ev.get("agent", ""))] = list(ev.get("procs") or [])
+            continue
+        if kind == "reap":
+            gone = {(int(x.get("pid") or 0)) for x in (ev.get("killed") or []) + (ev.get("kept") or [])}
+            for a in list(st.leftovers):
+                st.leftovers[a] = [x for x in st.leftovers[a] if int(x.get("pid") or 0) not in gone]
+            st.kept += [dict(x, why=clean(str(x.get("why") or ev.get("why") or ""))) for x in (ev.get("kept") or [])]
+            for a in ev.get("stopped") or []:
+                s = st.stint_of(str(a))
+                if s:
+                    s.reaped = True
+            continue
         if kind == "finish":
             run.finish, run.finish_evidence, run.finish_ts = str(ev.get("gate", "")), str(ev.get("evidence", "")), ts
             run.finish_seq, run.finish_head, run.finish_goal = seq, str(ev.get("head", "")), str(ev.get("goal_hash", ""))
@@ -1353,7 +1372,9 @@ def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
                         + (f" · {c['log']}" if c["log"] else "")))
         elif s == "in_progress" and any(x.task == t.id and not x.returned and x.exit_code is not None for x in st.stints):
             x = [x for x in st.stints if x.task == t.id and not x.returned and x.exit_code is not None][-1]   # the newest lane
-            if x.exit_code == 125:
+            if x.reaped:
+                out.append(("x", t, f"lane {x.agent} stopped by board reap — board return {t.id} --agent {x.agent} --status BLOCKED --msg \"…\", or relaunch"))
+            elif x.exit_code == 125:
                 out.append(("x", t, f"lane {x.agent} never started — dependency task {', '.join(x.after) or '?'} cannot land; "
                             f"board return {t.id} --agent {x.agent} --status BLOCKED --msg \"dependency failed\", fix it, relaunch"))
             elif x.exit_code == 0 and not (st.ws / f"task-{t.id}-report.md").exists() and not t.report:
@@ -1382,6 +1403,15 @@ def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
             out.append(("?", t, "returned with concerns — read the report first"))
         if s != "done" and t.attempt >= 3 and not t.escalations:
             out.append(("!", t, f"attempt {t.attempt} with no escalation — capability before retry (routing rule 4)"))
+    for a, procs in st.leftovers.items():
+        alive = [x for x in procs if pid_alive(int(x.get("pid") or 0))]
+        s_ = st.stint_of(a)
+        t = st.tasks.get(s_.task) if s_ else None
+        if alive and t is not None:
+            shared = sorted({o for x in alive for o in x.get("shared") or []})
+            out.append(("!", t, f"lane {a} left {len(alive)} process(es) running (pid {', '.join(str(x['pid']) for x in alive[:4])}) — "
+                        + (f"cwd shared with {', '.join(shared)}: board reap --pid P --kill" if shared else f"board reap --agent {a} --kill")
+                        + ", or --keep PID --why"))
     for m in st.unread("controller"):
         tid = (st.stint_of(m.sender).task if st.stint_of(m.sender) else "")
         t = st.tasks.get(tid)
@@ -2328,7 +2358,339 @@ def finish_invalid(st: State) -> str:
     return ""
 
 
-def check(st: State, finish_mode: bool = False) -> list[str]:
+# --- processes a run leaves behind -----------------------------------------------------------------
+# Engines clean up their own helpers; what outlives a lane is what the AGENT backgrounded (dev servers,
+# watchers, sleepers). Grok and Claude run each tool command in a fresh session with a scrubbed env, so
+# no marker survives — only the cwd and the start time do (observed live 2026-09-23; Codex's sandbox
+# kills its children itself). A process is the run's when it is in a lane's tree, or an orphan whose
+# cwd is inside the run's trees and that started after kickoff; its owner is the stint whose cwd and
+# window hold its start. Listing is free; killing is always an explicit `board reap --kill`.
+PROC_SLACK = 2       # seconds: ps start times are whole seconds, rounded (observed up to 1s early)
+REAP_GRACE = 5.0     # seconds between TERM and KILL
+SHARED_PROC = re.compile(r"\bapp-server\b|\bgrok\S* leader\b|\b(tmux|screen|zellij)\b|ChatGPT\.app|Claude\.app|Cursor\.app|\.vscode")
+
+
+def _etime(s: str) -> int:
+    """ps etime `[[dd-]hh:]mm:ss` → seconds."""
+    days, _, rest = s.strip().rpartition("-")
+    parts = [int(x) for x in rest.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    return (int(days) if days else 0) * 86400 + parts[0] * 3600 + parts[1] * 60 + parts[2]
+
+
+def proc_table() -> dict[int, dict] | None:
+    """{pid: row} for every process, or None when this platform cannot tell (non-POSIX, no ps, BOARD_PROC_SCAN=0)."""
+    if os.name != "posix" or os.environ.get("BOARD_PROC_SCAN") == "0":
+        return None
+    try:
+        out = subprocess.run(["ps", "ax", "-ww", "-o", "pid=,ppid=,pgid=,uid=,etime=,stat=,tty=,command="], capture_output=True,
+                             text=True, errors="replace", timeout=20, env=dict(os.environ, LC_ALL="C")).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    now, rows = time.time(), {}
+    for line in out.splitlines():
+        f = line.split(None, 7)
+        if len(f) < 8 or not f[0].isdigit():
+            continue
+        try:
+            rows[int(f[0])] = {"pid": int(f[0]), "ppid": int(f[1]), "pgid": int(f[2]), "uid": int(f[3]), "start": now - _etime(f[4]),
+                               "zombie": f[5].startswith("Z"), "tty": f[6] not in ("?", "??", "-"), "cmd": f[7]}
+        except ValueError:
+            continue
+    return rows or None
+
+
+def proc_cwds(pids: set[int]) -> dict[int, str] | None:
+    """cwd per pid (own processes only); None when the platform offers no way (no /proc, no lsof)."""
+    if not pids:
+        return {}
+    if Path("/proc/self/cwd").exists():
+        out = {}
+        for p in pids:
+            try:
+                out[p] = os.readlink(f"/proc/{p}/cwd")
+            except OSError:
+                pass
+        return out
+    try:
+        txt = subprocess.run(["lsof", "-a", "-d", "cwd", "-u", str(os.getuid()), "-Fpn", "-w"], capture_output=True, text=True,
+                             errors="replace", timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out, cur = {}, 0
+    for line in txt.splitlines():
+        if line.startswith("p"):
+            cur = int(line[1:]) if line[1:].isdigit() else 0
+        elif line.startswith("n") and cur in pids:
+            out[cur] = line[1:].removesuffix(" (deleted)")
+    return out
+
+
+def _under(path: str, root: Path) -> bool:
+    try:
+        Path(path).resolve().relative_to(root)
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _owning_ws(path: str) -> Path | None:
+    """The nearest directory above `path` holding a journal — another run's tree is never ours."""
+    try:
+        p = Path(path).resolve()
+    except OSError:
+        return None
+    for d in (p, *p.parents):
+        if (d / ".orchestrate" / "journal.jsonl").exists():
+            return d
+    return None
+
+
+def stint_open(s: "Stint") -> bool:
+    return not s.returned and s.exit_code is None
+
+
+def run_procs(st: "State") -> tuple[list[dict], str]:
+    """Every live process this run started, owner-attributed. ([], why) when the platform cannot tell."""
+    table = proc_table()
+    if table is None:
+        return [], "process scan unavailable here (non-POSIX, no ps, or BOARD_PROC_SCAN=0)"
+    if not st.run.kickoff:
+        return [], "no run journaled"
+    uid, now = os.getuid(), time.time()
+    anc, p = set(), os.getpid()
+    while p > 1 and p in table and p not in anc:   # the caller's own chain is never the run's to stop
+        anc.add(p)
+        p = table[p]["ppid"]
+    kids: dict[int, list[int]] = {}
+    for r in table.values():
+        kids.setdefault(r["ppid"], []).append(r["pid"])
+
+    def tree(roots: set[int]) -> set[int]:
+        seen, todo = set(), list(roots)
+        while todo:
+            x = todo.pop()
+            if x not in seen and x in table and x not in anc:
+                seen.add(x)
+                todo += kids.get(x, [])
+        return seen
+
+    home = st.ws.resolve().parent
+    wts = [Path(line[9:]).resolve() for line in git("worktree", "list", "--porcelain").splitlines() if line.startswith("worktree ")]
+    roots = {home, *wts}
+
+    def sroot(s: "Stint") -> Path:
+        if s.cwd:
+            return Path(s.cwd).resolve()
+        if s.worktree:
+            hit = [w for w in wts if w.name == s.worktree or str(w).endswith(s.worktree)]
+            if hit:
+                return hit[0]
+        return home
+
+    for s in st.stints:
+        if s.cwd:
+            roots.add(Path(s.cwd).resolve())
+    kept = st.kept
+    out: list[dict] = []
+    claimed: set[int] = set()
+
+    def emit(members: set[int], owners: list["Stint"], kind: str) -> None:
+        live = any(stint_open(s) for s in owners)
+        verdict = "live" if live else ("left" if owners else "unknown")
+        for m in sorted(members, key=lambda x: (table[x]["start"], x)):
+            r = table[m]
+            if r["zombie"] or m in claimed:
+                continue
+            claimed.add(m)
+            k = next((k for k in kept if k["pid"] == m and abs(float(k["start"]) - r["start"]) <= PROC_SLACK + 1), None)
+            out.append({"pid": m, "ppid": r["ppid"], "start": round(r["start"]), "cmd": r["cmd"][:160], "kind": kind,
+                        "agents": [s.agent for s in owners], "tasks": sorted({s.task for s in owners}),
+                        "verdict": "kept" if k else verdict, "why": k.get("why", "") if k else ""})
+
+    # 1. lane trees: the journaled wrapper (a session leader) and everything still under it or in its group
+    for s in st.stints:
+        w = table.get(s.pid) if s.pid else None
+        if not s.pid or s.pid in anc:
+            continue
+        same = bool(w) and abs(w["start"] - s.started) <= 15   # the same wrapper, not a reused pid
+        if w and not same:
+            continue   # the pid (and so the group id) now belongs to a stranger
+        end = (s.exited or s.returned or now) + PROC_SLACK
+        members = tree({s.pid}) if same else set()
+        members |= tree({x for x, r in table.items() if r["pgid"] == s.pid and s.started - PROC_SLACK <= r["start"] <= end})
+        members = {m for m in members if table[m]["uid"] == uid and not SHARED_PROC.search(table[m]["cmd"])}
+        if members:
+            emit(members, [s], "lane")
+    # 2. orphans (reparented to init or a user subreaper) whose cwd is inside this run's trees
+    def orphaned(r: dict) -> bool:
+        par = table.get(r["ppid"])
+        return r["ppid"] == 1 or (par is not None and Path(par["cmd"].split()[0]).name in ("systemd", "launchd", "init"))
+    cand = {x for x, r in table.items() if r["uid"] == uid and x not in anc and x not in claimed and x > 1 and orphaned(r)
+            and r["start"] >= st.run.kickoff - PROC_SLACK and not r["zombie"]}   # ps etime rounds: ±1s either way
+    cwds = proc_cwds(cand)
+    if cwds is None:
+        return out, "cannot read process cwds here (no /proc, no lsof) — lane trees only"
+    for x in sorted(cand, key=lambda x: table[x]["start"]):
+        c, r = cwds.get(x, ""), table[x]
+        if not c or x in claimed or not any(_under(c, rt) for rt in roots):
+            continue
+        ow = _owning_ws(c)
+        if ow is not None and ow != home:
+            continue
+        members = tree({x})
+        if any(table[m]["tty"] for m in members) or any(SHARED_PROC.search(table[m]["cmd"]) for m in members) \
+                or any(Path(tok).name == "board" for tok in r["cmd"].split()[:2]):
+            continue   # interactive, a shared engine daemon, or a board call (the controller's own wait) — never ours to stop
+        hits = [s for s in st.stints if s.started - PROC_SLACK <= r["start"] <= (s.exited or s.returned or now) + PROC_SLACK + 3
+                and _under(c, sroot(s))]
+        if hits:
+            best = max(len(str(sroot(s))) for s in hits)
+            hits = [s for s in hits if len(str(sroot(s))) == best]
+        emit(members, hits, "orphan")
+    return out, ""
+
+
+def proc_alive(pid: int, start: float) -> bool:
+    t = proc_table() or {}
+    r = t.get(pid)
+    return bool(r) and not r["zombie"] and abs(r["start"] - start) <= PROC_SLACK + 1
+
+
+def stop_procs(procs: list[dict], grace: float = REAP_GRACE) -> tuple[list[dict], list[dict]]:
+    """TERM, wait up to `grace`, KILL — each pid re-verified (same start, same command) first: a reused pid is never hit."""
+    import signal
+    table = proc_table() or {}
+    live = [p for p in procs if p["pid"] in table and not table[p["pid"]]["zombie"] and table[p["pid"]]["cmd"][:160] == p["cmd"]
+            and abs(table[p["pid"]]["start"] - p["start"]) <= PROC_SLACK + 1]
+    for p in live:
+        try:
+            os.kill(p["pid"], signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    deadline = time.time() + grace
+    while time.time() < deadline and any(proc_alive(p["pid"], p["start"]) for p in live):
+        time.sleep(0.2)
+    for p in live:
+        if proc_alive(p["pid"], p["start"]):
+            try:
+                os.kill(p["pid"], signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+    time.sleep(0.3)
+    survived = [p for p in live if proc_alive(p["pid"], p["start"])]
+    return [p for p in procs if p not in survived], survived
+
+
+def render_procs(procs: list[dict]) -> list[str]:
+    word = {"live": "running under", "left": "left by", "unknown": "owner unknown", "kept": "kept"}
+    L = []
+    for p in procs:
+        who = ", ".join(p["agents"]) if p["agents"] else "-"
+        L.append(f"  {p['pid']:>6}  {word[p['verdict']]:<14} {who:<14} {hhmm(p['start'])}  {p['cmd'][:90]}" +
+                 (f"  ({p['why']})" if p["why"] else ""))
+    return L
+
+
+def pid_alive(pid: int) -> bool:
+    """Cheap liveness for the pane (no scan): signal 0."""
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return False   # another user's process now holds the pid — not ours
+
+
+def cmd_reap(ws: Path, args) -> int:
+    st = load(ws)
+    procs, why = run_procs(st)
+    if why == "no run journaled":
+        sys.exit("board: reap needs a journaled run (board init)")
+    me = clean(os.environ.get("BOARD_AGENT") or "")   # inside a lane: a worker cleans up only after itself
+    agent = clean(args.agent or (me if args.kill else ""))
+    if me and (args.kill or args.keep) and (agent != me or args.all or any(
+            x["agents"] != [me] for x in procs if x["pid"] in args.pid + args.keep)):
+        sys.exit(f"board: inside a lane you stop only your own processes (--agent {me}) — the rest is the controller's")
+    s = st.stint_of(agent) if agent else None
+    if agent and not s:
+        sys.exit(f"board: {agent} has no stint")
+    actor = "worker" if me else "controller"
+    fields = ("pid", "start", "cmd")
+    if args.keep:
+        if not args.why:
+            sys.exit("board: --keep needs --why (what it is for, who stops it)")
+        pick = [x for x in procs if x["pid"] in args.keep]
+        miss = sorted(set(args.keep) - {x["pid"] for x in pick})
+        if miss:
+            sys.exit(f"board: pid {', '.join(map(str, miss))} is not a live process this run started — `board reap` lists them")
+        append_event(ws, actor=actor, ev="reap", agent=me or None, kept=[dict({k: x[k] for k in fields}, why=args.why) for x in pick], why=args.why)
+        print(f"board: kept {len(pick)} process(es) — journaled with why; finish no longer counts them")
+        return 0
+    if not args.kill:
+        shown = [x for x in procs if not agent or agent in x["agents"]]
+        if args.json:
+            print(json.dumps({"procs": shown, "note": why}, ensure_ascii=False, indent=1))
+            return 0
+        if why:
+            print(f"board: {why}")
+        if not shown:
+            print("board: nothing this run started is still running" + (f" under {agent}" if agent else ""))
+            return 0
+        print("\n".join(render_procs(shown)))
+        n_left = sum(1 for x in shown if x["verdict"] == "left")
+        print(f"board: {len(shown)} process(es) · {n_left} left behind — stop: board reap " + (f"--agent {agent} " if agent else "") +
+              "--kill (run-wide --all adds owner-unknown and live lanes) · keep: --keep PID --why \"…\"")
+        return 0
+    if args.pid:
+        targets = [x for x in procs if x["pid"] in args.pid]
+        miss = sorted(set(args.pid) - {x["pid"] for x in targets})
+        if miss:
+            sys.exit(f"board: pid {', '.join(map(str, miss))} is not a live process this run started — never killing a stranger")
+    elif agent:
+        targets = [x for x in procs if x["agents"] == [agent] and x["verdict"] in ("live", "left")]
+        shared = [x for x in procs if agent in x["agents"] and len(x["agents"]) > 1]
+        if shared:
+            print(f"board: {len(shared)} process(es) could also belong to {', '.join(sorted({a for x in shared for a in x['agents']} - {agent}))} — "
+                  f"not touched; name them: --pid {' --pid '.join(str(x['pid']) for x in shared)}")
+    else:
+        targets = [x for x in procs if x["verdict"] == "left" or (args.all and x["verdict"] in ("unknown", "live"))]
+    if not targets:
+        print("board: nothing to stop" + (f" for {agent}" if agent else "") + (" (owner-unknown and live lanes need --all)" if not args.all and not agent else ""))
+        return 0
+    # an open lane is stopped engine-first: its wrapper then journals its own exit and receipt
+    wrap = {x.pid: x for x in st.stints if x.pid and stint_open(x)}
+    lanes = [x for x in targets if x["pid"] in wrap]
+    killed, survived = stop_procs([x for x in targets if x["pid"] not in wrap], args.grace)
+    if lanes:
+        deadline = time.time() + args.grace + 3
+        while time.time() < deadline and any(proc_alive(x["pid"], x["start"]) for x in lanes):
+            time.sleep(0.3)
+        k2, s2 = stop_procs([x for x in lanes if proc_alive(x["pid"], x["start"])], args.grace)
+        killed += [x for x in lanes if x not in s2]
+        survived += s2
+    stopped = sorted({a for x in targets for a in x["agents"] if (sx := st.stint_of(a)) and stint_open(sx) and x["kind"] == "lane"})
+    st2 = load(ws)
+    for a in stopped:
+        sx = st2.stint_of(a)
+        if sx and sx.exit_code is None:   # the wrapper died before it could journal its own exit
+            append_event(ws, task=sx.task, ev="exit", agent=a, exit=143)
+    one = st.stint_of(stopped[0]) if len(stopped) == 1 else (s if agent else None)
+    append_event(ws, actor=actor, ev="reap", task=one.task if one else None, agent=agent or None, killed=[{k: x[k] for k in fields} for x in killed],
+                 survived=[{k: x[k] for k in fields} for x in survived], stopped=stopped, why=args.why or None)
+    print(f"board: stopped {len(killed)} process(es) (TERM, KILL after {args.grace:g}s)" +
+          (f" · {len(survived)} survived: pid {', '.join(str(x['pid']) for x in survived)}" if survived else ""))
+    for a in stopped:
+        sx = st.stint_of(a)
+        print(f"board: lane {a} stopped — record it: board return {sx.task} --agent {a} --status BLOCKED --msg \"…\", or relaunch")
+    return 1 if survived else 0
+
+
+def check(st: State, finish_mode: bool = False, scan: bool = False) -> list[str]:
     findings: list[str] = list(st.problems)
     now = time.time()
     ws = st.ws
@@ -2435,6 +2797,20 @@ def check(st: State, finish_mode: bool = False) -> list[str]:
                 findings.append(f"finish gate: task {t.id} gate(s) pending: {', '.join(pend)}")
         if st.run.drift and not any("posture" in r for r in st.run.rails):
             findings.append("finish gate: model drift observed and no cost-posture rail recorded")
+    if scan:
+        procs, _ = run_procs(st)
+        by: dict[str, list[dict]] = {}
+        for x in procs:
+            if x["verdict"] == "left":
+                by.setdefault(", ".join(x["agents"]), []).append(x)
+        for who, xs in by.items():
+            fix = f"board reap --agent {who} --kill" if len(xs[0]["agents"]) == 1 else "board reap --pid P --kill"
+            findings.append(f"{who} left {len(xs)} process(es) running: " + "; ".join(f"pid {x['pid']} `{x['cmd'][:40]}`" for x in xs[:3])
+                            + (" …" if len(xs) > 3 else "") + f" — {fix}, or --keep PID --why")
+        rest = [x for x in procs if x["verdict"] in ("unknown", "live")]
+        if finish_mode and rest:
+            findings.append(f"finish gate: {len(rest)} process(es) this run started still running (pid {', '.join(str(x['pid']) for x in rest[:6])}"
+                            + (" …" if len(rest) > 6 else "") + ") — board reap, then --all --kill or --keep PID --why")
     return findings
 
 
@@ -2792,6 +3168,11 @@ def render_resume(st: State, probe: bool = True) -> str:
                 L.append(f"  resume: {RESUME_CMD[s.engine or 'claude'].format(id=s.session)}")
             elif s.engine and s.engine != "claude":
                 L.append(f"  resume: NOT_PROVEN — no session id journaled; find it in the engine's store, never resume \"last\"")
+    if probe:
+        procs = [x for x in run_procs(st)[0] if x["verdict"] != "kept"]
+        if procs:
+            L.append("## Processes still running (the run's — board reap lists them, --kill stops them)")
+            L += [x.strip() for x in render_procs(procs)]
     mine = st.unread("controller")
     if mine or any(m.ask for m in st.mail):
         L.append("## Mail")
@@ -3228,6 +3609,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="print the wrapper, journal nothing, launch nothing")
     p.add_argument("--msg"); p.add_argument("spec", nargs="*", help="the brief/spec file (after --)")
     p = sub.add_parser("lane-exit"); p.add_argument("task"); p.add_argument("--agent", required=True); p.add_argument("--exit", type=int, required=True)
+    p = sub.add_parser("reap", help="processes the run left running: listed by default, stopped only with --kill")
+    p.add_argument("--agent"); p.add_argument("--kill", action="store_true"); p.add_argument("--all", action="store_true")
+    p.add_argument("--pid", type=int, action="append", default=[]); p.add_argument("--keep", type=int, action="append", default=[])
+    p.add_argument("--why", default=""); p.add_argument("--grace", type=float, default=REAP_GRACE); p.add_argument("--json", action="store_true")
     p = sub.add_parser("receipt", help="journal a lane's usage: fetched per engine, or given explicitly")
     p.add_argument("task"); p.add_argument("--agent", required=True); p.add_argument("--tokens"); p.add_argument("--calls", type=int)
     p.add_argument("--cost", type=float); p.add_argument("--session")
@@ -3354,7 +3739,7 @@ def main(argv: list[str]) -> int:
         print("\n".join(json.dumps(e, ensure_ascii=False) for e in evs) if args.json else render_log(evs))
     elif cmd == "check":
         st = load(ws)
-        findings = check(st, args.finish) + (replay(st) if args.replay else [])
+        findings = check(st, args.finish, scan=True) + (replay(st) if args.replay else [])
         if args.json:
             print(json.dumps({"ok": not findings, "findings": findings}, indent=1))
         else:
@@ -3362,6 +3747,8 @@ def main(argv: list[str]) -> int:
                 print(f"check: {f}")
             if path_skew():
                 print(f"check: note — {path_skew()}")
+            if proc_table() is None:
+                print("check: note — process scan unavailable here: leftovers unchecked")
             print("board: check OK — journal and disk agree" if not findings else f"board: {len(findings)} finding(s)")
         return 1 if findings else 0
     elif cmd == "resume":
@@ -3403,7 +3790,7 @@ def main(argv: list[str]) -> int:
         if args.fg:
             append_event(ws, actor=args.by or "controller", task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
                          effort=args.effort, worktree=args.worktree, session=session, log=log, cmd_file=cmd_file, owns=args.owns,
-                         after=",".join(after), by=args.by, msg=args.msg)
+                         after=",".join(after), by=args.by, msg=args.msg, cwd=str(cwd))
             rc = subprocess.run(["/bin/sh", str(ws / cmd_file)]).returncode
             print(f"board: lane {agent} finished rc={rc} — read .orchestrate/task-{args.task}-report.md, then board return")
             return rc
@@ -3411,7 +3798,7 @@ def main(argv: list[str]) -> int:
                                 stderr=subprocess.DEVNULL, start_new_session=True)
         append_event(ws, actor=args.by or "controller", task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
                      effort=args.effort, worktree=args.worktree, session=session, log=log, cmd_file=cmd_file, owns=args.owns,
-                     pid=proc.pid, after=",".join(after), by=args.by, msg=args.msg)
+                     pid=proc.pid, after=",".join(after), by=args.by, msg=args.msg, cwd=str(cwd))
         print(f"board: lane {agent} launched (pid {proc.pid}, {args.engine} {args.model} @ {args.effort or 'high'})" +
               (f" · queued after task {', '.join(after)} — the engine starts when their work is on disk" if after else "") +
               (f" · session {session}" if session else "") + f"\n       log .orchestrate/{log} · wrapper .orchestrate/{cmd_file} · exit and receipt are journaled when it ends")
@@ -3428,6 +3815,23 @@ def main(argv: list[str]) -> int:
                          cost=r.get("cost"), session=r.get("session"), source=r.get("source"))
         print(f"board: lane {agent} exit {args.exit}" + (f" · receipt {fmt_tokens(int(r.get('tokens') or 0))} via {r.get('source')}" if r else
               (" · engine never started (dependency gate)" if args.exit in (124, 125) else " · receipt NOT_PROVEN (engine offers none, or fetch failed)")))
+        if s and args.exit not in (124, 125):
+            def mine_left() -> list[dict]:   # sole owner, or one of several when lanes share a cwd (then named by pid, never by agent)
+                return [x for x in run_procs(load(ws))[0] if agent in x["agents"] and x["kind"] == "orphan" and x["verdict"] in ("left", "live")]
+            left = mine_left()
+            if left:   # engines take a moment to reap their own helpers — only what is still there 2s later counts
+                time.sleep(2)
+                again = {x["pid"] for x in mine_left()}
+                left = [x for x in left if x["pid"] in again]
+            if left:
+                append_event(ws, task=args.task, ev="leftover", agent=agent,
+                             procs=[dict({k: x[k] for k in ("pid", "start", "cmd")}, shared=[a for a in x["agents"] if a != agent]) for x in left])
+                shared = sorted({a for x in left for a in x["agents"] if a != agent})
+                print(f"board: lane {agent} left {len(left)} process(es) running (pid {', '.join(str(x['pid']) for x in left)}) — "
+                      + (f"cwd shared with {', '.join(shared)}: board reap --pid P --kill" if shared else f"board reap --agent {agent} --kill")
+                      + ", or --keep PID --why")
+    elif cmd == "reap":
+        return cmd_reap(ws, args)
     elif cmd == "receipt":
         agent = clean(args.agent)
         st = load(ws)
@@ -3703,7 +4107,7 @@ def main(argv: list[str]) -> int:
     elif cmd == "finish":
         st = load(ws)
         if args.gate == "pass":
-            strict = check(st, finish_mode=True)
+            strict = check(st, finish_mode=True, scan=True)
             if strict and not args.force:
                 for f in strict:
                     print(f"check: {f}")
@@ -4484,6 +4888,90 @@ def selftest() -> int:
         assert rp and "inconclusive (pre-journal history" in rp[0] and not any("without its journal line" in r for r in rp), rp
         run("init", "plan.md", "--resume")  # idempotent: nothing archived, nothing re-queued
         assert len(load(ws).events) == len(st.events)
+        # --- reap: what a lane leaves running is found, attributed, kept or stopped — never a stranger -------------
+        assert _etime("05:06") == 306 and _etime("1-02:03:04") == 93784 and _etime("02:03:04") == 7384
+        if proc_table() is not None and proc_cwds({os.getpid()}) is not None:
+            rr = Path(tmp) / "reap"
+            (rr / "sub").mkdir(parents=True)
+            os.chdir(rr)
+            subprocess.run(["git", "init", "-q"], check=True)
+            (rr / "plan.md").write_text("# Plan\n\n## Task 1: Leak\n\n## Task 2: Hang\n\n## Task 3: Native\n")
+            leak = Path(tmp) / "leakbin"
+            leak.mkdir()
+            (leak / "grok").write_text("#!/bin/sh\nif [ \"$1\" = usage ]; then echo '{}'; exit 0; fi\ncat >/dev/null\n"
+                                       "if [ \"$LEAK\" = hang ]; then sleep 60; fi\nnohup sleep 90 >/dev/null 2>&1 &\necho '{\"text\":\"done\"}'\n")
+            (leak / "grok").chmod(0o755)
+            pre = subprocess.Popen(["sh", "-c", "nohup sleep 91 >/dev/null 2>&1 &"], cwd=rr, start_new_session=True)   # before kickoff
+            pre.wait()
+            time.sleep(3.5)
+            run("init", "plan.md", "--strategy", "xcli", "--goal", "reap")
+            run("plan", "approved")
+            wsr = rr / ".orchestrate"
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = f"{leak}:{old_path}"
+            try:
+                out = run("launch", "1", "--agent", "impl-1", "--engine", "grok", "--model", "grok-4.7", "--cwd", "sub", "--fg", "--", "plan.md")
+                st = load(wsr)
+                lo = st.leftovers.get("impl-1", [])
+                assert len(lo) == 1 and lo[0]["cmd"] == "sleep 90" and "finished rc=0" in out, (out, st.leftovers)
+                assert any("lane impl-1 left 1 process" in why for _, _, why in attention(st, time.time())), attention(st, time.time())
+                procs = run_procs(st)[0]
+                assert [p["cmd"] for p in procs] == ["sleep 90"] and procs[0]["verdict"] == "left" and procs[0]["agents"] == ["impl-1"], procs
+                assert any("impl-1 left 1 process" in f for f in check(st, scan=True)), check(st, scan=True)
+                assert not any("left" in f and "process" in f for f in check(st)), "no scan unless asked: the pane stays cheap"
+                run("reap", "--keep", str(lo[0]["pid"]), expect_fail=True)            # a keep needs its why
+                run("reap", "--pid", str(os.getpid()), "--kill", expect_fail=True)   # never the caller, never a stranger
+                run("reap", "--pid", "1", "--kill", expect_fail=True)
+                os.environ["BOARD_AGENT"] = "impl-9"
+                run("reap", "--agent", "impl-1", "--kill", expect_fail=True)   # a worker never stops a peer's processes
+                run("reap", "--all", "--kill", expect_fail=True)
+                assert "left by" in run("reap"), "listing is free for anyone"
+                os.environ.pop("BOARD_AGENT")
+                os.environ["BOARD_PROC_SCAN"] = "0"
+                assert "unavailable" in run("reap") and run_procs(load(wsr))[1]
+                os.environ.pop("BOARD_PROC_SCAN")
+                before = run_procs(load(wsr))[0]
+                out = run("reap", "--agent", "impl-1", "--kill", "--grace", "2")
+                assert "stopped 1 process" in out and not proc_alive(lo[0]["pid"], lo[0]["start"]), (out, before, lo, time.time())
+                st = load(wsr)
+                assert not st.leftovers["impl-1"] and not run_procs(st)[0] and not any("impl-1 left" in w for _, _, w in attention(st, time.time()))
+                # a hanging lane is stopped engine-first: the wrapper journals its own exit, the card says who stopped it
+                os.environ["LEAK"] = "hang"
+                run("launch", "2", "--agent", "impl-2", "--engine", "grok", "--model", "grok-4.7", "--cwd", "sub", "--", "plan.md")
+                for _ in range(40):
+                    time.sleep(0.2)
+                    if any(p["cmd"].startswith("sleep 60") for p in run_procs(load(wsr))[0]):
+                        break
+                live = run_procs(load(wsr))[0]
+                assert all(p["verdict"] == "live" and p["agents"] == ["impl-2"] for p in live) and live, live
+                assert "nothing to stop" in run("reap", "--kill"), "a live lane is only stopped by name or --all"
+                out = run("reap", "--agent", "impl-2", "--kill", "--grace", "2")
+                assert "lane impl-2 stopped" in out, out
+                st = load(wsr)
+                s2 = st.stint_of("impl-2")
+                assert s2.reaped and s2.exit_code is not None and not run_procs(st)[0], (s2.exit_code, run_procs(st)[0])
+                assert any("stopped by board reap" in w for _, _, w in attention(st, time.time())), attention(st, time.time())
+                os.environ.pop("LEAK")
+                # an orphan left by a native stint (no lane): owner by cwd + window; the finish gate refuses until it is gone or kept
+                run("dispatch", "3", "--agent", "impl-3", "--model", "sonnet")
+                subprocess.Popen(["sh", "-c", "nohup sleep 92 >/dev/null 2>&1 &"], cwd=rr, start_new_session=True).wait()
+                time.sleep(1.2)
+                run("return", "3", "--agent", "impl-3", "--status", "DONE")
+                p3 = [p for p in run_procs(load(wsr))[0] if p["cmd"] == "sleep 92"]
+                assert len(p3) == 1 and p3[0]["agents"] == ["impl-3"] and p3[0]["verdict"] == "left", run_procs(load(wsr))[0]
+                assert any("left 1 process" in f for f in check(load(wsr), finish_mode=True, scan=True))
+                run("reap", "--keep", str(p3[0]["pid"]), "--why", "the user's demo server — they stop it")
+                st = load(wsr)
+                assert run_procs(st)[0][0]["verdict"] == "kept" and not any("process" in f for f in check(st, finish_mode=True, scan=True)), \
+                    check(st, finish_mode=True, scan=True)
+                assert "91" not in " ".join(p["cmd"] for p in run_procs(st)[0]), "a process older than the run is never the run's"
+            finally:
+                os.environ["PATH"] = old_path
+                os.environ.pop("LEAK", None)
+                os.environ.pop("BOARD_PROC_SCAN", None)
+                os.environ.pop("BOARD_AGENT", None)
+                subprocess.run(["pkill", "-f", "sleep 9[012]"], capture_output=True)
+                subprocess.run(["pkill", "-f", "sleep 60"], capture_output=True)
         print("board: selftest OK")
         return 0
     finally:

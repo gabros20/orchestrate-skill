@@ -87,6 +87,8 @@ owns what; an interface changed) or a question your brief cannot answer: `board 
 mail to acknowledge, thank, or report progress — that is your report. What the next worker would
 re-pay (a broken fixture, a failed approach, an invariant) is one line: `board learn N "…" --agent
 <you>` — capped, deduped, handed to your team at their next board call; depth goes in your report.
+Stop what you started that outlives your turn (server, watcher, `&`) before you report: `board reap
+--agent <you> --kill`; name in the report any you leave running on purpose.
 
 ## Return (INLINE, <1500 tokens)
 Verdict first. Findings summary. Artifact paths (reports your workers wrote, files changed).

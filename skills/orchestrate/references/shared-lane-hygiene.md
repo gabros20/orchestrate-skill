@@ -63,3 +63,11 @@ map); each item generalizes to any subprocess engine.
 10. **Nudge binding per engine** (monitoring rule 2, ONE nudge after the disk check): Claude Code
     SendMessage · Codex `codex queue --thread <id> --message` · Grok `-r <id>` · opencode `-s <id>` ·
     Hermes `--resume <id>` · Kimi `-S <id>` · Pi `--session <id>` — always the journaled id.
+11. **A lane's leftovers are the run's to stop.** Engines stop their own helpers; what the agent
+    backgrounded (server, watcher, `&`) survives: Grok and Claude run each tool command in a fresh
+    session with a scrubbed env, so only cwd + start time link it back (Codex's sandbox kills it;
+    all observed live 2026-09-23). `lane-exit` journals what a lane left (`!` in attention);
+    `board reap` lists by cwd + stint window, `--kill` stops TERM→KILL (pid re-verified, stopping
+    an open lane engine-first), `--keep PID --why` keeps it on the record. `board check` flags
+    leftovers; the finish gate refuses them. Never touched: the caller's ancestry, `board` calls,
+    other runs, tty-attached, shared daemons (Codex app-server, Grok leader, tmux).

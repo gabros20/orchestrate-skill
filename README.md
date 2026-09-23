@@ -172,6 +172,7 @@ board plan                              # the flight plan, priced from past rece
 board exec 3 --name tests -- npm test   # a check through the journal: exit + duration on the card
 board check --replay                    # reconciliation: chain, gates, receipts, journal vs disk
 board resume                            # the handoff's state layer, with a receipt and resume-by-id lines
+board reap [--kill]                     # what the run left running (servers, watchers) · finish refuses leftovers
 board postmortem                        # per-tier evidence for routing, recommend-only
 ```
 

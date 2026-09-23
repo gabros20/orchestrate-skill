@@ -19,7 +19,8 @@ Workers journal one-line learnings (`board learn`) that reach their team at the 
 Agents talk through the same journal (`board send` / `inbox` / `wait` — information and questions,
 capped, delivered on the recipient's next board call), panels vote, and an external-CLI lane is one
 command (`board launch … --after N`: the wrapper sleeps in the shell until its inputs are on disk
-and never starts the engine if an input cannot land). Claude Code is the reference
+and never starts the engine if an input cannot land). `board reap` finds what a lane left running
+(servers, watchers) by working directory and stint window, and stops it on request; the finish gate refuses leftovers. Claude Code is the reference
 host; the skill is plain Agent Skills format (agentskills.io) with a host-adapter layer
 (references/shared-hosts.md), so it runs on Codex, Cursor, Antigravity, opencode, Grok Build,
 Hermes, Kimi Code CLI, and Pi too — detecting its host at kickoff and degrading honestly where a

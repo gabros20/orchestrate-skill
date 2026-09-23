@@ -10,6 +10,27 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.25.8] — 2026-09-23
+
+### Changed
+
+- **GPT-6 Sol and Luna, Claude Opus 5.5.** Codex engine block and model routing restamped on the
+  0.155.1 model catalog: `gpt-6-astra` (reasoner/advisor/peer), `gpt-6-sol` (standard
+  worker/reviewer, $2/$10), `gpt-6-luna` (cheap worker, $0.10/$0.50), 272k context each; the
+  GPT-5.6 trio is superseded with the catalog's own upgrade map (Sol and Terra → GPT-6 Sol, Luna →
+  GPT-6 Luna) at half the price. Claude engine block: the `opus` alias now resolves to
+  `claude-opus-5-5` (live-verified on Claude Code 2.1.280 — 1M context, $4/$20, default effort
+  `medium`); the two API-level changes that affect a lane parser are noted (thinking cannot be
+  disabled; text between tool calls arrives in empty-by-default `thinking` blocks). A live Codex
+  turn on the GPT-6 models was blocked by the account's usage limit on launch day — the rows are
+  catalog facts, marked as such.
+
+### Fixed
+
+- `board launch --engine codex --effort ultra` (and any value outside `low..max`) is refused
+  before anything is journaled: `ultra` delegates to subagents the controller never dispatched
+  or budgeted. Selftest pins moved from `gpt-5.6-terra` to `gpt-6-sol`.
+
 ## [1.25.7] — 2026-09-22
 
 ### Changed

@@ -14,7 +14,18 @@ Inputs:
 Produces:
 - A stream-json lane with usage in its final event, resumable by id, capped in dollars.
 
-Live-verified 2026-09-16, Claude Code 2.1.273.
+Live-verified 2026-09-16, Claude Code 2.1.273; model aliases re-verified live 2026-09-22 on 2.1.280
+(the Claude Opus 5.5 launch day).
+
+- **`--model opus` now resolves to `claude-opus-5-5`** (observed in the final `result` event's
+  `modelUsage`, 2.1.280): Opus 5.5 — 1M context, 128k output, $4/$20 per M (20% under Opus 5,
+  cache reads $0.20), default effort `medium`, adaptive thinking always on. Every run that pinned
+  the `opus` tier moved with the alias; pin `claude-opus-5-5` (or `claude-opus-5`) explicitly
+  when a run must be reproducible, and journal the observed id from `modelUsage` — an alias that
+  moved is not model drift, a different family is. Two API-level changes ride along: thinking
+  cannot be disabled (effort is the only knob), and text the model emits **between tool calls
+  now arrives in `thinking` blocks that are empty by default** — a lane parser that streamed that
+  text as progress goes quiet mid-turn; the `result` event's usage is unaffected.
 
 ```bash
 ID=$(uuidgen)

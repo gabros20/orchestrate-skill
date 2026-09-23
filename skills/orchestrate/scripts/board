@@ -123,6 +123,7 @@ RESUME_CMD = {
 # (read from the log after exit). `receipt`: how usage is captured after exit. Approval and sandbox flags
 # are deliberately absent — pass them with --extra, knowingly (grok --always-approve, codex --approve-for-me…).
 GROK_EFFORT = ("low", "medium", "high", "xhigh")   # grok CLI 1.0.40: any other value is an error before the model runs
+CODEX_EFFORT = ("low", "medium", "high", "xhigh", "max")   # codex 0.155 catalog; "ultra" = automatic delegation — never on a lane
 ENGINES = {
     "grok": {"argv": ["grok", "--cwd", "{repo}", "-m", "{model}", "--reasoning-effort", "{effort}", "-s", "{session}",
                       "--prompt-file", "{spec}", "--output-format", "json"], "prompt": "flag", "session": "pin",
@@ -3380,6 +3381,9 @@ def main(argv: list[str]) -> int:
         if args.engine == "grok" and args.effort and args.effort not in GROK_EFFORT:
             sys.exit(f"board: grok --reasoning-effort takes {'|'.join(GROK_EFFORT)} — {args.effort!r} is refused by the CLI "
                      "before the lane starts (engine-grok.md)")
+        if args.engine == "codex" and args.effort and args.effort not in CODEX_EFFORT:
+            sys.exit("board: codex lanes take model_reasoning_effort " + "|".join(CODEX_EFFORT) + f" — {args.effort!r} refused"
+                     + (": ultra delegates to subagents the controller never dispatched or budgeted (engine-codex.md)" if args.effort == "ultra" else " (engine-codex.md)"))
         if args.engine == "codex" and any(x in ("--approve-for-me", "--full-auto") for x in extra):
             sys.exit("board: codex exec refuses --approve-for-me together with the template's --sandbox workspace-write, and --full-auto "
                      "is not an exec flag — the Codex lane posture is the sandbox alone: drop --extra (engine-codex.md)")
@@ -4103,7 +4107,7 @@ def selftest() -> int:
         old_path = os.environ.get("PATH", "")
         os.environ["PATH"] = f"{shim}:{old_path}"
         try:
-            dry = run("launch", "3", "--agent", "impl-3-lane", "--engine", "codex", "--model", "gpt-5.6-terra", "--dry-run", "--", "plan.md")
+            dry = run("launch", "3", "--agent", "impl-3-lane", "--engine", "codex", "--model", "gpt-6-sol", "--dry-run", "--", "plan.md")
             assert "codex exec" in dry and "lane-exit 3" in dry and "< " in dry and not (ws / "raw" / "lane-3-task3-lane.sh").exists(), dry
             dry = run("launch", "3", "--agent", "impl-3-gated", "--engine", "grok", "--model", "grok-4.7", "--after", "1,2", "--dry-run", "--", "plan.md")
             assert "wait --agent impl-3-gated --task 1 --task 2 --timeout 0" in dry and dry.index("wait --agent") < dry.index("grok --cwd"), dry
@@ -4408,6 +4412,9 @@ def selftest() -> int:
         assert "--peek" in run("launch", "3", "--agent", "impl-3-gatepeek", "--engine", "grok", "--model", "m", "--after", "4", "--dry-run", "--", "plan.md"), "the wrapper's gate never acks"
         run("launch", "3", "--agent", "impl-3-codexbad", "--engine", "codex", "--model", "m", "--extra=--approve-for-me", "--dry-run", "--", "plan.md", expect_fail=True)   # refused before anything is journaled
         assert not any(e.get("agent") == "impl-3-codexbad" for e in load(ws).events)
+        run("launch", "3", "--agent", "impl-3-ultra", "--engine", "codex", "--model", "gpt-6-sol", "--effort", "ultra", "--dry-run", "--", "plan.md", expect_fail=True)   # ultra delegates on its own
+        assert not any(e.get("agent") == "impl-3-ultra" for e in load(ws).events)
+        assert "model_reasoning_effort=max" in run("launch", "3", "--agent", "impl-3-cmax", "--engine", "codex", "--model", "gpt-6-luna", "--effort", "max", "--dry-run", "--", "plan.md")
         run("launch", "3", "--agent", "impl-3-grokmax", "--engine", "grok", "--model", "grok-4.7", "--effort", "max", "--dry-run", "--", "plan.md", expect_fail=True)   # grok has no max
         assert not any(e.get("agent") == "impl-3-grokmax" for e in load(ws).events)
         assert "--reasoning-effort xhigh" in run("launch", "3", "--agent", "impl-3-grokx", "--engine", "grok", "--model", "grok-4.7", "--effort", "xhigh", "--dry-run", "--", "plan.md")

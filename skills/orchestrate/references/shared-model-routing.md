@@ -103,7 +103,8 @@ end, never renumber.
    latency-insensitive**: a third-party intelligence-vs-cost-per-task chart (coordinates read off
    the plot by eye — treat as approximate, re-derive before citing anywhere binding) puts
    `gpt-5.6-luna` at max effort at ≈51 index for ~$0.21/task against `gpt-5.6-sol` at low effort at
-   ≈49.5 for ~$0.20; the one field comparison beside it (~10 parallel tasks, self-reported) found
+   ≈49.5 for ~$0.20 (GPT-5.6 figures; GPT-6 Sol/Luna halve those prices, the shape of the lane
+   holds — re-measure on the model you dispatch); the one field comparison beside it (~10 parallel tasks, self-reported) found
    the cheap-at-max lane succeeding ~70% of the time at ~70% lower cost, while the strong model
    finished ~50% faster and in fewer turns — a speed gap a second, contradicting hands-on report
    also saw, adding ~20% higher quality on the strong model at medium effort. Route the
@@ -112,8 +113,15 @@ end, never renumber.
    (`shared-token-economy.md`'s blocks). **Never disable thinking to save cost**: thinking at `low`
    effort beats thinking disabled at similar cost, and a rule telling a model not to think
    increases thinking-tag and tool-call leakage into user-facing text (vendor guidance).
-9. Engine tier map — codex (verified 2026-07-13): `gpt-5.6-luna` ≈ cheap worker ·
-   `gpt-5.6-terra` ≈ standard worker/reviewer · `gpt-5.6-sol` ≈ reasoner/advisor/peer.
+9. Engine tier map — Claude (live-verified 2026-09-22, Claude Code 2.1.280): the `opus` alias
+   now resolves to **`claude-opus-5-5`** (1M ctx, $4/$20 per M, default effort `medium`) ≈
+   orchestrator/reasoner/advisor at 60% of Opus 5's typical cost; `claude-fable-5-1` ($10/$50)
+   stays the strongest tier for the hardest reasoning; `sonnet` (Sonnet 5, $2/$10) ≈
+   worker/reviewer; `haiku` (4.5) ≈ cheap/mechanical. Codex (catalog re-read 2026-09-22, 0.155.1):
+   `gpt-6-luna` ($0.10/$0.50) ≈ cheap worker · `gpt-6-sol` ($2/$10) ≈ standard worker/reviewer ·
+   `gpt-6-astra` ($10/$50) ≈ reasoner/advisor/peer; the GPT-5.6 trio is superseded (`5.6-sol` and
+   `5.6-terra` → `gpt-6-sol`, `5.6-luna` → `gpt-6-luna`) at half the price — repin, the old slugs
+   still answer but cost double.
    Grok (live-verified 2026-09-22, CLI 1.0.40): `grok-4.7` = flagship (500k ctx, $2/$6 per M,
    coding/agentic/reasoning; the CLI's default) ≈ reasoner/advisor/peer and a strong worker ·
    `grok-4.7-build-fast` = the same model ~2× faster at ~2× the price ≈ latency-critical lane only

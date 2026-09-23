@@ -47,6 +47,7 @@ VIEWS
   board (live kanban: q · j/k · enter · e · a · r · n) · watch [--here] · runs · show [-x --attention --json]
   plan · agents · attention · task N · log [-n --json] · mail [--task N] · learn (the run's learnings)
   follow [--for controller --kinds .. --since SEQ --timeout S] · postmortem · resume [--no-probe] · path
+  version [--json] [--ack V --msg ".."]   release + schema; on a run: its start release, what changed since, any action
   memory [--observation|--handoff --scope a,b --out PATH]   the run as a project-context
        record (JSON for `ctx append --input` / `ctx handoff --input`) — printed, never appended by the board
 """
@@ -69,7 +70,15 @@ import time
 import unicodedata
 from pathlib import Path
 
-SCHEMA = 2
+VERSION = "1.27.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
+SCHEMA = 2           # the journal's shape; bumps ONLY for a breaking change, with an in-place upgrader (migrate_v1 is one)
+# What a run started on an older release must know. Newest first, one line per release: "none" = additive, nothing to
+# do · "action" = do it, then `board version --ack V --msg ".."` (a check finding, so finish refuses, until acked).
+# Automatic journal rewrites never live here — they run on open (journal_path), like the v1→v2 upgrade.
+MIGRATIONS = (
+    ("1.27.0", "none", "events carry v (the board that wrote them); `board version` shows the run's release and what changed since"),
+    ("1.26.0", "none", "board reap; dispatches journaled before 1.26 lack cwd — reap attributes their leftovers by worktree / repo root"),
+)
 COLUMNS = ["todo", "in_progress", "review", "done", "blocked"]
 LABELS = {c: c.upper().replace("_", " ") for c in COLUMNS}
 STALE_AFTER = 10 * 60  # seconds without an ARTIFACT delta before an open stint is flagged
@@ -270,6 +279,23 @@ def sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def vkey(v: str) -> tuple[int, ...]:
+    """'1.27.0' → (1, 27, 0); unknown or malformed → (0,), older than every release."""
+    try:
+        return tuple(int(x) for x in str(v).split("."))
+    except ValueError:
+        return (0,)
+
+
+def file_version(path: Path) -> str:
+    """The VERSION a board script declares, without running it (another copy on PATH, the zero-install copy)."""
+    try:
+        m = re.search(r'^VERSION = "([0-9.]+)"', path.read_text(encoding="utf-8", errors="replace"), re.M)
+    except OSError:
+        return ""
+    return m.group(1) if m else ""
+
+
 def new_run_id() -> str:
     return dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + os.urandom(2).hex()
 
@@ -310,8 +336,8 @@ def migrate_v1(path: Path) -> None:
         first = json.loads(lines[0])
     except json.JSONDecodeError:
         first = {}
-    if first.get("schema") == SCHEMA:
-        return
+    if "schema" in first:
+        return   # v1 lines carry no schema; any stamped journal (a newer one included) is never rewritten by this board
     shutil.copy2(path, path.with_name("journal.jsonl.v1.bak"))
     run_id = "legacy-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     out, prev = [], ""
@@ -361,8 +387,14 @@ def append_event(ws: Path, actor: str = "controller", **fields: object) -> dict:
         except (ImportError, OSError):
             pass  # no POSIX locks here — best effort, the chain check still catches a race
         last = last_line(path)
+        if int(last.get("schema") or SCHEMA) > SCHEMA:
+            sys.exit(f"board: this journal is schema {last.get('schema')}, written by board {last.get('v') or '?'} — this board "
+                     f"({VERSION}) knows schema {SCHEMA} and will not write it; upgrade the skill (install.sh)")
+        if vkey(str(last.get("v") or "")) > vkey(VERSION):
+            print(f"board: note — board {VERSION} is writing a run last written by {last.get('v')}; refresh this copy (install.sh)",
+                  file=sys.stderr)
         run_id = str(fields.pop("run_id", "") or last.get("run") or new_run_id())
-        env = {"schema": SCHEMA, "run": run_id, "seq": int(last.get("seq", 0)) + 1, "ts": now_iso(), "ts_utc": now_utc(),
+        env = {"schema": SCHEMA, "v": VERSION, "run": run_id, "seq": int(last.get("seq", 0)) + 1, "ts": now_iso(), "ts_utc": now_utc(),
                "actor": actor, **{k: v for k, v in fields.items() if v not in (None, "", [], {})},
                "prev": str(last.get("hash", ""))}
         env["hash"] = chain_hash(env["prev"], env)
@@ -391,7 +423,9 @@ def read_events(ws: Path) -> tuple[list[dict], list[str]]:
             problems.append(f"journal line {i}: malformed JSON (skipped)")
             continue
         if ev.get("schema") != SCHEMA:
-            problems.append(f"journal line {i}: schema {ev.get('schema')} (expected {SCHEMA})")
+            newer = isinstance(ev.get("schema"), int) and ev["schema"] > SCHEMA
+            problems.append(f"journal line {i}: schema {ev.get('schema')} (expected {SCHEMA})"
+                            + (f" — written by board {ev.get('v') or '?'}, newer than this one ({VERSION}): upgrade the skill" if newer else ""))
         seq = ev.get("seq")
         if seq != expect:
             problems.append(f"journal line {i}: seq {seq}, expected {expect} (gap or reorder)")
@@ -2326,7 +2360,7 @@ def render_log(events: list[dict]) -> str:
         ts = str(ev.get("ts", ""))[11:19]
         task = str(ev.get("task", ""))
         agent = clean(ev.get("agent", ""))
-        skip = {"schema", "run", "seq", "ts", "ts_utc", "actor", "prev", "hash", "ev", "task", "agent", "title"}
+        skip = {"schema", "v", "run", "seq", "ts", "ts_utc", "actor", "prev", "hash", "ev", "task", "agent", "title"}
         detail = " ".join(f"{k}={v}" if k not in ("msg", "why", "goal") else str(v)
                           for k, v in ev.items() if k not in skip and v not in ("", None, False))
         if kind in ("todo", "title"):
@@ -2690,7 +2724,87 @@ def cmd_reap(ws: Path, args) -> int:
     return 1 if survived else 0
 
 
-def check(st: State, finish_mode: bool = False, scan: bool = False) -> list[str]:
+def run_version(st: "State") -> str:
+    """The release that started this run ('' = it predates version stamps, <1.27)."""
+    for e in st.events:
+        if e.get("ev") == "run":
+            return str(e.get("v") or "")
+    return str(st.events[0].get("v") or "") if st.events else ""
+
+
+def mixed_writers(st: "State") -> list[str]:
+    """Releases that wrote AFTER a newer one did — two copies writing one run (path skew)."""
+    top, out = (0,), []
+    for e in st.events:
+        v = str(e.get("v") or "")
+        if not v:   # unstamped after a stamped event: a pre-1.27 copy is still writing
+            if top > (0,) and "pre-1.27" not in out:
+                out.append("pre-1.27")
+            continue
+        if vkey(v) < top and v not in out:
+            out.append(v)
+        top = max(top, vkey(v))
+    return out
+
+
+def pending_migrations(st: "State", table: tuple = MIGRATIONS) -> list[tuple[str, str, str, bool]]:
+    """(version, kind, line, acked) for every release after the run's start up to this board."""
+    rv, acks = vkey(run_version(st)), {str(e.get("version")) for e in st.events if e.get("ev") == "migrate"}
+    return [(v, k, line, v in acks) for v, k, line in table if rv < vkey(v) <= vkey(VERSION)]
+
+
+def version_note(st: "State") -> str:
+    """One line for `check` / `resume`: which release started the run, and whether anything since needs doing."""
+    if not st.events:
+        return ""
+    rv = run_version(st)
+    since = pending_migrations(st)
+    todo = [v for v, k, _, done in since if k == "action" and not done]
+    parts = []
+    if vkey(rv) > vkey(VERSION):
+        parts.append(f"run started on {rv}, this board is older ({VERSION}) — upgrade it (install.sh)")
+    elif since:
+        parts.append(f"run started on {rv or 'a pre-1.27 release'}, board is {VERSION}: {len(since)} release(s) since — "
+                     + (f"ACTION pending: {', '.join(todo)} (board version)" if todo else "all additive, no action"))
+    mixed = mixed_writers(st)
+    if mixed:
+        parts.append(f"mixed writers: {', '.join(mixed)} wrote after a newer board — a stale copy is on some lane's PATH (install.sh)")
+    return " · ".join(parts)
+
+
+def cmd_version(args) -> int:
+    ws_ = workspace_or_none()
+    st = load(ws_) if ws_ is not None and (ws_ / JOURNAL).exists() else None
+    if args.ack:
+        if st is None:
+            sys.exit("board: no run here to record a migration on")
+        hit = [x for x in MIGRATIONS if x[0] == args.ack]
+        if not hit or hit[0][1] != "action":
+            sys.exit(f"board: {args.ack} has no action line to acknowledge — `board version` lists what the run needs")
+        if not args.msg:
+            sys.exit("board: --ack needs --msg (what you did)")
+        append_event(ws_, ev="migrate", version=args.ack, msg=args.msg)
+        print(f"board: migration {args.ack} recorded")
+        return 0
+    info = {"board": VERSION, "schema": SCHEMA, "script": str(Path(__file__).resolve())}
+    if st is not None:
+        info.update(run=st.run.id, run_version=run_version(st), mixed_writers=mixed_writers(st),
+                    since=[{"version": v, "kind": k, "line": line, "acked": d} for v, k, line, d in pending_migrations(st)])
+    if args.json:
+        print(json.dumps(info, ensure_ascii=False, indent=1))
+        return 0
+    print(f"orchestrate {VERSION} · journal schema {SCHEMA} · {info['script']}")
+    if st is None:
+        return 0
+    print(f"run {st.run.id or '?'} · started on {info['run_version'] or 'a pre-1.27 release (no stamp)'}")
+    for v, k, line, done in pending_migrations(st):
+        print(f"  {v}  {'ACKED ' if done else ''}{k:<6} {line}" + (f"  → board version --ack {v} --msg \"…\"" if k == "action" and not done else ""))
+    note = version_note(st)
+    print(f"board: {note}" if note else "board: run and board are the same release — nothing to migrate")
+    return 0
+
+
+def check(st: State, finish_mode: bool = False, scan: bool = False, table: tuple = MIGRATIONS) -> list[str]:
     findings: list[str] = list(st.problems)
     now = time.time()
     ws = st.ws
@@ -2702,7 +2816,8 @@ def check(st: State, finish_mode: bool = False, scan: bool = False) -> list[str]
     try:
         me = Path(__file__).resolve()
         if copy_.exists() and copy_.resolve() != me and copy_.read_bytes() != me.read_bytes() and me.stat().st_mtime > copy_.stat().st_mtime:
-            findings.append("`.orchestrate/board` is older than the installed skill — run scripts/workspace to refresh the zero-install copy")
+            findings.append(f"`.orchestrate/board` ({file_version(copy_) or 'unversioned (<1.27)'}) is older than the installed skill ({VERSION}) — "
+                            "run scripts/workspace to refresh the zero-install copy")
     except OSError:
         pass
     for t in st.ordered():
@@ -2797,6 +2912,9 @@ def check(st: State, finish_mode: bool = False, scan: bool = False) -> list[str]
                 findings.append(f"finish gate: task {t.id} gate(s) pending: {', '.join(pend)}")
         if st.run.drift and not any("posture" in r for r in st.run.rails):
             findings.append("finish gate: model drift observed and no cost-posture rail recorded")
+    for v, kind, line, done in pending_migrations(st, table):
+        if kind == "action" and not done:
+            findings.append(f"migration {v} (run started on {run_version(st) or 'a pre-1.27 release'}): {line} — then board version --ack {v} --msg \"…\"")
     if scan:
         procs, _ = run_procs(st)
         by: dict[str, list[dict]] = {}
@@ -3134,6 +3252,7 @@ def render_resume(st: State, probe: bool = True) -> str:
                                   f"plan {run.plan or 'pending'}",
                                   (f"final gate {run.finish}" + (f" (INVALID: {inv})" if inv else "")) if run.finish else "") if x)
     L.append(ctx)
+    L.append(f"versions: board {VERSION} · " + (version_note(st) or f"run started on {run_version(st) or '?'} — nothing to migrate"))
     b = run.budget
     if b or st.stints:
         L.append(f"budget: agents {len(st.stints)}" + (f"/{b['agents']}" if b.get("agents") else "") +
@@ -3416,7 +3535,9 @@ def path_skew() -> str:
             return ""
     except OSError:
         return ""
-    return f"the board on PATH ({o}) differs from this script — lanes run through a login shell may use it; ./install.sh (or cp) refreshes it"
+    ov = file_version(o) or "unversioned (<1.27)"
+    return (f"the board on PATH ({o}, {ov}) differs from this script ({VERSION}) — lanes run through a login shell may use it; "
+            "./install.sh (or cp) refreshes it")
 
 
 def deliver(ws: Path, agent: str) -> None:
@@ -3564,6 +3685,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="board", add_help=True, description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--version", action="version", version=f"orchestrate {VERSION} · journal schema {SCHEMA}")
     sub = ap.add_subparsers(dest="cmd")
     p = sub.add_parser("watch"); p.add_argument("--here", action="store_true", help="this repo's run only — never follow another active run")
     sub.add_parser("runs", help="every run this machine knows about, newest activity first")
@@ -3572,6 +3694,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--attention", action="store_true", help="only cards that need action")
     p.add_argument("--json", action="store_true")
     sub.add_parser("path")
+    p = sub.add_parser("version", help="this board's release; on a run: the release it started on and what changed since")
+    p.add_argument("--ack"); p.add_argument("--msg", default=""); p.add_argument("--json", action="store_true")
     p = sub.add_parser("agents"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("check"); p.add_argument("--finish", action="store_true", help="the pre-finish gate: strict"); p.add_argument("--json", action="store_true")
     p.add_argument("--replay", action="store_true", help="cold replay: derive from the journal alone and diff against the disk view")
@@ -3685,6 +3809,8 @@ def main(argv: list[str]) -> int:
     if args.selftest:
         return selftest()
     cmd = args.cmd
+    if cmd == "version":
+        return cmd_version(args)
     if cmd in (None, "watch", "runs"):
         # The pane follows the machine's most recently active run (any repo) unless pinned with --here.
         here = workspace_or_none()
@@ -3749,6 +3875,8 @@ def main(argv: list[str]) -> int:
                 print(f"check: note — {path_skew()}")
             if proc_table() is None:
                 print("check: note — process scan unavailable here: leftovers unchecked")
+            if version_note(st):
+                print(f"check: note — {version_note(st)}")
             print("board: check OK — journal and disk agree" if not findings else f"board: {len(findings)} finding(s)")
         return 1 if findings else 0
     elif cmd == "resume":
@@ -4888,6 +5016,65 @@ def selftest() -> int:
         assert rp and "inconclusive (pre-journal history" in rp[0] and not any("without its journal line" in r for r in rp), rp
         run("init", "plan.md", "--resume")  # idempotent: nothing archived, nothing re-queued
         assert len(load(ws).events) == len(st.events)
+        # --- versioning: every event says which board wrote it; a run knows its release and what changed since ------
+        assert vkey("1.27.0") > vkey("1.26.10") > vkey("1.26.9") > vkey("") and file_version(Path(__file__).resolve()) == VERSION
+        assert MIGRATIONS[0][0] == VERSION and all(k in ("none", "action") for _, k, _ in MIGRATIONS), "every release declares its line"
+        vr = Path(tmp) / "ver"
+        vr.mkdir()
+        os.chdir(vr)
+        subprocess.run(["git", "init", "-q"], check=True)
+        (vr / "plan.md").write_text("# Plan\n\n## Task 1: V\n")
+        run("init", "plan.md", "--strategy", "staged", "--goal", "versions")
+        wsv = vr / ".orchestrate"
+        st = load(wsv)
+        assert all(e.get("v") == VERSION for e in st.events) and run_version(st) == VERSION and not pending_migrations(st) and not version_note(st)
+        assert f"orchestrate {VERSION}" in run("version") and "nothing to migrate" in run("version")
+
+        def forge(evs: list[dict]) -> None:   # a journal written by other releases — hash-chained like the real thing
+            prev, lines = "", []
+            for i, ev in enumerate(evs, 1):
+                env = {"schema": SCHEMA, "run": "r-old", "seq": i, "ts": now_iso(), "ts_utc": now_utc(), "actor": "controller", **ev, "prev": prev}
+                env["hash"] = chain_hash(prev, env)
+                prev = env["hash"]
+                lines.append(json.dumps(env))
+            (wsv / JOURNAL).write_text("\n".join(lines) + "\n")
+
+        forge([{"ev": "run", "v": "1.26.0", "strategy": "staged", "goal": "old"}, {"ev": "todo", "task": "1", "v": "1.26.0"}])
+        st = load(wsv)
+        assert not st.problems and run_version(st) == "1.26.0" and [x[0] for x in pending_migrations(st)] == [v for v, _, _ in MIGRATIONS if vkey(v) > vkey("1.26.0")]
+        assert "all additive, no action" in version_note(st) and "all additive" in run("version")
+        fake = (("1.27.0", "action", "re-run board init --resume"), ("1.26.0", "none", "x"))
+        assert any("migration 1.27.0" in f and "--ack 1.27.0" in f for f in check(st, table=fake)), check(st, table=fake)
+        run("version", "--ack", "1.26.0", "--msg", "x", expect_fail=True)    # a none line has nothing to acknowledge
+        append_event(wsv, ev="migrate", version="1.27.0", msg="re-ran init --resume")
+        st = load(wsv)
+        assert pending_migrations(st, fake)[0][3] and not any("migration" in f for f in check(st, table=fake))
+        js = json.loads(run("version", "--json"))
+        assert js["board"] == VERSION and js["run_version"] == "1.26.0" and js["since"], js
+        # a pre-1.27 run (no stamps) is read as older than every release; mixed writers are named
+        forge([{"ev": "run", "strategy": "staged", "goal": "unstamped"}, {"ev": "note", "task": "1", "v": "1.27.0", "msg": "a"},
+               {"ev": "note", "task": "1", "v": "1.26.0", "msg": "b"}, {"ev": "note", "task": "1", "msg": "c"}])
+        st = load(wsv)
+        assert run_version(st) == "" and len(pending_migrations(st)) == len([v for v, _, _ in MIGRATIONS if vkey(v) <= vkey(VERSION)])
+        assert mixed_writers(st) == ["1.26.0", "pre-1.27"] and "mixed writers: 1.26.0, pre-1.27" in version_note(st) and "pre-1.27" in version_note(st)
+        # an older board writing a newer run warns; a newer SCHEMA is never written by this board
+        forge([{"ev": "run", "v": "99.0.0", "strategy": "staged", "goal": "future"}])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            append_event(wsv, ev="note", task="1", msg="still writes")
+        assert "is writing a run last written by 99.0.0" in err.getvalue() and load(wsv).events[-1]["v"] == VERSION
+        assert "this board is older" in version_note(load(wsv))
+        forge([{"ev": "run", "v": "99.0.0", "strategy": "staged", "goal": "future"}])
+        lines = (wsv / JOURNAL).read_text().splitlines()
+        (wsv / JOURNAL).write_text(lines[0].replace(f'"schema": {SCHEMA}', f'"schema": {SCHEMA + 1}') + "\n")
+        future = (wsv / JOURNAL).read_bytes()
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                append_event(wsv, ev="note", task="1", msg="refused")
+            raise AssertionError("a newer journal schema must refuse the write")
+        except SystemExit as exc:
+            assert "will not write it" in str(exc.code), exc.code
+        assert (wsv / JOURNAL).read_bytes() == future and not (wsv / "journal.jsonl.v1.bak").exists(), "a newer journal is never rewritten"
         # --- reap: what a lane leaves running is found, attributed, kept or stopped — never a stranger -------------
         assert _etime("05:06") == 306 and _etime("1-02:03:04") == 93784 and _etime("02:03:04") == 7384
         if proc_table() is not None and proc_cwds({os.getpid()}) is not None:

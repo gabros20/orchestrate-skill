@@ -137,7 +137,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 
 ## Core workflow
 
-1. Inspect the task, plan, repository state, host capabilities, and stop condition — and the
+1. Inspect the task, plan, repository state, host capabilities, and stop condition (resuming a run: `board version`) — and the
    repo's project memory when it keeps one (`board init` names it): one `ctx context --scope`
    packet per scope, pinned in the briefs, so the run starts from what earlier runs learned.
 2. Resolve strategy, dimensions, roles, models, budget, isolation, review, and degradation.

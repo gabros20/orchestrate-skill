@@ -7,8 +7,32 @@ Versioning: [SemVer](https://semver.org/) — **MAJOR** = invocation grammar or 
 breaks, **MINOR** = new strategies/dimensions/aliases or new reference material that changes
 behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behavior.
 
-The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
-`v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
+The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestrate/VERSION`, the
+board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
+Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
+
+## [1.27.0] — 2026-09-23
+
+### Added
+
+- **The runtime knows its release.** `skills/orchestrate/VERSION` ships with the skill;
+  `board version` / `board --version` print it with the journal schema. An agent can now certify
+  which release it runs instead of guessing (a Codex agent could not: nothing installed said).
+- **Runs know theirs.** Every journal event carries `v`, the board release that wrote it.
+  `board version` on a run: the release it started on, every release since with its migration
+  line, and mixed writers (a stale copy on some lane's PATH). `check` prints it as a note,
+  `resume` as a line; path-skew and stale-copy notes name both versions.
+- **Migration lines.** The board's `MIGRATIONS` table: one line per release, `none` (additive —
+  upgrade in place) or `action` (a `check` finding, so finish refuses, until
+  `board version --ack V --msg`). All releases so far are `none`.
+- `scripts/bump X.Y.Z` sets VERSION, the board constant and plugin.json; check-sync fails unless
+  those, the CHANGELOG top and the MIGRATIONS top agree; `scripts/release` gates on VERSION.
+
+### Fixed
+
+- The v1 journal upgrader rewrote any journal whose first line was not schema 2 — a newer-schema
+  journal included. It now touches only schema-less v1 journals; an older board refuses to write a
+  newer-schema journal (and says to upgrade) and only warns when an older release writes a newer run.
 
 ## [1.26.0] — 2026-09-23
 

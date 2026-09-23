@@ -34,7 +34,10 @@ independent.
    where it does not.
 5. Preserve durable `.orchestrate/` artifacts, explicit model assignment, ordered review gates,
    bounded loops, and the no-duplicate-agent overload rule.
-6. Keep runtime frontmatter to `name` and `description`; release metadata stays outside the runtime.
+6. Keep runtime frontmatter to `name` and `description`. The runtime publishes its release only as
+   `skills/orchestrate/VERSION` and the board's `VERSION` (set by `scripts/bump`), never in `SKILL.md`.
+   Every release adds one board `MIGRATIONS` line (`none` | `action`); the journal `SCHEMA` bumps only for
+   a breaking change, with an in-place upgrader that never rewrites a newer journal.
 7. Update affected activation, traversal, output, or compression fixtures when behavior changes.
 8. Link to one source of truth instead of copying strategy or contract prose into public docs.
 
@@ -48,6 +51,6 @@ scripts/count-skill-tokens
 ```
 
 The first command runs the universal package/navigation gate and the orchestrate-specific
-byte-identity, honest-number, invariant, and host-layer checks. Release by synchronizing
-`.codex-plugin/plugin.json`, `CHANGELOG.md`, tag `v<version>`, and the GitHub Release. Never add the
-version to runtime `SKILL.md`.
+byte-identity, honest-number, invariant, host-layer and version checks (VERSION · board · plugin.json ·
+CHANGELOG top · MIGRATIONS top agree). Release: `scripts/bump <version>`, the CHANGELOG entry and the
+MIGRATIONS line, then `scripts/release <version>`. Never add the version to runtime `SKILL.md`.

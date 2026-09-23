@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# bump <version> — set the release in every machine-read place: skills/orchestrate/VERSION, the board's VERSION
+# constant, .codex-plugin/plugin.json. You still write the CHANGELOG `## [<version>]` entry and the board's
+# MIGRATIONS line (none | action — what a run started on an older release must know); check-sync refuses until
+# all five agree.
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+v="${1:-}"
+[[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: scripts/bump X.Y.Z" >&2; exit 2; }
+printf '%s\n' "$v" > "$root/skills/orchestrate/VERSION"
+python3 - "$root" "$v" <<'PY'
+import json, pathlib, re, sys
+root, v = pathlib.Path(sys.argv[1]), sys.argv[2]
+b = root / "skills/orchestrate/scripts/board"
+s, n = re.subn(r'^VERSION = "[0-9.]+"', f'VERSION = "{v}"', b.read_text(), count=1, flags=re.M)
+assert n == 1, "board VERSION constant not found"
+b.write_text(s)
+pj = root / ".codex-plugin/plugin.json"
+d = json.loads(pj.read_text()); d["version"] = v
+pj.write_text(json.dumps(d, indent=2) + "\n")
+PY
+echo "bump: $v set in VERSION, board, plugin.json — now write CHANGELOG '## [$v]' and the board's MIGRATIONS line"

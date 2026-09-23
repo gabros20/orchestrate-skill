@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # release <version> [--dry-run] — the whole release chain, refusing at the first thing that is not true.
-# Gates: clean tree on a feature branch · check-sync green · CHANGELOG has the entry · plugin.json matches ·
+# Gates: clean tree on a feature branch · check-sync green (VERSION, board, plugin.json, CHANGELOG, MIGRATIONS agree) ·
+# CHANGELOG has the entry · plugin.json and VERSION match ·
 # tag absent (local and origin). Then: push → PR → merge → main → tag → GitHub Release → install everywhere.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,6 +16,7 @@ branch="$(git rev-parse --abbrev-ref HEAD)"
 grep -q "^## \[$v\]" CHANGELOG.md || fail "CHANGELOG.md has no '## [$v]' entry"
 pv="$(python3 -c 'import json; print(json.load(open(".codex-plugin/plugin.json"))["version"])')"
 [ "$pv" = "$v" ] || fail ".codex-plugin/plugin.json says $pv, not $v"
+[ "$(tr -d '[:space:]' < skills/orchestrate/VERSION)" = "$v" ] || fail "skills/orchestrate/VERSION is not $v — scripts/bump $v"
 git fetch -q --tags origin
 ! git rev-parse -q --verify "refs/tags/v$v" >/dev/null || fail "tag v$v already exists"
 scripts/check-sync || fail "check-sync failed"

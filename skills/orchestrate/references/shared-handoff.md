@@ -56,7 +56,7 @@ measured worst failure mode of compression.
 
 - The ledger (`progress.md`) already carries per-task state — the handoff adds the WHY layer and
   cross-task context the ledger doesn't hold. `board resume` GENERATES the state layer in this
-  template's order (goal, state per task, open-stint locators, processes still running, decisions,
+  template's order (goal, versions — `board version`, state per task, open-stint locators, processes still running, decisions,
   probed pointers, open work, cleanup) from the journal and the disk, marks every claim no artifact backs `NOT_PROVEN`,
   prints the engine's resume-by-id line for every open subprocess lane that journaled a session,
   and ends with a **receipt** — HEAD, the journal cursor (seq + hash), tokens per accepted task

@@ -33,6 +33,24 @@ fail=0
 err() { echo "check-sync: FAIL: $1" >&2; fail=1; }
 note() { echo "check-sync: $1"; }
 
+# --- one release, five places: VERSION file · board VERSION · plugin.json · CHANGELOG top · MIGRATIONS top ------
+ver_msg="$(python3 - "$root" <<'PY'
+import json, pathlib, re, sys
+root = pathlib.Path(sys.argv[1]); skill = root / "skills/orchestrate"
+board = (skill / "scripts/board").read_text()
+got = {
+    "skills/orchestrate/VERSION": (skill / "VERSION").read_text().strip() if (skill / "VERSION").exists() else "missing",
+    "board VERSION": (re.search(r'^VERSION = "([0-9.]+)"', board, re.M) or [None, "missing"])[1],
+    "plugin.json": json.loads((root / ".codex-plugin/plugin.json").read_text())["version"],
+    "CHANGELOG top": (re.search(r"^## \[([0-9.]+)\]", (root / "CHANGELOG.md").read_text(), re.M) or [None, "missing"])[1],
+    "MIGRATIONS top": (re.search(r'^MIGRATIONS = \(\n    \("([0-9.]+)", "(?:none|action)"', board, re.M) or [None, "missing"])[1],
+}
+if len(set(got.values())) != 1:
+    print("release versions disagree: " + " · ".join(f"{k} {v}" for k, v in got.items()) + " — scripts/bump X.Y.Z, then the CHANGELOG entry and MIGRATIONS line")
+PY
+)"
+[ -z "$ver_msg" ] || err "$ver_msg"
+
 # --- extract a fenced block that follows a heading ---------------------------------
 fence_after() { # fence_after <heading-regex> <file>
   awk -v hdr="$1" '
@@ -104,6 +122,7 @@ Must NOT|references/shared-token-economy.md,references/strategy-parallel.md,refe
 board learn|SKILL.md,references/shared-token-economy.md,references/shared-contracts.md,references/strategy-parallel.md
 board memory|SKILL.md,references/shared-handoff.md,references/shared-contracts.md
 board reap|SKILL.md,references/shared-lane-hygiene.md,references/shared-monitoring.md
+board version|SKILL.md,references/shared-lane-hygiene.md,references/shared-handoff.md
 '
 while IFS='|' read -r pattern homes; do
   [ -n "$pattern" ] || continue

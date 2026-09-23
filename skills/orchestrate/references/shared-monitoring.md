@@ -60,7 +60,7 @@ before the stale clock would have noticed; exit 125 means its dependency cannot 
 engine never started (return it BLOCKED, fix the dependency, relaunch). Controller
 side: `board attention` lists what to act on, most urgent first (`x` blocked / failed
 gate / failed check, `!` stale, silent reviewer or a third attempt with no escalation, `?`
-pending gate / concerns / mail for the controller); run `board check` at every liveness check and before any recovery
+pending gate / concerns / mail for the controller, a lane's leftover processes — `board reap`); run `board check` at every liveness check and before any recovery
 action — it lists journal-chain breaks, dispatched-never-returned, reviewer silence,
 report-without-review, done over a failed gate or check, done with no gate ever opened, quality
 before spec, xcli DONE without commits or without a usage receipt, model drift and budget

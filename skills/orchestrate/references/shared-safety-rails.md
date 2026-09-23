@@ -28,7 +28,7 @@ Produces:
 
 ## Loops & budgets
 
-- Every loop: max-cycle cap + kill switch (delete the state/contract file) + regression breaker
+- Every loop: max-cycle cap + kill switch (delete the state/contract file; `board reap --all --kill` stops every lane) + regression breaker
   (verified metric got worse → revert; twice in a row → halt).
 - Every run: an explicit budget (cycles | agents | tokens | $). Budget exhausted → write state to
   the ledger, report honestly, stop. Never silently downgrade review to stay under budget.

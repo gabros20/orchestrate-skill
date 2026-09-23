@@ -103,6 +103,7 @@ Must NOT|references/shared-token-economy.md,references/strategy-parallel.md,refe
 <role>-<task>|SKILL.md,references/shared-contracts.md
 board learn|SKILL.md,references/shared-token-economy.md,references/shared-contracts.md,references/strategy-parallel.md
 board memory|SKILL.md,references/shared-handoff.md,references/shared-contracts.md
+board reap|SKILL.md,references/shared-lane-hygiene.md,references/shared-monitoring.md
 '
 while IFS='|' read -r pattern homes; do
   [ -n "$pattern" ] || continue

@@ -10,6 +10,26 @@ behavior, **PATCH** = fixes, doc corrections, prompt tuning with unchanged behav
 The release procedure synchronizes `.codex-plugin/plugin.json`, this changelog, git tag
 `v<version>`, and the matching GitHub Release. Runtime `SKILL.md` contains no version metadata.
 
+## [1.26.0] — 2026-09-23
+
+### Added
+
+- **`board reap` — what a run leaves running.** Engines stop their own helpers; what the agent
+  backgrounded (dev server, watcher, `&`) survives the lane. Grok and Claude run each tool command
+  in a fresh session with a scrubbed env, so no marker survives — only cwd and start time (Codex's
+  sandbox kills its children; all observed live). The board finds lane trees and orphans whose cwd
+  is in the run's trees, owned by the stint whose cwd + window hold their start. Lists by default;
+  `--kill` stops TERM→KILL with each pid re-verified (start + command) so a reused pid is never
+  hit; an open lane is stopped engine-first so its wrapper journals its own exit; `--all` is the
+  run's kill switch; `--keep PID --why` records an intended survivor. Never touched: the caller's
+  ancestry, `board` calls, other runs' trees, tty-attached processes, shared engine daemons.
+  Inside a lane a worker stops only its own. Launch journals the lane's `cwd`.
+- `lane-exit` journals a `leftover` event (shared-cwd owners named); attention shows `!` while
+  those pids live; a reaped lane reads "stopped by board reap".
+- `board check` flags leftovers; `board finish --gate pass` refuses any process the run started
+  that is still running and not kept; `board resume` lists them.
+- WORKER block: stop what you started before you report (`board reap --agent <you> --kill`).
+
 ## [1.25.8] — 2026-09-23
 
 ### Changed

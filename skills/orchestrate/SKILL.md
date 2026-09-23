@@ -172,7 +172,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 7. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
    and send failures back to the correct worker or owner.
 8. Close each gated unit with `board done N` (it writes the ledger line; refused over a failed
-   gate or check); `board check --finish` must be clean and `board finish --gate pass|fail --evidence`
+   gate or check); `board check --finish` must be clean (it refuses processes the run left: `board reap`) and `board finish --gate pass|fail --evidence`
    recorded before you finish or hand off (`board resume` is the handoff's state layer, with a
    receipt; `board postmortem` feeds the evolve pass; `board memory` renders the run as one
    project-context record when the repo keeps project memory). Finish only when the stop
@@ -194,7 +194,7 @@ condition.
 ## Completion and handoff
 
 Complete only when every in-scope task has a terminal status, required reviews passed, integration
-is verified, temporary worktrees or processes are accounted for, and the goal or one-shot stop
+is verified, temporary worktrees or processes are accounted for (`board reap`), and the goal or one-shot stop
 condition is satisfied. On interruption or controller transfer, emit the durable handoff defined in
 [shared handoff](references/shared-handoff.md); never force the next controller to reconstruct state
 from chat.

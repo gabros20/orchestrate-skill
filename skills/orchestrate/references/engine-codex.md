@@ -14,8 +14,10 @@ Inputs:
 Produces:
 - A launch that cannot silently misfire, a resumable cached session, and a journaled usage receipt.
 
-Live-verified 2026-09-16, codex 0.154.0, ChatGPT account. Probe `codex exec --help` once per
-session — flags drift per release (`shared-lane-hygiene.md` rule 1).
+Live-verified 2026-09-16, codex 0.154.0, ChatGPT account; model catalog re-read 2026-09-22 from
+0.155.1's `~/.codex/models_cache.json` (the GPT-6 Sol/Luna launch day — a live turn on them was
+blocked by the account's usage limit, so their rows below are catalog facts, not receipts). Probe
+`codex exec --help` once per session — flags drift per release (`shared-lane-hygiene.md` rule 1).
 
 ```bash
 codex --version && codex login status          # preflight; not logged in → user runs `codex login`
@@ -40,11 +42,19 @@ cat "$OUT"; git -C /path/to/repo status --short   # read the result; inspect wha
   `turn.started` / `item.completed` / `turn.completed{usage}` / `error`). `turn.completed.usage` is
   the receipt (`board return --tokens`) — journal the ROOT turn only: nested subagent tokens
   already roll up into it (0.151+), counting them twice overstates the run.
-- Models: **`gpt-6-astra`** (flagship — reasoner/advisor/peer; efforts `low..max` + `ultra`; needs
-  client ≥0.153), `gpt-5.6-sol`, `gpt-5.6-terra` (balanced — worker/reviewer), `gpt-5.6-luna`
-  (cheap — research/mechanical; tops at `max`), `gpt-5.5`. Catalog: `~/.codex/models_cache.json`.
+- Models (GPT-6 family, released 2026-09-22; 272k context each): **`gpt-6-astra`** (flagship —
+  reasoner/advisor/peer; $10/$50 per M; default effort `low`; efforts `low..max` + `ultra`; needs
+  client ≥0.153) · **`gpt-6-sol`** (standard worker/reviewer — "complex coding at a lower cost";
+  $2/$10; default `medium`; `low..max` + `ultra`) · **`gpt-6-luna`** (cheap worker —
+  research/mechanical/high-volume; $0.10/$0.50; default `medium`; tops at `max`, no `ultra`).
+  The GPT-5.6 trio is still listed but superseded — the catalog's own upgrade map: `gpt-5.6-sol`
+  → `gpt-6-sol`, `gpt-5.6-terra` → `gpt-6-sol` (there is no GPT-6 Terra), `gpt-5.6-luna` →
+  `gpt-6-luna`; GPT-6 Sol and Luna cost half their 5.6 predecessors. Catalog:
+  `~/.codex/models_cache.json` — re-read it before pinning.
 - Effort `-c model_reasoning_effort=low|medium|high|xhigh|max|ultra` — `ultra` = maximum reasoning
-  with automatic delegation (sol/terra/astra). Unknown values error loudly.
+  with **automatic delegation** (astra/sol): the lane spawns subagents the controller never
+  dispatched or budgeted, so `board launch --engine codex` refuses `ultra` (and any value outside
+  `low..max`); a `--fast` service tier (1.5× speed) exists per model. Unknown values error loudly.
 - Multi-agent: `[features] multi_agent = true` (stable; `multi_agent_v2` exists, unstable). Agents:
   `~/.codex/agents/<name>.toml` — `name`, `description`, `model`, `model_reasoning_effort`,
   `developer_instructions`, optional `sandbox_mode` (NOT `sandbox`); pin cheap research tiers there.

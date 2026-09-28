@@ -11,6 +11,30 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.28.0] — 2026-09-28
+
+### Added
+
+- **Claude Sonnet 5.5** (`claude-sonnet-5-5`, released 2026-09-28): engine block and routing
+  restamped on Claude Code 2.1.284 — $2/$10, 1M context, the fastest Sonnet, default effort
+  `medium` in Claude Code, worker/reviewer tier. Live: `--model sonnet` served `claude-sonnet-5`,
+  then `claude-sonnet-5-5` ~30 min later on the same binary — aliases move server-side; pin ids.
+- **Receipts record the served model.** Claude `result` and Grok json `modelUsage` land in the
+  receipt as `served`; `board agents` shows an alias resolved (`sonnet = claude-sonnet-5`); a pinned
+  id served by another model (a fallback, a substitution) is drift. Dated snapshots and build tags
+  are the same model.
+- CLI review (2.1.284 `--help` vs the docs): new `--permission-prompts none`,
+  `--no-session-persistence`, `--autocompact`, `--exclude-dynamic-system-prompt-sections`,
+  `manual` permission mode; `--max-turns` still absent from `-p`; `--advisor`, `--exec`, `--ref`,
+  `--append-subagent-system-prompt` documented but not in this build's help.
+
+### Changed
+
+- **Claude lanes never fan out on their own.** Every Claude lane runs with
+  `CLAUDE_CODE_DISABLE_WORKFLOWS=1`; `board launch --engine claude` refuses `--effort ultracode`
+  (xhigh + dynamic workflows the controller never dispatched or budgeted) and any value outside
+  `low..max`.
+
 ## [1.27.0] — 2026-09-23
 
 ### Added

@@ -70,12 +70,13 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "1.27.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
+VERSION = "1.28.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
 SCHEMA = 2           # the journal's shape; bumps ONLY for a breaking change, with an in-place upgrader (migrate_v1 is one)
 # What a run started on an older release must know. Newest first, one line per release: "none" = additive, nothing to
 # do · "action" = do it, then `board version --ack V --msg ".."` (a check finding, so finish refuses, until acked).
 # Automatic journal rewrites never live here — they run on open (journal_path), like the v1→v2 upgrade.
 MIGRATIONS = (
+    ("1.28.0", "none", "Claude lanes run with CLAUDE_CODE_DISABLE_WORKFLOWS=1 and refuse --effort ultracode; receipts record the served model"),
     ("1.27.0", "none", "events carry v (the board that wrote them); `board version` shows the run's release and what changed since"),
     ("1.26.0", "none", "board reap; dispatches journaled before 1.26 lack cwd — reap attributes their leftovers by worktree / repo root"),
 )
@@ -134,7 +135,8 @@ RESUME_CMD = {
 # (read from the log after exit). `receipt`: how usage is captured after exit. Approval and sandbox flags
 # are deliberately absent — pass them with --extra, knowingly (grok --always-approve, codex --approve-for-me…).
 GROK_EFFORT = ("low", "medium", "high", "xhigh")   # grok CLI 1.0.40: any other value is an error before the model runs
-CODEX_EFFORT = ("low", "medium", "high", "xhigh", "max")   # codex 0.155 catalog; "ultra" = automatic delegation — never on a lane
+CODEX_EFFORT = ("low", "medium", "high", "xhigh", "max")
+CLAUDE_EFFORT = ("low", "medium", "high", "xhigh", "max")   # Claude Code 2.1.284; "ultracode" = xhigh + its own workflow fan-out   # codex 0.155 catalog; "ultra" = automatic delegation — never on a lane
 ENGINES = {
     "grok": {"argv": ["grok", "--cwd", "{repo}", "-m", "{model}", "--reasoning-effort", "{effort}", "-s", "{session}",
                       "--prompt-file", "{spec}", "--output-format", "json"], "prompt": "flag", "session": "pin",
@@ -561,6 +563,7 @@ class Stint:
         self.reported = ""                            # the report file's own Status line, seen at return
         self.cwd = str(ev.get("cwd", ""))             # where a launched lane runs — leftovers are found by it
         self.reaped = False                           # stopped by `board reap`
+        self.served = ""                              # model id(s) the engine reports it ran — an alias resolves to these
 
 
 class Mail:
@@ -1157,6 +1160,12 @@ def load(ws: Path, journal_only: bool = False) -> State:
                 s.calls = int(ev.get("calls") or s.calls)
                 s.cost = float(ev.get("cost") or s.cost)
                 s.session = str(ev.get("session") or s.session)
+                if ev.get("served"):
+                    s.served = str(ev["served"])
+                    if served_drift(s.model, s.served) and not s.observed:
+                        s.observed = s.served.split(",")[0]
+                        run.observed[s.role if s.role in run.models else role_tier(s.role)] = s.observed
+                        run.drift.append(f"task {s.task} {s.agent}: requested {s.model}, served {s.served}")
         elif kind == "vote":
             kind_, agent_ = str(ev.get("kind") or "approve"), str(ev.get("agent", ""))
             t.vote_entries.append((ts, t.attempt, kind_, agent_, str(ev.get("verdict", "")).lower(), clean(ev.get("why", ""))))
@@ -2342,6 +2351,8 @@ def render_agents(st: State) -> str:
         model = s.model or "-"
         if s.observed and s.observed != s.model:
             model = f"{s.model or '?'} -> {s.observed} !"
+        elif s.served and s.served.split(",")[0] != s.model:
+            model = f"{s.model or '?'} = {s.served.split(',')[0]}"   # an alias, resolved
         end = hhmm(s.returned) if s.returned else "…"
         dur = fmt_dur((s.returned or now) - s.started)
         t = st.tasks.get(s.task)
@@ -3422,7 +3433,9 @@ def render_wrapper(ws: Path, task: str, agent: str, engine: str, model: str, eff
         f"cd {shlex.quote(str(cwd))}",
         f"export ORCHESTRATE_WS={shlex.quote(str(ws.resolve()))}   # every board call inside the lane resolves THIS run, worktree or not",
         f"export PATH={shlex.quote(str(me.parent))}:$PATH",
-        f"export BOARD_AGENT={agent_q}   # a lane that dispatches its own workers is their lead: --by defaults to this"] + ([gate] if gate else []) + [
+        f"export BOARD_AGENT={agent_q}   # a lane that dispatches its own workers is their lead: --by defaults to this"]
+        + (["export CLAUDE_CODE_DISABLE_WORKFLOWS=1   # fan-out is the controller's: a lane never runs its own workflows (nor ultracode)"]
+           if engine == "claude" else []) + ([gate] if gate else []) + [
         f"{' '.join(parts)} {stdin} > {shlex.quote(str(ws / log))} 2> {shlex.quote(str(ws / (log[:-6] + '.err')))}",
         "rc=$?",
         f"{shlex.quote(str(me))} lane-exit {shlex.quote(task)} --agent {shlex.quote(agent)} --exit \"$rc\"",
@@ -3445,6 +3458,25 @@ def _json_lines(path: Path) -> list[dict]:
     return out
 
 
+def served_models(evs: list[dict]) -> str:
+    """Model ids a Claude `result` event or a Grok json output reports in `modelUsage`, costliest first."""
+    mu: dict = {}
+    for e in evs:
+        if isinstance(e.get("modelUsage"), dict):
+            mu = e["modelUsage"]
+    cost = lambda v: float((v or {}).get("costUSD") or (v or {}).get("cost_usd") or 0) if isinstance(v, dict) else 0.0
+    return ",".join(k for k, _ in sorted(mu.items(), key=lambda kv: -cost(kv[1])))
+
+
+def served_drift(requested: str, served: str) -> bool:
+    """A pinned full id served by something else (a fallback, a substitution). An alias (`sonnet`) resolving is never drift;
+    a dated snapshot (`claude-haiku-4-5-20251001`) or a build tag (`grok-4.7-build`) is the same model."""
+    r = re.sub(r"\[.*?\]$", "", requested.strip().lower())
+    if not r or not served or not re.search(r"\d", r):
+        return False
+    return not any(x.lower().startswith(r) and re.fullmatch(r"(-\d{8}|-[a-z][\w.-]*)?", x.lower()[len(r):]) for x in served.split(","))
+
+
 def fetch_receipt(ws: Path, s: Stint) -> dict:
     """Usage after a lane exits, per engine: {tokens, calls, cost, session, source} — empty when the engine has none."""
     method = ENGINES.get(s.engine, {}).get("receipt", "none")
@@ -3454,7 +3486,8 @@ def fetch_receipt(ws: Path, s: Stint) -> dict:
             cp = subprocess.run(["grok", "usage", s.session], capture_output=True, text=True, timeout=30)
             d = json.loads(cp.stdout or "{}").get("session", {})
             if d:
-                return {"tokens": int(d.get("totalTokens") or 0), "calls": int(d.get("modelCalls") or 0), "source": "grok usage"}
+                return {"tokens": int(d.get("totalTokens") or 0), "calls": int(d.get("modelCalls") or 0), "source": "grok usage",
+                        "served": served_models(_json_lines(log)) if log and log.exists() else ""}
         elif method == "codex-log" and log:
             evs = _json_lines(log)
             session = next((e.get("thread_id") for e in evs if e.get("type") == "thread.started"), "")
@@ -3469,7 +3502,7 @@ def fetch_receipt(ws: Path, s: Stint) -> dict:
                 u = res[-1].get("usage") or {}
                 tok = sum(int(u.get(k) or 0) for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
                 return {"tokens": tok, "calls": int(res[-1].get("num_turns") or 0), "cost": float(res[-1].get("total_cost_usd") or 0),
-                        "session": str(res[-1].get("session_id") or ""), "source": "result event"}
+                        "session": str(res[-1].get("session_id") or ""), "source": "result event", "served": served_models(res)}
         elif method == "hermes-usage":
             up = ws / f"raw/lane-{s.task}-{s.agent}.usage.json"
             if up.exists():
@@ -3896,6 +3929,10 @@ def main(argv: list[str]) -> int:
         if args.engine == "grok" and args.effort and args.effort not in GROK_EFFORT:
             sys.exit(f"board: grok --reasoning-effort takes {'|'.join(GROK_EFFORT)} — {args.effort!r} is refused by the CLI "
                      "before the lane starts (engine-grok.md)")
+        if args.engine == "claude" and args.effort and args.effort not in CLAUDE_EFFORT:
+            sys.exit("board: claude lanes take --effort " + "|".join(CLAUDE_EFFORT) + f" — {args.effort!r} refused"
+                     + (": ultracode fans out dynamic workflows the controller never dispatched or budgeted (engine-claude.md)"
+                        if args.effort == "ultracode" else " (engine-claude.md)"))
         if args.engine == "codex" and args.effort and args.effort not in CODEX_EFFORT:
             sys.exit("board: codex lanes take model_reasoning_effort " + "|".join(CODEX_EFFORT) + f" — {args.effort!r} refused"
                      + (": ultra delegates to subagents the controller never dispatched or budgeted (engine-codex.md)" if args.effort == "ultra" else " (engine-codex.md)"))
@@ -3940,8 +3977,9 @@ def main(argv: list[str]) -> int:
         r = fetch_receipt(ws, s) if s and args.exit not in (124, 125) else {}   # a gate exit: the engine never ran, nothing to bill
         if r:
             append_event(ws, task=args.task, ev="receipt", agent=agent, tokens=r.get("tokens"), calls=r.get("calls"),
-                         cost=r.get("cost"), session=r.get("session"), source=r.get("source"))
-        print(f"board: lane {agent} exit {args.exit}" + (f" · receipt {fmt_tokens(int(r.get('tokens') or 0))} via {r.get('source')}" if r else
+                         cost=r.get("cost"), session=r.get("session"), source=r.get("source"), served=r.get("served"))
+        print(f"board: lane {agent} exit {args.exit}" + (f" · receipt {fmt_tokens(int(r.get('tokens') or 0))} via {r.get('source')}"
+              + (f" · served {r['served']}" if r.get("served") else "") if r else
               (" · engine never started (dependency gate)" if args.exit in (124, 125) else " · receipt NOT_PROVEN (engine offers none, or fetch failed)")))
         if s and args.exit not in (124, 125):
             def mine_left() -> list[dict]:   # sole owner, or one of several when lanes share a cwd (then named by pid, never by agent)
@@ -3971,7 +4009,7 @@ def main(argv: list[str]) -> int:
         if not r:
             sys.exit(f"board: no receipt for {agent} — the engine offers none here; pass --tokens explicitly")
         append_event(ws, task=args.task, ev="receipt", agent=agent, tokens=r.get("tokens"), calls=r.get("calls"),
-                     cost=r.get("cost"), session=r.get("session"), source=r.get("source"))
+                     cost=r.get("cost"), session=r.get("session"), source=r.get("source"), served=r.get("served"))
         print(f"board: receipt for {agent}: {r.get('tokens') or '?'} tokens" + (f", {r['calls']} calls" if r.get("calls") else "") + f" ({r.get('source')})")
     elif cmd == "follow":
         kinds = {k.strip() for k in args.kinds.split(",") if k.strip()} if args.kinds else None
@@ -4948,6 +4986,11 @@ def selftest() -> int:
         assert not any(e.get("agent") == "impl-3-ultra" for e in load(ws).events)
         assert "model_reasoning_effort=max" in run("launch", "3", "--agent", "impl-3-cmax", "--engine", "codex", "--model", "gpt-6-luna", "--effort", "max", "--dry-run", "--", "plan.md")
         run("launch", "3", "--agent", "impl-3-grokmax", "--engine", "grok", "--model", "grok-4.7", "--effort", "max", "--dry-run", "--", "plan.md", expect_fail=True)   # grok has no max
+        run("launch", "3", "--agent", "impl-3-ultracode", "--engine", "claude", "--model", "claude-sonnet-5-5", "--effort", "ultracode", "--dry-run", "--", "plan.md", expect_fail=True)
+        assert not any(e.get("agent") == "impl-3-ultracode" for e in load(ws).events)
+        dry = run("launch", "3", "--agent", "impl-3-cl", "--engine", "claude", "--model", "claude-sonnet-5-5", "--effort", "xhigh", "--dry-run", "--", "plan.md")
+        assert "--effort xhigh" in dry and "CLAUDE_CODE_DISABLE_WORKFLOWS=1" in dry, "a Claude lane never runs its own workflows"
+        assert "CLAUDE_CODE_DISABLE_WORKFLOWS" not in run("launch", "3", "--agent", "impl-3-gk", "--engine", "grok", "--model", "grok-4.7", "--dry-run", "--", "plan.md")
         assert not any(e.get("agent") == "impl-3-grokmax" for e in load(ws).events)
         assert "--reasoning-effort xhigh" in run("launch", "3", "--agent", "impl-3-grokx", "--engine", "grok", "--model", "grok-4.7", "--effort", "xhigh", "--dry-run", "--", "plan.md")
         # a stray brief is a task nobody planned — check says so; the file gone, the finding goes
@@ -5029,6 +5072,20 @@ def selftest() -> int:
         st = load(wsv)
         assert all(e.get("v") == VERSION for e in st.events) and run_version(st) == VERSION and not pending_migrations(st) and not version_note(st)
         assert f"orchestrate {VERSION}" in run("version") and "nothing to migrate" in run("version")
+        # served model: an alias resolving is shown, a pinned id served by something else is drift
+        assert served_models([{"type": "result", "modelUsage": {"claude-haiku-4-5-20251001": {"costUSD": 0.01}, "claude-sonnet-5-5": {"costUSD": 0.2}}}]) \
+            == "claude-sonnet-5-5,claude-haiku-4-5-20251001"
+        assert not served_drift("sonnet", "claude-sonnet-5") and not served_drift("grok-4.7", "grok-4.7-build") \
+            and not served_drift("claude-haiku-4-5", "claude-haiku-4-5-20251001") and not served_drift("claude-opus-5-5[1m]", "claude-opus-5-5") \
+            and served_drift("claude-sonnet-5-5", "claude-sonnet-5") and served_drift("claude-sonnet-5", "claude-sonnet-5-5") and not served_drift("gpt-6-luna", "")
+        run("dispatch", "1", "--agent", "impl-1", "--model", "sonnet", "--engine", "claude")
+        append_event(wsv, task="1", ev="receipt", agent="impl-1", tokens=9000, served="claude-sonnet-5", source="result event")
+        run("dispatch", "1", "--agent", "impl-1-b", "--model", "claude-sonnet-5-5", "--engine", "claude")
+        append_event(wsv, task="1", ev="receipt", agent="impl-1-b", tokens=9000, served="claude-sonnet-5", source="result event")
+        st = load(wsv)
+        assert st.run.drift == ["task 1 impl-1-b: requested claude-sonnet-5-5, served claude-sonnet-5"], st.run.drift
+        roster = run("agents")
+        assert "sonnet = claude-sonnet-5" in roster and "claude-sonnet-5-5 -> claude-sonnet-5 !" in roster, roster
 
         def forge(evs: list[dict]) -> None:   # a journal written by other releases — hash-chained like the real thing
             prev, lines = "", []

@@ -20,7 +20,10 @@ Agents talk through the same journal (`board send` / `inbox` / `wait` — inform
 capped, delivered on the recipient's next board call), panels vote, and an external-CLI lane is one
 command (`board launch … --after N`: the wrapper sleeps in the shell until its inputs are on disk
 and never starts the engine if an input cannot land). `board reap` finds what a lane left running
-(servers, watchers) by working directory and stint window, and stops it on request; the finish gate refuses leftovers. Claude Code is the reference
+(servers, watchers) by working directory and stint window, and stops it on request; the finish gate refuses leftovers.
+Every journal event records the board release that wrote it; `board version` shows a run's start release and each
+release since as a migration line (`none` or `action`). Lane receipts record the model that served them; Claude
+lanes run with workflows off. Claude Code is the reference
 host; the skill is plain Agent Skills format (agentskills.io) with a host-adapter layer
 (references/shared-hosts.md), so it runs on Codex, Cursor, Antigravity, opencode, Grok Build,
 Hermes, Kimi Code CLI, and Pi too — detecting its host at kickoff and degrading honestly where a
@@ -45,6 +48,8 @@ primitive is missing.
 
 ## Optional
 
+- [docs/designs/v1.27.0-versioning.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.27.0-versioning.md): release stamps, migration lines, the compatibility contract.
+- [docs/designs/v1.26.0-reap.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.26.0-reap.md): finding and stopping what a run leaves running.
 - [docs/designs/v1.21.0-hardening.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.21.0-hardening.md): what five live multi-agent runs said to fix — dependency failure, read-only lanes, the controller's reliable wait.
 
 - [docs/designs/v1.0.0-initial-architecture.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.0.0-initial-architecture.md): implementation design shipped in v1.0.0 — why the skill is shaped the way it is.

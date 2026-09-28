@@ -70,12 +70,13 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "1.28.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
+VERSION = "1.28.1"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
 SCHEMA = 2           # the journal's shape; bumps ONLY for a breaking change, with an in-place upgrader (migrate_v1 is one)
 # What a run started on an older release must know. Newest first, one line per release: "none" = additive, nothing to
 # do · "action" = do it, then `board version --ack V --msg ".."` (a check finding, so finish refuses, until acked).
 # Automatic journal rewrites never live here — they run on open (journal_path), like the v1→v2 upgrade.
 MIGRATIONS = (
+    ("1.28.1", "none", "docs only: README, usage, strategies, site and llms.txt cover reap, versions, served models"),
     ("1.28.0", "none", "Claude lanes run with CLAUDE_CODE_DISABLE_WORKFLOWS=1 and refuse --effort ultracode; receipts record the served model"),
     ("1.27.0", "none", "events carry v (the board that wrote them); `board version` shows the run's release and what changed since"),
     ("1.26.0", "none", "board reap; dispatches journaled before 1.26 lack cwd — reap attributes their leftovers by worktree / repo root"),

@@ -181,7 +181,9 @@ A subprocess lane is one command — `board launch N --agent A --engine grok --m
 — and journals its own exit and usage receipt; `--after N` makes it sleep in the shell until task N's
 work is on disk (zero tokens), and a dependency that cannot land stops it before its engine starts;
 `scripts/brief-check` names the dependencies it can see between briefs, and a lane in a read-only
-sandbox degrades to a printed line instead of failing. Panels vote (`board vote`): majority or
+sandbox degrades to a printed line instead of failing. The receipt names the model that actually
+served the lane (aliases move server-side), and no lane fans out on its own: Claude lanes run with
+workflows off. Panels vote (`board vote`): majority or
 any-deny, derived.
 
 ### Shared context

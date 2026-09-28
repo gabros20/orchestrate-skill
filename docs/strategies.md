@@ -165,7 +165,7 @@ workflow instead.
 **How it runs**: a JavaScript workflow script holds the plan — loops, fan-out, verification — and
 the Claude Code runtime executes it in the background while your context holds only the final
 result. Trigger via the Workflow tool, the `ultracode` keyword, or explicit user opt-in — never
-launch one on inference. Pilot on a slice first (one directory, not the repo) to gauge tokens before
+launch one on inference. The controller's only: a Claude lane runs with `CLAUDE_CODE_DISABLE_WORKFLOWS=1`. Pilot on a slice first (one directory, not the repo) to gauge tokens before
 committing to the full run.
 
 **Key mechanics**: an explicit agent budget capped in the script itself (loop-until-dry with a
@@ -345,10 +345,12 @@ hardening stay in `references/strategy-xcli.md`):
   before pinning. `--reasoning-effort low|medium|high|xhigh` (high default). Approval is
   all-or-nothing (`--always-approve`) — prefer read-only tasks, or babysit it. Sessions on disk at
   `~/.grok/sessions`; a long-lived JSON-RPC surface exists via `grok agent stdio` (ACP).
-- **Claude Code as a subprocess** (for symmetry or a separate account) — `claude -p --bare
-  --output-format stream-json --max-turns N --model <tier> --permission-mode acceptEdits --agents
-  '{"worker":{...}}' "task"`. `--bare` disables auto-discovery for scripts/CI (auth via env);
-  `--json-schema` validates output. A background fleet is monitored via `claude agents --json`,
+- **Claude Code as a subprocess** (for symmetry or a separate account) — `claude -p
+  --output-format stream-json --verbose --model claude-sonnet-5-5 --effort medium --permission-mode
+  acceptEdits --max-budget-usd 2 "task"` (`board launch --engine claude` writes it). No `--max-turns`
+  on `-p`: the dollar cap is the lane cap. `--bare` only with `ANTHROPIC_API_KEY` (it skips a
+  subscription login). Pin full model ids — aliases move server-side; the receipt records what
+  served. Lanes run with workflows off and refuse `--effort ultracode`. `--json-schema` validates output. A background fleet is monitored via `claude agents --json`,
   `claude logs <id>`, and `claude attach <id>` to step into a blocked one.
 - **Cursor** (`cursor-agent -p "task" --model <id> --output-format json`) — headless GOTCHA: in
   `-p` mode its ask-user tool auto-receives "skipped by user", so a headless Cursor worker silently

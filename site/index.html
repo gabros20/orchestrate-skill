@@ -452,7 +452,9 @@
   <p class="pcap" style="margin-top:16px">A few commands sit under the pane. <code>board attention</code> lists what needs the controller, most
   urgent first. <code>board check</code> audits the run and refuses to count a task as finished
   when a review failed or a file it claims to have written is missing. <code>board resume</code>
-  writes the handoff a fresh session needs to pick the run up where it stopped. Full reference:
+  writes the handoff a fresh session needs to pick the run up where it stopped. <code>board reap</code>
+  finds the dev servers and watchers an agent left running and stops them; the run cannot finish
+  while any are still up. Full reference:
   <a href="https://github.com/gabros20/orchestrate-skill/blob/main/docs/usage.md#the-journal-flight-plan--board--resume">docs/usage.md</a>.</p>
 </section>
 
@@ -703,6 +705,9 @@ git clone https://github.com/gabros20/orchestrate-skill.git &amp;&amp; cd orches
   <p style="margin-top:14px">The same install runs on any <a href="https://agentskills.io">Agent&nbsp;Skills</a>
   host — <b>Claude Code</b> is the reference; on the others the skill detects its host at kickoff,
   binds what's native, and degrades honestly where a primitive is missing.</p>
+  <p style="margin-top:10px"><code>board --version</code> says which release you have. On a run you
+  started earlier, <code>board version</code> says which release started it and whether anything
+  since then needs doing — so upgrading in the middle of a run is safe.</p>
   <details class="disc">
     <summary>supported agents — who runs what</summary>
     <div>

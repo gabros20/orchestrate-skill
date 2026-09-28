@@ -11,6 +11,16 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.28.1] — 2026-09-28
+
+### Changed
+
+- Docs caught up with 1.26–1.28: the site's board section explains `board reap` and its install
+  section `board --version` / `board version`; README, `docs/usage.md` (agents and launch rows)
+  and `site/llms.txt` cover served-model receipts, per-engine effort checks and workflows-off Claude
+  lanes; `docs/strategies.md`'s Claude-subprocess example drops the stale `--max-turns` / `--bare`
+  and pins a full model id; llms.txt links the reap and versioning design notes.
+
 ## [1.28.0] — 2026-09-28
 
 ### Added

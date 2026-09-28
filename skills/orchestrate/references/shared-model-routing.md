@@ -92,7 +92,7 @@ end, never renumber.
 7. **Advisor economics** (published): executor+advisor ≈ 92% of the strong model's quality at
    ~63% cost, advisor consulted ~once per task. When budget-pressed, prefer advisor-shaped
    routing over downgrading the whole run.
-8. **Effort is the FIRST cost knob; model tier is the second.** Flags: Claude `--effort low..max`,
+8. **Effort is the FIRST cost knob; model tier is the second.** Flags: Claude `--effort low..max` (`ultracode` is fan-out, not effort — refused on lanes),
    codex `-c model_reasoning_effort=none|minimal|low|medium|high|xhigh|max` (medium default; enum
    live-verified 2026-08-07, `shared-engines.md`), grok CLI `--reasoning-effort low|medium|high|xhigh`
    (high default; `max`/`minimal` are errors — live-verified 2026-09-22 on 1.0.40), pi `--thinking
@@ -113,11 +113,12 @@ end, never renumber.
    (`shared-token-economy.md`'s blocks). **Never disable thinking to save cost**: thinking at `low`
    effort beats thinking disabled at similar cost, and a rule telling a model not to think
    increases thinking-tag and tool-call leakage into user-facing text (vendor guidance).
-9. Engine tier map — Claude (live-verified 2026-09-22, Claude Code 2.1.280): the `opus` alias
-   now resolves to **`claude-opus-5-5`** (1M ctx, $4/$20 per M, default effort `medium`) ≈
-   orchestrator/reasoner/advisor at 60% of Opus 5's typical cost; `claude-fable-5-1` ($10/$50)
-   stays the strongest tier for the hardest reasoning; `sonnet` (Sonnet 5, $2/$10) ≈
-   worker/reviewer; `haiku` (4.5) ≈ cheap/mechanical. Codex (catalog re-read 2026-09-22, 0.155.1):
+9. Engine tier map — Claude (live-verified 2026-09-28, Claude Code 2.1.284): **`claude-sonnet-5-5`**
+   ($2/$10, fastest Sonnet, ~30% cheaper per task than Sonnet 5; vendor chart: at low/medium effort it
+   beats Sonnet 5's best on knowledge work at ~1/10 the cost) ≈ worker/reviewer — pin the id: the
+   `sonnet` alias switched from Sonnet 5 mid-session on launch day, no CLI update. `claude-opus-5-5` ($4/$20, the `opus` alias) ≈
+   orchestrator/reasoner/advisor; `claude-fable-5-1` ($10/$50) = hardest reasoning; `haiku` (4.5) ≈
+   cheap/mechanical until Haiku 5.5. Codex (catalog re-read 2026-09-22, 0.155.1):
    `gpt-6-luna` ($0.10/$0.50) ≈ cheap worker · `gpt-6-sol` ($2/$10) ≈ standard worker/reviewer ·
    `gpt-6-astra` ($10/$50) ≈ reasoner/advisor/peer; the GPT-5.6 trio is superseded (`5.6-sol` and
    `5.6-terra` → `gpt-6-sol`, `5.6-luna` → `gpt-6-luna`) at half the price — repin, the old slugs

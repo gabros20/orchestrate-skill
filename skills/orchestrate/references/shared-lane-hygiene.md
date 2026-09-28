@@ -57,7 +57,8 @@ map); each item generalizes to any subprocess engine.
 8. **Cap the lane at the engine, not only at the controller** — Claude `--max-budget-usd`, Grok
    `--max-turns`, Hermes `chat --max-turns`, Antigravity `--print-timeout`, plus the portable
    `timeout`/`gtimeout` wrapper (`strategy-xcli.md`); an uncapped lane is a budget with no floor.
-9. **Hermetic lane flags** keep global config out of a lane: Claude `--bare`/`--restricted`, Pi
+9. **Hermetic lane flags** keep global config out of a lane: Claude `--bare`/`--restricted` (and the
+   board's `CLAUDE_CODE_DISABLE_WORKFLOWS=1`: no lane fans out on its own), Pi
    `-nc --no-extensions`, Hermes `--ignore-rules`/`--safe-mode`, Codex spec-preamble opt-out of
    `~/.codex/AGENTS.md` — the refusal class of failure prevented, not detected.
 10. **Nudge binding per engine** (monitoring rule 2, ONE nudge after the disk check): Claude Code

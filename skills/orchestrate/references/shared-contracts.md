@@ -39,12 +39,14 @@ process exited**, not that the work landed. Source: a long-horizon control plane
 
 ## Status enum (every worker, every strategy)
 
-`DONE` · `DONE_WITH_CONCERNS` · `NEEDS_CONTEXT` · `BLOCKED` · `REFUSED` (xcli lanes only: exit 0,
-empty diff, a polite decline — `strategy-xcli.md`)
+`DONE` · `DONE_WITH_CONCERNS` · `NEEDS_CONTEXT` · `BLOCKED` · `DESIGN_CONFLICT` (a plan assumption
+failed; only a patch would fit it) · `REFUSED` (xcli lanes only: exit 0, empty diff, a polite
+decline — `strategy-xcli.md`)
 Never silently produce unsure work — that's what DONE_WITH_CONCERNS and BLOCKED are for.
 Controller handling: DONE → gate. CONCERNS → read report; correctness/scope → address first.
 NEEDS_CONTEXT → supply + re-dispatch same model. BLOCKED → ladder (context → stronger model →
-split task → human). Never re-dispatch unchanged.
+split task → replan). DESIGN_CONFLICT → [replan](shared-replan.md): brief · architect pass · user.
+Never re-dispatch unchanged.
 **An escalation carries a packet, never an empty prompt**: the plan, the relevant files at their
 shas, the actions attempted, and the failure evidence (excerpt + raw path). That is model
 switching without losing the work; a stall escalation carries the same packet plus its counts

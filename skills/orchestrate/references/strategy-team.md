@@ -74,6 +74,9 @@ focused teammates beat five scattered ones. Never assign implementation to read-
 - Before disbanding, a team that changed the repo owes the final-deliverable gate: fresh context,
   accumulated change set vs the originally stated goal (`shared-review-gates.md`).
 
+A teammate that finds the plan contradicted asks the controller (`--ask`, `DESIGN_CONFLICT` in
+the text) instead of patching; the controller triages (`shared-replan.md`).
+
 ## Known limits (design around, don't fight)
 
 No nested teams · teammates can't run background subagents · /resume doesn't restore in-process

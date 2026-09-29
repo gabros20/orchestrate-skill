@@ -93,5 +93,6 @@ fabricated study, so any citation needs a primary source.
 
 - Scope expansion (new features/constraints/tech discovered) → STOP, restart triage with the
   integrated requirements. Do not bolt new scope onto a running strategy.
-- Repeated BLOCKED from workers on the same theme → the plan is wrong; escalate to the human.
+- `DESIGN_CONFLICT`, or repeated BLOCKED on one theme → the plan is wrong: `shared-replan.md`
+  (architect for internal design, the user for product behavior).
 - Budget exhausted → summarize state to the ledger, report, stop. Never silently downgrade review.

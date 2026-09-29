@@ -75,6 +75,9 @@ re-pay (a broken fixture, a failed approach, an invariant) is one line: `board l
 <you>` — capped, deduped, handed to your team at their next board call; depth goes in your report.
 Stop what you started that outlives your turn (server, watcher, `&`) before you report: `board reap
 --agent <you> --kill`; name in the report any you leave running on purpose.
+Reality contradicts the plan and only a patch would fit (special case, bypass, suppressed error
+or test, runtime patch): don't. Return DESIGN_CONFLICT: assumption · evidence · why a patch ·
+options · blast radius · user-visible? Local, reversible choices stay yours.
 ```
 
 ### REVIEWER block — spec, quality, panel, consensus roles
@@ -102,7 +105,7 @@ If your inputs name a vote (panel or consensus), cast it: `board vote N --kind <
 conservative follows that instruction literally and reports less, so ask for everything and
 filter in a separate pass. Never simplify this line away.
 
-### MINIMAL line — advisor, triage assessor, verifier, planner-debate
+### MINIMAL line — advisor, triage assessor, verifier, planner-debate, architect
 
 ```
 No preamble, no narration: return only your schema. Quote literals verbatim; state
@@ -120,7 +123,7 @@ because workers must talk. Silence applies to routine narration, never to coordi
 |---|---|
 | prompts/implementer, sub-orchestrator, integrator, evolve | WORKER |
 | prompts/spec-reviewer, quality-reviewer (+ panel/consensus dispatches) | REVIEWER |
-| prompts/advisor, triage-assessor, verifier, planner-debate | MINIMAL |
+| prompts/advisor, triage-assessor, verifier, planner-debate, architect | MINIMAL |
 | team teammates (spawn prompts) | WORKER + team exemption |
 | workflow-script `agent()` prompts | MINIMAL (schema-forced output is already structural) |
 | xcli workers (codex/grok task text) | WORKER core (fold in; no Claude-specific mechanics) |
@@ -252,7 +255,7 @@ before big runs.
 
 ## Honest numbers
 
-The blocks' own cost (measured, words×1.33): WORKER ≈ 569 tokens/dispatch, REVIEWER ≈ 221,
+The blocks' own cost (measured, words×1.33): WORKER ≈ 624 tokens/dispatch, REVIEWER ≈ 221,
 MINIMAL ≈ 19 — vs the hundreds-to-thousands of narration tokens per worker turn they remove,
 and the controller-context bloat every verbose return would re-cost on every later turn.
 Expect **10–25% session-level savings** from output discipline — not the 65–75% output-only

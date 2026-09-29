@@ -57,6 +57,8 @@ If your inputs name a vote (panel or consensus), cast it: `board vote N --kind <
 - EXTRA: features not requested; over-engineering; unrequested "nice to haves"
 - MISUNDERSTOOD: right feature built the wrong way; wrong problem solved
 - CONSTRAINT VIOLATIONS: anything contradicting the global constraints above
+- UNRECORDED DEVIATION: the code departs from the design or plan with no decision recorded
+  (`board decide`) — a silent redesign
 
 Do not re-run tests the implementer already ran; judge the code. If something can't be verified
 from the diff alone, mark it ⚠️ "cannot verify from diff" — the controller resolves those.

@@ -72,7 +72,7 @@ brief → dispatch implementer → (questions? answer, re-dispatch) → implemen
    report; correctness/scope concerns are addressed before review, observations are noted.
    `NEEDS_CONTEXT` → supply it, re-dispatch same model. `BLOCKED` → the ladder: context problem →
    more context, same model · needs reasoning → more capable model · too large → split the task ·
-   plan wrong → escalate to human. NEVER re-dispatch unchanged.
+   plan wrong (or `DESIGN_CONFLICT`) → `shared-replan.md`. NEVER re-dispatch unchanged.
 5. **Review package**: `scripts/review-package BASE HEAD` (always the recorded BASE — `HEAD~1`
    truncates multi-commit tasks). Dispatch spec reviewer with brief + report + diff paths and the
    plan's Global Constraints copied VERBATIM. Then, only after spec ✅, the quality reviewer.

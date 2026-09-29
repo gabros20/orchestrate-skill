@@ -11,6 +11,33 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.29.0] — 2026-09-29
+
+### Added
+
+- **Reality over plan — redesign, never patch.** New return status `DESIGN_CONFLICT`: a plan
+  assumption failed and only a patch (special case, bypass, suppressed error or test, runtime
+  patch, routing flag) would fit it. The worker returns the assumption, evidence, why a local fix
+  is a patch, options, blast radius, and whether users would see it. Universal rule 10.
+- **`references/shared-replan.md`** — who owns a conflict per topology (a lead inside its domain,
+  the controller across domains), the three-way triage (brief · architect · user: product behavior
+  is the user's), the architect pass, how the redesign is applied (pause dependents, decisions with
+  `--task`, refactors as their own tasks), and bounds (two passes, then the user).
+- **`references/prompt-architect.md`** — the fresh-context, strongest-tier (Fable 5.1 / GPT-6 Astra
+  at high, Opus 5.5 at max) redesign prompt: a design delta with decisions and why, a plan delta,
+  keep · refactor · revert for built work, questions for the user. Architect tier in routing.
+- Board: `DESIGN_CONFLICT` halts the task and its gated dependents; attention says what to do;
+  `board check` holds the conflict open until `board decide … --task N` or a re-dispatch; a third
+  architect pass (`arch-N`) without a user-owned decision is a finding; project memory records the
+  failed assumption as an attempt.
+- Reviews: quality flags a patch around the design (high severity); spec flags a deviation with
+  no recorded decision. The integrator returns DESIGN_CONFLICT instead of writing glue code.
+
+### Changed
+
+- The implementer no longer "continues as asked" when reality contradicts the plan — that path now
+  stops with DESIGN_CONFLICT; the BLOCKED ladder's last rung is the replan, not only the human.
+
 ## [1.28.1] — 2026-09-28
 
 ### Changed

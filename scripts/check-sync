@@ -80,7 +80,7 @@ done
 for f in spec-reviewer quality-reviewer; do
   contains reviewer "$prompts$f.md" || err "REVIEWER block not byte-identical in prompt-$f.md"
 done
-for f in advisor triage-assessor verifier planner-debate; do
+for f in advisor triage-assessor verifier planner-debate architect; do
   contains minimal "$prompts$f.md" || err "MINIMAL line not byte-identical in prompt-$f.md"
 done
 
@@ -123,6 +123,7 @@ board learn|SKILL.md,references/shared-token-economy.md,references/shared-contra
 board memory|SKILL.md,references/shared-handoff.md,references/shared-contracts.md
 board reap|SKILL.md,references/shared-lane-hygiene.md,references/shared-monitoring.md
 board version|SKILL.md,references/shared-lane-hygiene.md,references/shared-handoff.md
+DESIGN_CONFLICT|SKILL.md,references/shared-token-economy.md,references/shared-contracts.md,references/shared-replan.md,references/prompt-implementer.md,references/prompt-sub-orchestrator.md,references/strategy-hierarchical.md
 '
 while IFS='|' read -r pattern homes; do
   [ -n "$pattern" ] || continue

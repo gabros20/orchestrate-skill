@@ -14,6 +14,11 @@ Inputs:
 Produces:
 - Domain plan, worker ledger, gated results, and compact domain summary.
 
+## Contents
+
+- The prompt: mandate · budget · rules · your subtree on the board · communication contract ·
+  design conflicts · return
+
 Agent tool or teammate spawn, `model: <REQUIRED — orchestrator tier>`, `effort: <pin if the
 surface supports it; else session effort — record in run.md>`. A sub-orchestrator THINKS
 about one domain and runs its own worker fan-out; it returns conclusions, not raw material.
@@ -89,6 +94,13 @@ re-pay (a broken fixture, a failed approach, an invariant) is one line: `board l
 <you>` — capped, deduped, handed to your team at their next board call; depth goes in your report.
 Stop what you started that outlives your turn (server, watcher, `&`) before you report: `board reap
 --agent <you> --kill`; name in the report any you leave running on purpose.
+Reality contradicts the plan and only a patch would fit (special case, bypass, suppressed error
+or test, runtime patch): don't. Return DESIGN_CONFLICT: assumption · evidence · why a patch ·
+options · blast radius · user-visible? Local, reversible choices stay yours.
+
+A worker's DESIGN_CONFLICT is yours inside your domain: triage per `shared-replan.md` (brief ·
+architect pass · the user). It crosses a domain or changes a shared interface → return
+DESIGN_CONFLICT to the controller with the worker's report; never patch across a boundary.
 
 ## Return (INLINE, <1500 tokens)
 Verdict first. Findings summary. Artifact paths (reports your workers wrote, files changed).

@@ -414,6 +414,7 @@ Pre-v2 journals (`board.jsonl`, schema-less lines) migrate on first read, with a
 | **advisor** | rare judgment consults, kept out of the hot path | strongest available | executes or edits |
 | **orchestrator** | plans, decomposes, assigns, measures | strong (opus-class) | implements |
 | **reasoner** | architecture, hard debugging, algorithms | opus-class | mechanical batches |
+| **architect** | redesign when reality breaks the plan (`shared-replan.md`) | strongest, high/max, fresh context | implements |
 | **worker** | scoped execution, boilerplate, tests, transforms | sonnet-class / cheap engine | design decisions |
 | **reviewer** | spec / quality / verification | sonnet-class floor (panel lenses may go higher) | writes |
 | **peer** | different-lineage second opinion | codex / grok | sees the other peer's answer before synthesis |

@@ -17,7 +17,7 @@ CONTROLLER — the loop
   plan [--why ".."] · plan approved|changed|skipped [--msg]
   dispatch N --model M [--agent <role>-<task>: derived when omitted] [--role --engine --effort --worktree --owns --by LEAD
        --session --log --cmd-file]        names: impl-3 · lead-1 · impl-1.1 · spec-3 · quality-3 · verify-3 · integ-1 · fix-3-r2
-  return N --agent A --status DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED
+  return N --agent A --status DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED|DESIGN_CONFLICT
        [--commits a..b --report PATH --observed-model M --tokens 84k --session ID]
   review N --kind K [--round --agent --model] · gate N --kind K --verdict ok|fail|warn [--round --findings]
   exec N --name X -- <cmd> · result N --name X --exit RC [--log]     a check THROUGH the journal
@@ -70,12 +70,13 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "1.28.1"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
+VERSION = "1.29.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
 SCHEMA = 2           # the journal's shape; bumps ONLY for a breaking change, with an in-place upgrader (migrate_v1 is one)
 # What a run started on an older release must know. Newest first, one line per release: "none" = additive, nothing to
 # do · "action" = do it, then `board version --ack V --msg ".."` (a check finding, so finish refuses, until acked).
 # Automatic journal rewrites never live here — they run on open (journal_path), like the v1→v2 upgrade.
 MIGRATIONS = (
+    ("1.29.0", "none", "new return status DESIGN_CONFLICT (a plan assumption failed) and the architect role (arch-N); boards before 1.29 read it as a return"),
     ("1.28.1", "none", "docs only: README, usage, strategies, site and llms.txt cover reap, versions, served models"),
     ("1.28.0", "none", "Claude lanes run with CLAUDE_CODE_DISABLE_WORKFLOWS=1 and refuse --effort ultracode; receipts record the served model"),
     ("1.27.0", "none", "events carry v (the board that wrote them); `board version` shows the run's release and what changed since"),
@@ -91,7 +92,9 @@ DIMS = ("strategy", "review", "engine", "host", "models", "effort", "isolation",
         "workers", "budget", "confirm", "alias", "goal", "lanes")
 TIER_DEFAULT = {"orchestrator": "opus-class", "worker": "sonnet-class", "reviewer": "sonnet-class",
                 "advisor": "strongest", "reasoner": "opus-class", "peer": "codex/grok"}
-STATUSES = ("DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED", "REFUSED")
+STATUSES = ("DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED", "REFUSED", "DESIGN_CONFLICT")
+HALTED = ("BLOCKED", "NEEDS_CONTEXT", "REFUSED", "DESIGN_CONFLICT")   # returns that stop the task and its dependents
+REDESIGN_CAP = 2   # architect passes per run before the plan is the user's to see (shared-replan.md)
 TASK_EVENTS = {"todo", "title", "dispatch", "return", "review", "gate", "nudge", "escalate", "done",
                "blocked", "note", "check", "vote", "exit", "receipt"}
 # Mail is information, not conversation: hard caps keep two agents from talking instead of working.
@@ -116,7 +119,7 @@ LANE_BASE = {"implement": "in_progress", "verify": "in_progress", "integrate": "
 AGENT_RE = re.compile(r"^[a-z][a-z0-9]*-\d+(?:\.\d+)*(?:-[a-z0-9]+)*$")
 ROLE_SHORT = (("sub-orch", "lead"), ("lead", "lead"), ("orchestr", "lead"), ("integrat", "integ"), ("fix", "fix"), ("spec", "spec"),
               ("qual", "quality"), ("verif", "verify"), ("judge", "judge"), ("lens", "lens"), ("panel", "lens"), ("review", "review"),
-              ("advis", "advisor"), ("peer", "peer"), ("counter", "peer"), ("plan", "planner"), ("research", "research"),
+              ("advis", "advisor"), ("peer", "peer"), ("counter", "peer"), ("architect", "arch"), ("plan", "planner"), ("research", "research"),
               ("implement", "impl"), ("worker", "impl"), ("executor", "impl"))
 # Per-engine resume-by-id lines (printed by `board resume` for every open stint that journaled a session).
 RESUME_CMD = {
@@ -914,7 +917,7 @@ def report_status(path: Path) -> tuple[str, str]:
         head = path.read_text(encoding="utf-8", errors="replace")[:2000]
     except OSError:
         return "", ""
-    m = re.search(r"\b(DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED|DONE)\b[ \t]*[—:-]?[ \t]*([^\n]*)", head)
+    m = re.search(r"\b(DONE_WITH_CONCERNS|DESIGN_CONFLICT|NEEDS_CONTEXT|BLOCKED|REFUSED|DONE)\b[ \t]*[—:-]?[ \t]*([^\n]*)", head)
     return (m.group(1), clean(m.group(2).strip())) if m else ("", "")
 
 
@@ -966,7 +969,7 @@ def load(ws: Path, journal_only: bool = False) -> State:
             ts = p.stat().st_mtime
             status, reason = report_status(p)
             t.report = p.name
-            if status in ("BLOCKED", "NEEDS_CONTEXT", "REFUSED"):
+            if status in HALTED:
                 t.candidates.append((ts, 0, "blocked", reason or status.lower().replace("_", " ")))
             else:
                 t.candidates.append((ts, 0, "review", "report landed" + (" · concerns" if status == "DONE_WITH_CONCERNS" else "")))
@@ -1102,7 +1105,7 @@ def load(ws: Path, journal_only: bool = False) -> State:
                 t.touch_heartbeat(ts)
                 continue
             t.last_status = status
-            if status in ("BLOCKED", "NEEDS_CONTEXT", "REFUSED"):
+            if status in HALTED:
                 t.candidates.append((ts, seq, "blocked", clean(ev.get("msg", "")) or status.lower().replace("_", " ")))
             else:
                 t.candidates.append((ts, seq, "review", "returned" + (" · concerns" if status == "DONE_WITH_CONCERNS" else "")))
@@ -1406,9 +1409,13 @@ def stint_stale(s: Stint, t: Task | None, now: float) -> bool:
 def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
     """(marker, task, why) for every card a controller should act on, most urgent first."""
     out = []
+    conflicts = open_conflicts(st)
     for t in st.ordered():
         s = t.state
-        if s == "blocked":
+        if s == "blocked" and t.last_status == "DESIGN_CONFLICT" and any(c[0] is t for c in conflicts):
+            out.append(("x", t, f"design conflict: {t.note or 'see the report'} — triage: brief · architect pass (board dispatch {t.id} "
+                        f"--role architect --model <strongest>) · the user (shared-replan.md)"))
+        elif s == "blocked":
             out.append(("x", t, t.note or t.detail or "blocked — needs owner + next action"))
         elif s != "done" and t.failed_checks:
             c = t.checks[t.failed_checks[0]]
@@ -1632,7 +1639,7 @@ def card_details(t: Task, st: State, now: float, S: Style) -> list[tuple[str, Ro
         window = f"{hhmm(s.started)} {S.arrow} {hhmm(s.returned) if s.returned else '…'}"
         segs.append((f" {d} {window} {d} {fmt_dur((s.returned or now) - s.started)}", DIM))
         if s.status:
-            colour = S.fg(OK) if s.status in ("DONE", "OK") else S.fg(BAD) if s.status in ("BLOCKED", "FAIL", "REFUSED") else S.fg(WARN)
+            colour = S.fg(OK) if s.status in ("DONE", "OK") else S.fg(BAD) if s.status in ("BLOCKED", "FAIL", "REFUSED", "DESIGN_CONFLICT") else S.fg(WARN)
             segs += [(f" {d} ", DIM), (s.status.lower().replace("_", " "), colour)]
         elif not s.returned:
             stale = stint_stale(s, t, now)
@@ -2816,6 +2823,23 @@ def cmd_version(args) -> int:
     return 0
 
 
+def open_conflicts(st: State) -> list[tuple[Task, int, str]]:
+    """(task, return seq, msg) for every DESIGN_CONFLICT still waiting on a decision: no `board decide … --task N` after
+    it, no newer dispatch of the task (a re-brief), no ledger line."""
+    out = []
+    for t in st.ordered():
+        rets = [e for e in st.events if e.get("ev") == "return" and str(e.get("task")) == t.id]
+        if not rets or rets[-1].get("status") != "DESIGN_CONFLICT" or t.state == "done":
+            continue
+        seq = int(rets[-1].get("seq") or 0)
+        later = [e for e in st.events if int(e.get("seq") or 0) > seq]
+        if any(e.get("ev") == "decide" and str(e.get("task")) == t.id for e in later) or \
+                any(e.get("ev") == "dispatch" and str(e.get("task")) == t.id and role_tier(str(e.get("role") or "implementer")) == "worker" for e in later):
+            continue
+        out.append((t, seq, clean(rets[-1].get("msg", ""))))
+    return out
+
+
 def check(st: State, finish_mode: bool = False, scan: bool = False, table: tuple = MIGRATIONS) -> list[str]:
     findings: list[str] = list(st.problems)
     now = time.time()
@@ -2924,6 +2948,13 @@ def check(st: State, finish_mode: bool = False, scan: bool = False, table: tuple
                 findings.append(f"finish gate: task {t.id} gate(s) pending: {', '.join(pend)}")
         if st.run.drift and not any("posture" in r for r in st.run.rails):
             findings.append("finish gate: model drift observed and no cost-posture rail recorded")
+    for t, seq, msg in open_conflicts(st):
+        findings.append(f"task {t.id}: design conflict (journal #{seq}{': ' + msg if msg else ''}) with no decision — triage it: fix the brief, "
+                        f"an architect pass, or the user; then board decide D-n \"…\" --why \"…\" --task {t.id} (shared-replan.md)")
+    arch = [s for s in st.stints if "architect" in s.role.lower()]
+    if len(arch) > REDESIGN_CAP and not any(d.get("owner") == "user" and int(d.get("seq") or 0) > arch[REDESIGN_CAP - 1].seq for d in st.run.decisions):
+        findings.append(f"{len(arch)} architect passes this run (cap {REDESIGN_CAP}) and no decision owned by the user since — the plan is wrong "
+                        "at a level the user must see: take both reports to them, record their call (board decide … --owner user)")
     for v, kind, line, done in pending_migrations(st, table):
         if kind == "action" and not done:
             findings.append(f"migration {v} (run started on {run_version(st) or 'a pre-1.27 release'}): {line} — then board version --ack {v} --msg \"…\"")
@@ -3203,10 +3234,10 @@ def render_memory(st: State, kind: str, scopes: list[str]) -> dict:
     attempts = [{"approach": x.msg, "outcome": "failed", "evidence": f"task {x.task} by {x.agent}, journal #{x.seq}" + (f", {x.path}" if x.path else "")}
                 for x in st.learned if x.kind == "failed"]
     for s in st.stints:
-        if s.status in ("BLOCKED", "NEEDS_CONTEXT", "REFUSED") and (s.tokens or s.agent in worked):   # a lane that never ran is not an attempt
+        if s.status in HALTED and (s.tokens or s.agent in worked or s.status == "DESIGN_CONFLICT"):   # a lane that never ran is not an attempt
             t = st.tasks.get(s.task)
             attempts.append({"approach": f"task {s.task} {t.title if t else ''} by {s.agent} ({s.model or '?'}" + (f", {s.engine}" if s.engine else "") + ")",
-                             "outcome": "abandoned" if s.status == "REFUSED" else "failed",
+                             "outcome": "abandoned" if s.status == "REFUSED" else "plan assumption failed" if s.status == "DESIGN_CONFLICT" else "failed",
                              "reason": returns.get((s.task, s.agent)) or s.status.lower().replace("_", " ")})
     rec["attempts"] = attempts
     learnings = [{"type": "open_question" if x.kind == "question" else x.kind, "statement": x.msg + (f" ({x.path})" if x.path else ""), "confidence": "likely"}
@@ -3535,7 +3566,7 @@ def dep_failed(st: "State", d: Task) -> str:
     a gated wrapper that started its engine on it would pay for a lane with a missing input."""
     if d.state == "done":
         return ""
-    if d.returned and d.last_status in ("BLOCKED", "NEEDS_CONTEXT", "REFUSED"):
+    if d.returned and d.last_status in HALTED:
         return f"returned {d.last_status}"
     if d.state == "blocked":
         return d.detail or d.note or "blocked"
@@ -5133,6 +5164,35 @@ def selftest() -> int:
         except SystemExit as exc:
             assert "will not write it" in str(exc.code), exc.code
         assert (wsv / JOURNAL).read_bytes() == future and not (wsv / "journal.jsonl.v1.bak").exists(), "a newer journal is never rewritten"
+        # --- design conflict: reality broke the plan — the task halts, the board asks for a decision, redesigns are capped ---
+        dcr = Path(tmp) / "dc"
+        dcr.mkdir()
+        os.chdir(dcr)
+        subprocess.run(["git", "init", "-q"], check=True)
+        (dcr / "plan.md").write_text("# Plan\n\n## Task 1: Sync\n\n## Task 2: Report\n")
+        run("init", "plan.md", "--strategy", "staged", "--goal", "replan")
+        run("plan", "approved")
+        wsd = dcr / ".orchestrate"
+        run("dispatch", "1", "--agent", "impl-1", "--model", "sonnet")
+        run("return", "1", "--agent", "impl-1", "--status", "DESIGN_CONFLICT", "--msg", "the ORM cannot batch upserts; the plan assumed it")
+        st = load(wsd)
+        assert st.tasks["1"].state == "blocked" and dep_failed(st, st.tasks["1"]) == "returned DESIGN_CONFLICT", "dependents never start on a broken design"
+        assert any("design conflict" in w and "--role architect" in w for _, _, w in attention(st, time.time())), attention(st, time.time())
+        assert any("task 1: design conflict" in f and "--task 1" in f for f in check(st)), check(st)
+        assert any(a["outcome"] == "plan assumption failed" for a in render_memory(st, "handoff", [])["attempts"]), "the failed assumption is project memory"
+        assert "→ arch-1" in run("dispatch", "1", "--role", "architect", "--model", "fable"), "the architect is arch-N"
+        run("return", "1", "--agent", "arch-1", "--status", "DONE")
+        run("decide", "D-1", "batch through a queue table, not the ORM", "--why", "the ORM has no batch upsert", "--task", "1")
+        st = load(wsd)
+        assert not open_conflicts(st) and not any("design conflict" in f for f in check(st)), check(st)
+        (wsd / "task-1-report.md").write_text("Status: DESIGN_CONFLICT — assumption failed\n")
+        assert report_status(wsd / "task-1-report.md")[0] == "DESIGN_CONFLICT"
+        for i in (2, 3):
+            run("dispatch", "1", "--agent", f"arch-1-r{i}", "--role", "architect", "--model", "fable")
+            run("return", "1", "--agent", f"arch-1-r{i}", "--status", "DONE")
+        assert any("3 architect passes" in f for f in check(load(wsd))), check(load(wsd))
+        run("decide", "D-2", "keep the queue table; drop live sync", "--why", "the user chose nightly sync", "--owner", "user")
+        assert not any("architect passes" in f for f in check(load(wsd))), "a user decision after the cap clears it"
         # --- reap: what a lane leaves running is found, attributed, kept or stopped — never a stranger -------------
         assert _etime("05:06") == 306 and _etime("1-02:03:04") == 93784 and _etime("02:03:04") == 7384
         if proc_table() is not None and proc_cwds({os.getpid()}) is not None:

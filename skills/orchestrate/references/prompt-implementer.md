@@ -77,6 +77,9 @@ re-pay (a broken fixture, a failed approach, an invariant) is one line: `board l
 <you>` — capped, deduped, handed to your team at their next board call; depth goes in your report.
 Stop what you started that outlives your turn (server, watcher, `&`) before you report: `board reap
 --agent <you> --kill`; name in the report any you leave running on purpose.
+Reality contradicts the plan and only a patch would fit (special case, bypass, suppressed error
+or test, runtime patch): don't. Return DESIGN_CONFLICT: assumption · evidence · why a patch ·
+options · blast radius · user-visible? Local, reversible choices stay yours.
 
 ## Your job
 1. Implement exactly what the brief specifies (follow TDD if it says to)
@@ -90,19 +93,20 @@ Stop what you started that outlives your turn (server, watcher, `&`) before you 
 - In existing code, follow established patterns; improve what you touch, restructure nothing
   outside your task
 - A file growing beyond the brief's intent → stop, report DONE_WITH_CONCERNS
-- If the request seems mistaken or a better approach exists, say so in one sentence and continue
-  with the task as asked — never quietly narrow, widen, or transform it. Stopping outright is for
-  the stop conditions below.
+- A better approach or a taste difference: say so in one sentence and continue as asked — never
+  quietly narrow, widen, or transform it. Reality contradicting the plan is different: stop (below).
 
 ## When you're in over your head
 It is always OK to stop and say so — bad work is worse than no work; you will not be penalized.
 STOP and escalate (BLOCKED / NEEDS_CONTEXT) when: the task needs architectural decisions with
 multiple valid approaches · you can't reach clarity on code beyond what was provided · your
 approach feels uncertain · you're reading file after file without progress. Describe what you're
-stuck on, what you tried, what help you need.
+stuck on, what you tried, what help you need. The plan's assumption fails and only a patch would
+make it work → DESIGN_CONFLICT (the report: assumption · evidence · why a patch · options · blast
+radius · user-visible?). Never patch around the design to reach DONE.
 
 ## Report back (INLINE, <15 lines)
-Status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED
+Status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED | DESIGN_CONFLICT
 Commits: <shas> · Tests: <one line> · Concerns: <one line or none> · Report: <path>
 Everything else goes in the report file: what you implemented, test output, files changed,
 the verification command and its actual output, open questions.

@@ -81,6 +81,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | More than one writer | [Isolation](references/shared-isolation.md) | Worktree/branch rules and integration ownership |
 | Background, long-running, or external work | [Monitoring](references/shared-monitoring.md) | Polling, liveness, timeout, and recovery rules |
 | Every run | [Safety rails](references/shared-safety-rails.md) | Main-branch, overload, loop, budget, and reward-hacking guards |
+| A `DESIGN_CONFLICT`, or reality breaks the plan | [Replan](references/shared-replan.md) | Triage, architect pass, decisions, bounds |
 | Resume, compaction, or controller transfer | [Handoff](references/shared-handoff.md) | Durable state and clean controller handoff |
 | Every dispatch and returned report | [Token economy](references/shared-token-economy.md) | Role-scoped communication blocks and priming anatomy |
 
@@ -97,6 +98,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | Triage assessor | [Triage assessor](references/prompt-triage-assessor.md) | Independent strategy-assessment prompt |
 | Verification-only worker | [Verifier](references/prompt-verifier.md) | Minimal objective verification prompt |
 | Adversarial planner | [Planner debate](references/prompt-planner-debate.md) | Independent proposal and challenge prompt |
+| Architect (redesign) | [Architect](references/prompt-architect.md) | Design delta, decisions, and user questions after a conflict |
 | Loop evolution pass | [Evolve](references/prompt-evolve.md) | Periodic pattern extraction and process-improvement prompt |
 
 ## Dimensions
@@ -134,6 +136,9 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    topology, models, gates, and budget the user is about to pay for — and gate on their approval
    ([flight plan](references/shared-flight-plan.md)). `confirm=off` skips the gate, never the
    print; headless runs print and proceed.
+10. **Reality over plan — redesign, never patch.** A failed plan assumption comes back up the
+   hierarchy as `DESIGN_CONFLICT`, never as a workaround; route it to a fresh strongest-tier
+   architect (internal design) or the user (product behavior) ([replan](references/shared-replan.md)).
 
 ## Core workflow
 

@@ -48,6 +48,8 @@ If your inputs name a vote (panel or consensus), cast it: `board vote N --kind <
 - Correctness risks: edge cases, error handling, concurrency, resource leaks
 - Design: one clear responsibility per file/unit; well-defined interfaces; units independently
   understandable and testable
+- Patches around the design (special case, bypass, suppressed error or test, runtime patch,
+  routing flag): severity high — name the design point it routes around
 - Tests: verify real behavior (not mock behavior); cover the risky paths
 - Maintainability: names match what things do; follows the codebase's existing patterns
 - Contribution-scoped: did THIS change create large/tangled files or significantly grow one?

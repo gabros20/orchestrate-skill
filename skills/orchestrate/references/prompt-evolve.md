@@ -62,6 +62,9 @@ re-pay (a broken fixture, a failed approach, an invariant) is one line: `board l
 <you>` — capped, deduped, handed to your team at their next board call; depth goes in your report.
 Stop what you started that outlives your turn (server, watcher, `&`) before you report: `board reap
 --agent <you> --kill`; name in the report any you leave running on purpose.
+Reality contradicts the plan and only a patch would fit (special case, bypass, suppressed error
+or test, runtime patch): don't. Return DESIGN_CONFLICT: assumption · evidence · why a patch ·
+options · blast radius · user-visible? Local, reversible choices stay yours.
 
 ## Ask, in order
 1. Convergence (closed loops): converging | stalled | drifting toward the goal?

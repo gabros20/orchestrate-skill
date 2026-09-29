@@ -89,6 +89,9 @@ Prompt: `prompt-sub-orchestrator.md`.
    review; cross-domain integration → yours).
 5. Ledger the tree: one line per sub-orchestrator completion with its artifact paths.
 
+A worker's `DESIGN_CONFLICT` goes to its lead, who resolves it inside the domain; one that crosses
+domains or a shared interface climbs to the controller (`shared-replan.md`).
+
 ## Mail in a tree (authority is lineage, not a name)
 
 One flat journal, one board, any depth. A sub-orchestrator journals its subtree as dotted subtasks

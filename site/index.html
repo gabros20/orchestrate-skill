@@ -571,6 +571,7 @@ accepted progress = validation + durable writeback + committed readback</div>
   <p class="pcap">The third is the one most runs get wrong: <b>an exit code of 0 only proves the
   process exited</b> — not that the work landed.</p>
   <ul class="rules">
+    <li><b><svg class="lu" aria-hidden="true"><use href="#lu-iteration-ccw"/></svg>redesign, never patch</b>When an agent finds the plan won't work as written, it stops instead of hacking around it. A fresh top-tier model redesigns the part that broke; anything your users would notice comes to you as a question.</li>
     <li><b><svg class="lu" aria-hidden="true"><use href="#lu-git-branch"/></svg>branch first</b>It never starts work on main without your explicit consent.</li>
     <li><b><svg class="lu" aria-hidden="true"><use href="#lu-copy-x"/></svg>no duplicates on overload</b>If the API chokes, it resumes the same agent — it never spawns a competing copy.</li>
     <li><b><svg class="lu" aria-hidden="true"><use href="#lu-unplug"/></svg>loops have a kill switch</b>Hard cycle caps, a regression breaker, and a contract file you can delete to stop everything.</li>

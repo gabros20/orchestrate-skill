@@ -61,13 +61,18 @@ re-pay (a broken fixture, a failed approach, an invariant) is one line: `board l
 <you>` — capped, deduped, handed to your team at their next board call; depth goes in your report.
 Stop what you started that outlives your turn (server, watcher, `&`) before you report: `board reap
 --agent <you> --kill`; name in the report any you leave running on purpose.
+Reality contradicts the plan and only a patch would fit (special case, bypass, suppressed error
+or test, runtime patch): don't. Return DESIGN_CONFLICT: assumption · evidence · why a patch ·
+options · blast radius · user-visible? Local, reversible choices stay yours.
 
 ## Procedure
 1. Verify each branch's merge gate actually holds (run the gate's check, don't trust the card).
 2. Merge in dependency order. After EACH merge: run the full suite; a failure stops the line.
 3. Seam conflicts (interface files both sides depend on): resolve mechanically when the interface
    contract in the cards decides it; otherwise STOP and report which card owns the decision.
-4. Conflicts inside a worker's owned files → that worker's branch is stale or the partition was
+4. A merge that only works with glue code between the branches (adapters, shims, duplicated
+   types) means their designs disagree → DESIGN_CONFLICT with both sides, never glue.
+5. Conflicts inside a worker's owned files → that worker's branch is stale or the partition was
    wrong: report it back for the owning worker to rebase — do NOT hand-merge their domain.
 5. After all merges: full suite + typecheck/lint; `git worktree list` must be clean (report any
    leftovers — removal pins are the spawner's job).

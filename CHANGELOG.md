@@ -11,6 +11,21 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.30.1] — 2026-09-30
+
+### Added
+
+- **`model-catalog-refresh` project skill** (`.claude/skills/model-catalog-refresh/`, repo tooling —
+  not installed with the runtime). Reproduces the model-selection research as an orchestrated,
+  fact-checked refresh when a model ships, a price changes, or the catalog is a month old: trigger →
+  lanes (new-model 1 2 3 4 5 7 · price 1 2 3-cost-only · sweep 1–8), `prepare_run.py` writes the plan,
+  a contract seeded from the current catalog and one brief per lane (resolving the workspace like the
+  board, refusing while a run is in flight), a mandatory fresh-context Opus fact-check, and
+  `references/apply.md` for what to edit where. `check_catalog.py` keeps the board `CATALOG` and the
+  catalog reference in sync. Lessons baked in: confirm the trigger before fanning out, Reddit via RSS
+  only, `xrelay` in one serialized lane, stop a lane with nothing on disk after 20 minutes, never
+  rescale old cost-per-task by hand. Setup-stage evals: 100% with the skill vs 36% without.
+
 ## [1.30.0] — 2026-09-30
 
 ### Added

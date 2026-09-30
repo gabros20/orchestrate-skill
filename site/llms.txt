@@ -23,7 +23,8 @@ and never starts the engine if an input cannot land). `board reap` finds what a 
 (servers, watchers) by working directory and stint window, and stops it on request; the finish gate refuses leftovers.
 Every journal event records the board release that wrote it; `board version` shows a run's start release and each
 release since as a migration line (`none` or `action`). Lane receipts record the model that served them; Claude
-lanes run with workflows off. A worker whose plan assumption fails returns DESIGN_CONFLICT instead of a workaround;
+lanes run with workflows off. `posture=frontier|balanced|economy` picks a concrete harness · model · effort per role
+from a dated model catalog (independent benchmarks, prices, context, effort curves; `docs/research/model-selection/`). A worker whose plan assumption fails returns DESIGN_CONFLICT instead of a workaround;
 the controller routes it to a fresh strongest-tier architect (internal design) or the user (product behavior). Claude Code is the reference
 host; the skill is plain Agent Skills format (agentskills.io) with a host-adapter layer
 (references/shared-hosts.md), so it runs on Codex, Cursor, Antigravity, opencode, Grok Build,

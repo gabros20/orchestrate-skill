@@ -25,12 +25,12 @@ Produces:
 
 | Tier | Job | Default | Never |
 |---|---|---|---|
-| **advisor** | rare judgment consults, OUT of the hot path | strongest available | executes or edits |
-| **orchestrator** | plans, decomposes, assigns, measures | strong (opus-class) | implements |
-| **reasoner** | architecture, hard debugging, algorithms | opus-class | mechanical batches |
-| **architect** | redesign when reality breaks the plan (`shared-replan.md`) | strongest, high/max, fresh context | implements |
-| **worker** | scoped execution, boilerplate, tests, transforms | sonnet-class / cheap engine | design decisions |
-| **reviewer** | spec/quality/verification | sonnet-class floor; panel lenses may go higher | writes |
+| **advisor** | rare judgment consults, OUT of the hot path | strongest (catalog: architect, frontier) | executes or edits |
+| **orchestrator** | plans, decomposes, assigns, measures | catalog row per posture (balanced: Opus 5.5 @high) | implements |
+| **reasoner** | architecture, hard debugging, algorithms | catalog architect row (balanced: Opus 5.5 @xhigh) | mechanical batches |
+| **architect** | redesign when reality breaks the plan (`shared-replan.md`) | catalog: Opus 5.5 @max frontier · @xhigh balanced; fresh context | implements |
+| **worker** | scoped execution, boilerplate, tests, transforms | catalog (balanced: Codex GPT-6.1 Sol @high; Claude-only Opus 5.5 @medium) | design decisions |
+| **reviewer** | spec/quality/verification | catalog; lineage ≠ implementer's | writes |
 | **peer** | different-lineage second opinion | codex/grok | seeing the other peer's answer pre-synthesis |
 
 ## The context tax (why fewer boundaries is the default posture)
@@ -114,32 +114,11 @@ end, never renumber.
    (`shared-token-economy.md`'s blocks). **Never disable thinking to save cost**: thinking at `low`
    effort beats thinking disabled at similar cost, and a rule telling a model not to think
    increases thinking-tag and tool-call leakage into user-facing text (vendor guidance).
-9. Engine tier map — Claude (live-verified 2026-09-28, Claude Code 2.1.284): **`claude-sonnet-5-5`**
-   ($2/$10, fastest Sonnet, ~30% cheaper per task than Sonnet 5; vendor chart: at low/medium effort it
-   beats Sonnet 5's best on knowledge work at ~1/10 the cost) ≈ worker/reviewer — pin the id: the
-   `sonnet` alias switched from Sonnet 5 mid-session on launch day, no CLI update. `claude-opus-5-5` ($4/$20, the `opus` alias) ≈
-   orchestrator/reasoner/advisor; `claude-fable-5-1` ($10/$50) = hardest reasoning; `haiku` (4.5) ≈
-   cheap/mechanical until Haiku 5.5. Codex (catalog re-read 2026-09-22, 0.155.1):
-   `gpt-6-luna` ($0.10/$0.50) ≈ cheap worker · `gpt-6-sol` ($2/$10) ≈ standard worker/reviewer ·
-   `gpt-6-astra` ($10/$50) ≈ reasoner/advisor/peer; the GPT-5.6 trio is superseded (`5.6-sol` and
-   `5.6-terra` → `gpt-6-sol`, `5.6-luna` → `gpt-6-luna`) at half the price — repin, the old slugs
-   still answer but cost double.
-   Grok (live-verified 2026-09-22, CLI 1.0.40): `grok-4.7` = flagship (500k ctx, $2/$6 per M,
-   coding/agentic/reasoning; the CLI's default) ≈ reasoner/advisor/peer and a strong worker ·
-   `grok-4.7-build-fast` = the same model ~2× faster at ~2× the price ≈ latency-critical lane only
-   (budget-relevant, not a cheap tier) · `grok-4.6` / `grok-4.5` = previous flagships, still
-   listed. No cheap Grok tier exists — route cheap work to another engine. Lists drift; re-verify
-   with `grok models` before pinning. Kimi (verified
-   2026-07-20, live 0.28.0): `k3` = flagship (1M ctx on
-   Allegretto+ membership, 256k below; `reasoning_effort: low|high|max`, default `high` — set via
-   config.toml or `/effort`, NOT a CLI
-   flag) ≈ reasoner/advisor/peer · `kimi-for-coding` ≈ balanced worker/reviewer (256k ctx) ·
-   `kimi-for-coding-highspeed` ≈ latency-critical worker (6× speed at 3× quota — budget-relevant,
-   not a cheap tier; no cheap tier exists). Switching model or effort mid-session invalidates
-   Kimi's prompt cache — pin both per session. Pi (docs-verified 2026-08-13) has NO model list of
-   its own — it is a provider-agnostic carrier; the tier is whatever `--model <provider/id>` pins,
-   so map it from the pinned provider's row above. Model lists drift — re-verify slugs before
-   pinning (`shared-engines.md`).
+9. **Engine tier map → [model catalog](shared-model-catalog.md).** Concrete (harness · model ·
+   effort) per role and posture, the harness matrix (context usable in the harness, price, AA index,
+   coding-agent index, vision / computer use) and per-model effort guidance live there, dated and
+   graded. Pin full ids on lanes — aliases move server-side (`sonnet` switched mid-session on
+   Sonnet 5.5 launch day) — and re-verify slugs with the harness's own list before pinning.
 10. Sensitivity to emphasized/literal wording varies by model — re-tune dispatch templates per
     model at a recorded boundary, never mid-run (cache hygiene, `shared-token-economy.md`).
 11. **Hybrid preferred when the brief is transcription-grade**: planner spend converts
@@ -166,3 +145,7 @@ end, never renumber.
     the board flags the drift). Unobservable routing is a **recorded risk**, not an assumed success; it does not stop the
     lane (`shared-hosts.md`'s degrade-and-say-so still governs), but a run whose tier separation
     was never observed cannot claim it.
+14. **Posture is the user's cost dial.** `posture=frontier|balanced|economy` (default balanced) picks
+    the catalog column for every role the user did not pin; the flight plan prints it and `board set
+    posture=…` re-resolves. Propose frontier for high-stakes architecture and irreversible work,
+    economy for volume work with a verifiable gate — say which and why in the plan's why line.

@@ -48,8 +48,8 @@ Fresh context beats the controller's: the controller is anchored on the plan tha
 carries run noise. `board dispatch N --role architect --model <strongest> --effort high|max`
 (agent `arch-N`) with [prompt-architect.md](prompt-architect.md) and a packet: design doc + plan
 paths, every conflict report on this theme, what is built (commits, interfaces, tests), what is
-queued, decisions and rails, budget left. Strongest tier: Fable 5.1 or GPT-6 Astra at `high`,
-Opus 5.5 at `max` (`shared-model-routing.md`). The architect writes a delta; it never implements.
+queued, decisions and rails, budget left. Model: the catalog's architect row for the run's posture
+(`shared-model-catalog.md`; the flight plan prints it). The architect writes a delta; it never implements.
 
 ## Apply
 

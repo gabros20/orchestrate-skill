@@ -42,6 +42,10 @@ cat "$OUT"; git -C /path/to/repo status --short   # read the result; inspect wha
   `turn.started` / `item.completed` / `turn.completed{usage}` / `error`). `turn.completed.usage` is
   the receipt (`board return --tokens`) — journal the ROOT turn only: nested subagent tokens
   already roll up into it (0.151+), counting them twice overstates the run.
+- **`gpt-6.1-sol` replaced `gpt-6-sol` on 2026-09-29** ($2/$10, "near-Astra performance at a lower
+  cost"; Codex catalog default effort `low`; AA Coding Agent Index 63 at $1.04/task) — repin. Codex
+  exposes 272K context (872K max) though the API offers 1.05M; GPT-6 Sol/Luna need Codex ≥ 0.157.0
+  (0.158.0 current); `gpt-5.5` retires 2026-10-14. Picks per role: `shared-model-catalog.md`.
 - Models (GPT-6 family, released 2026-09-22; 272k context each): **`gpt-6-astra`** (flagship —
   reasoner/advisor/peer; $10/$50 per M; default effort `low`; efforts `low..max` + `ultra`; needs
   client ≥0.153) · **`gpt-6-sol`** (standard worker/reviewer — "complex coding at a lower cost";

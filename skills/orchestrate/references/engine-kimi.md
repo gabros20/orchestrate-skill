@@ -24,8 +24,12 @@ kimi -S <id> -p "<nudge>"                     # resume by id (-c = most recent, 
 ```
 - `--output-format text|stream-json` (only with `-p`); no `--cwd` — `cd` first. `-p` forces the
   `auto` permission policy (rejects `--yolo`/`--auto`/`--plan`) — no headless gating exists.
-- Models: `k3` (flagship, 1M context, `reasoning_effort: low|high|max`) · `kimi-for-coding`
-  (256k, balanced) · `kimi-for-coding-highspeed` (6× speed at 3× quota — not a cheap tier). Effort
+- Models (docs 2026-09-30): `k3` (flagship, 1M on Pro/Allegretto+, 256K below; `k3-256k` fixed;
+  `reasoning_effort: low|high|max`, AA 44 at max) · `kimi-for-coding` — now **K2.8 Preview**, upgraded
+  in place (up to 1M) · `kimi-for-coding-highspeed` = K2.7 Code HighSpeed (262K, 6× speed at 3×
+  quota — not a cheap tier; a misspelled id silently falls back to standard). Over-plan requests
+  return **401**, not 403. K3 also runs inside Claude Code (`ANTHROPIC_BASE_URL=https://api.kimi.ai/coding/`,
+  model `k3`) and Codex (custom `~/.codex/models.json`) — vendor-documented routes. Effort
   has NO CLI flag (`/effort`, config overrides, or `KIMI_MODEL_*` env); switching model or effort
   mid-session invalidates the prompt cache.
 - Since 0.33 the CLI runs agent-core-v2 by default and the **subagent pool is on by default** —

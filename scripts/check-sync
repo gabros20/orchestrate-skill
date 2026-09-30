@@ -123,6 +123,7 @@ board learn|SKILL.md,references/shared-token-economy.md,references/shared-contra
 board memory|SKILL.md,references/shared-handoff.md,references/shared-contracts.md
 board reap|SKILL.md,references/shared-lane-hygiene.md,references/shared-monitoring.md
 board version|SKILL.md,references/shared-lane-hygiene.md,references/shared-handoff.md
+posture|SKILL.md,references/shared-model-routing.md,references/shared-model-catalog.md,references/shared-flight-plan.md
 DESIGN_CONFLICT|SKILL.md,references/shared-token-economy.md,references/shared-contracts.md,references/shared-replan.md,references/prompt-implementer.md,references/prompt-sub-orchestrator.md,references/strategy-hierarchical.md
 '
 while IFS='|' read -r pattern homes; do

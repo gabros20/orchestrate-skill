@@ -14,7 +14,8 @@ Inputs:
 Produces:
 - `.orchestrate/design-delta-N.md`: root cause, design change, decisions, plan delta, user questions.
 
-Agent tool or lane, `model: <strongest>` — Fable 5.1 / GPT-6 Astra at `high`, Opus 5.5 at `max` —
+Agent tool or lane, model from `shared-model-catalog.md`'s architect row for the run's posture — frontier
+Opus 5.5 `max` (+ GPT-6 Astra `xhigh` as a second opinion), balanced Opus 5.5 `xhigh`, economy GPT-6.1 Sol `xhigh` —
 fresh context, agent `arch-N` (`board dispatch N --role architect`). Writes the delta file only;
 the controller records the decisions and edits the plan.
 

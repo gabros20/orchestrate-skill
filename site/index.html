@@ -619,6 +619,7 @@ accepted progress = validation + durable writeback + committed readback</div>
     <tr><td class="dim">review</td><td>which gates run on each result</td><td><code>dual</code> — spec, then quality</td></tr>
     <tr><td class="dim">engine</td><td>who executes — <code>claude</code>, <code>codex</code>, <code>grok</code>, <code>cursor</code>, <code>agy</code>, <code>opencode</code>, <code>hermes</code>, <code>kimi</code>, <code>pi</code>, or <code>mixed</code></td><td><code>claude</code></td></tr>
     <tr><td class="dim">models</td><td>which model tier does which job</td><td>tier map (appendix)</td></tr>
+    <tr><td class="dim">posture</td><td>how much to spend on quality: <code>frontier</code>, <code>balanced</code> or <code>economy</code> — picks a concrete model per role from dated benchmark and price data</td><td>balanced</td></tr>
     <tr><td class="dim">effort</td><td>reasoning level per role — the first cost knob, model tier is the second</td><td>pinned per dispatch where the surface allows</td></tr>
     <tr><td class="dim">isolation</td><td>whether workers get their own git worktree</td><td><code>worktree</code> when &gt;1 writer</td></tr>
     <tr><td class="dim">trigger</td><td>run once, on a goal, on an interval, on a schedule</td><td><code>once</code></td></tr>

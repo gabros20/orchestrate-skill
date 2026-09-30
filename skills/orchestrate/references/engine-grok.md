@@ -30,6 +30,9 @@ grok -w wt-name --prompt-file spec.md          # -w/--worktree: a new git worktr
   same model on faster serving: about 2× output speed at 2× the price — measured live, one
   turn ≈30k tokens cost $0.034 against $0.021; a latency lane, never a cheap tier) · `grok-4.6` ·
   `grok-4.5`. `grok models` lists what the account sees — run it before pinning; lists drift.
+  The 2M-context Grok (`grok-4-1-fast`) was retired 2026-05-15; `grok-4.3` / `grok-4.20` (1M) are
+  API-only, not in the CLI. Grok 4.7 is dominated as a worker (AA 46 at $2.73) — peer / speed lane
+  (`shared-model-catalog.md`).
 - Receipt naming: a lane pinned `-m grok-4.7` reports `modelUsage` under **`grok-4.7-build`**
   (the fast variant under `grok-4.7-build-fast`). That is the same model, not drift — do not pass
   it as `--observed-model`; `-m grok-4.7-build` itself is refused ("unknown model id").

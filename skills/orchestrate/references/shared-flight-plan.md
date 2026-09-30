@@ -14,6 +14,10 @@ Inputs:
 Produces:
 - A printed flight plan, a recorded approval or skip reason, and possibly re-resolved dimensions.
 
+## Contents
+
+- When the gate fires · The format · Shape per strategy · Rendering per surface · Honest budget line
+
 No silent launch: the user sees the design BEFORE the fleet exists, in the shape they could tweak.
 The flight plan is `run.md` RENDERED, never a second source — `board plan --why "<triage pick>"`
 renders it from the `run` record `board init` wrote (the same record the board's header shows),
@@ -56,7 +60,9 @@ node, a deliberate cost posture) beneath the printed tree — never retype the t
    `tweak` — the numbered keys.
 
 Tweak keys number the standard dimensions — `[1] strategy [2] models [3] effort [4] engine
-[5] review [6] isolation [7] budget [8] lanes` — plus strategy-specific extras as `[9]+`. A "change N …"
+[5] review [6] isolation [7] budget [8] lanes [9] posture` — plus strategy-specific extras as `[10]+`.
+The header prints the **posture** (frontier · balanced · economy) and which catalog column unpinned
+roles took; the tree ends with the architect a `DESIGN_CONFLICT` would get (`shared-model-catalog.md`). A "change N …"
 answer re-resolves that dimension, reprints ONLY the changed lines, and re-asks; approval
 dispatches. This block layout is a format contract (like the report line shapes), kept stable so
 users can read any run's plan the same way.
@@ -75,6 +81,36 @@ users can read any run's plan the same way.
   tree the consensus plan hands off to.
 - **xcli lanes** — the engine sits in the node line (`codex terra @ high · spec file · empty-diff
   check`).
+
+## Rendering per surface
+
+The plan is the same record; the surface decides the form. Pick by what the host renders:
+
+- **Terminal** (Claude Code CLI, Codex CLI, Grok, Kimi, opencode TUIs): `board plan` → relay it
+  verbatim inside a ```` ```text ```` fence (monospace keeps the tree aligned; footer values wrap at
+  100 columns under their own column), then one line: "Approve, or change N …".
+- **App** (Codex desktop app, Claude desktop / web, Cursor and IDE panels, Antigravity): `board plan
+  --format md` → paste as-is: heading, a roles table (identical workers merged as ×N), the topology
+  in a fence, footer bullets, and a bold **Approve?** line listing the numbered changes. Never paste
+  the text form outside a fence in an app — a proportional font breaks the tree.
+- Unsure which surface → `--format md`; raw markdown still reads in a terminal.
+
+Terminal (excerpt):
+```text
+posture: balanced · model catalog 2026-09-30, cross-harness column · change: board set posture=…
+controller · orchestrator claude opus-5-5 @high · host
+├─ worker · card 1 API · codex gpt-6.1-sol @high · worktree wt-1
+budget  ~11 agents · cap 8 · tokens: no receipts yet — state a range, never a precision you
+        don't have
+```
+
+App (excerpt of `--format md`):
+```markdown
+| Role | Model · effort | Where · notes |
+|---|---|---|
+| worker ×3 | codex gpt-6.1-sol @high | card 1 API · worktree wt-1, card 2 UI · worktree wt-2, … |
+**Approve?** Reply `approve`, or change one — 1 strategy · 2 models · … · 9 posture.
+```
 
 ## Honest budget line
 

@@ -32,7 +32,7 @@ slash-command clients, or the host's equivalent. Documentation uses `/orchestrat
   [strategy=auto|staged|parallel|hierarchical|team|workflow|loop|advisor|adversarial|xcli]
   [review=dual|spec|quality|panel:N|consensus:N|off]
   [engine=claude|codex|grok|cursor|agy|opencode|hermes|kimi|pi|mixed]
-  [models=orchestrator:<tier>,worker:<tier>,advisor:<tier>,reviewer:<tier>]
+  [models=orchestrator:<tier>,worker:<tier>,advisor:<tier>,reviewer:<tier>] [posture=frontier|balanced|economy]
   [effort=<level | role:level map>]
   [isolation=worktree|branch|off]
   [trigger=once|goal:"<stop condition>"|interval:<t>|schedule:"<cron>"]
@@ -75,7 +75,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | Before the first multi-agent dispatch | [Flight plan](references/shared-flight-plan.md) | Rendered topology plan, approval gate, and tweak loop |
 | Every dispatched task | [Contracts](references/shared-contracts.md) | Brief, status, report, findings, and workspace schemas |
 | Any review-enabled run | [Review gates](references/shared-review-gates.md) | Ordered spec/quality gates and panel behavior |
-| Any role or engine selection | [Model routing](references/shared-model-routing.md) | Explicit model tiers, cost posture, and drift verification |
+| Any role or engine selection | [Model routing](references/shared-model-routing.md) → [catalog](references/shared-model-catalog.md) | Tiers and drift rules, then the dated harness · model · effort pick per role and posture |
 | Any external-CLI dispatch | [Engines](references/shared-engines.md) → one block: [codex](references/engine-codex.md) · [grok](references/engine-grok.md) · [claude](references/engine-claude.md) · [cursor](references/engine-cursor.md) · [agy](references/engine-agy.md) · [opencode](references/engine-opencode.md) · [hermes](references/engine-hermes.md) · [kimi](references/engine-kimi.md) · [pi](references/engine-pi.md) | The cross-engine session/receipt/cap map, then the one engine's verified invocation block |
 | Any external-CLI launch, resume, or quota stall | [Lane hygiene](references/shared-lane-hygiene.md) | Flag probing, wrapper launches, resume-by-id, stall recovery, usage receipts |
 | More than one writer | [Isolation](references/shared-isolation.md) | Worktree/branch rules and integration ownership |
@@ -110,6 +110,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | `review` | off · spec · quality · dual · panel:N · consensus:N | dual |
 | `engine` | claude · codex · grok · cursor · agy · opencode · hermes · kimi · pi · mixed | host-appropriate |
 | `models` | advisor · orchestrator · reasoner · worker · reviewer · peer tier map | model routing |
+| `posture` | frontier · balanced · economy — the cost dial for unpinned roles | balanced ([catalog](references/shared-model-catalog.md)) |
 | `effort` | per-host reasoning levels (e.g. low · medium · high · xhigh · max) | pinned per dispatch where the surface supports it; else session effort, recorded |
 | `isolation` | none · worktree · branch | worktree for multiple writers |
 | `trigger` | once · goal · interval · schedule | once |
@@ -156,7 +157,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    the board's lanes when the shape has more stages than the five defaults (`--lanes`).
 4. Create task briefs with [task-brief](scripts/task-brief) and validate them with
    [brief-check](scripts/brief-check).
-5. Render the flight plan from the resolved record (`board plan --why "…"`) and gate on the
+5. Render the flight plan from the resolved record (`board plan --why "…"`; in a text fence on terminals, `--format md` in apps) and gate on the
    user's approval ([flight plan](references/shared-flight-plan.md)); apply any tweaks by
    re-resolving that dimension and re-asking; record the outcome (`board plan approved`).
 6. Dispatch only ready work, and journal it: every dispatch and return (`board dispatch N

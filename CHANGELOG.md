@@ -11,6 +11,45 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.30.0] — 2026-09-30
+
+### Added
+
+- **Model catalog** (`references/shared-model-catalog.md`) from a nine-lane, fact-checked research run
+  (`docs/research/model-selection/`): harness · model · effort per role under three postures, a
+  harness matrix (context usable in the harness, price, AA Intelligence and Coding Agent indexes,
+  vision / computer use), per-model effort guidance, thin-evidence list, and the update procedure.
+  Key facts: Opus 5.5 is the default seat; harness + model is the unit (15–20 pts swing); Codex +
+  GPT-6.1 Sol reaches 63 on the Coding Agent Index at $1.04/task vs 66 at $13.0; xhigh/max buy 0–4
+  points at 1.2–2.8× cost per step; the 2M-context Grok is retired.
+- **`posture=frontier|balanced|economy`** (default balanced): unpinned roles take that catalog column
+  — the Claude-only column when the engine is `claude`. The flight plan prints the posture, the
+  architect a DESIGN_CONFLICT would get, and `[9] posture`; `board set posture=…` re-resolves.
+  Routing rule 14.
+- **Flight plan per surface.** `board plan` (terminals) wraps footer values at 100 columns under their
+  own column and is relayed inside a `text` fence; `board plan --format md` (Codex desktop app,
+  Claude desktop / web, IDE panels) renders a heading, a roles table with identical workers merged
+  (×N, shared parts once), the topology in a fence, footer bullets and a bold approval line.
+  `shared-flight-plan.md` "Rendering per surface" says which surface gets which, with examples.
+  The final-deliverable gate now takes the catalog's frontier architect pick.
+
+### Changed
+
+- Routing's tier table names concrete catalog defaults instead of "opus-class / sonnet-class"; rule 9
+  (per-engine prose) now points at the catalog. Codex block: `gpt-6.1-sol` replaces `gpt-6-sol`,
+  context in Codex is 272K (872K max), GPT-6 needs Codex ≥ 0.157.0. Kimi block: `kimi-for-coding` is
+  K2.8 Preview, 401 on over-plan, K3 routes through Claude Code and Codex. Grok block: the 2M model is
+  retired. Architect and replan take the catalog's architect row.
+
+### Fixed
+
+- The flight plan had no architect default ("session model").
+- `board init PLAN --fresh` archived `.orchestrate/` before reading PLAN — a plan kept there vanished
+  and init crashed; the plan is read first.
+- `board return --report` resolved only against `.orchestrate/` — a repo-relative report warned
+  "does not exist".
+- `board check` flagged "no review dispatched" on `review=off` runs.
+
 ## [1.29.0] — 2026-09-29
 
 ### Added

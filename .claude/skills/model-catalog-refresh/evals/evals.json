@@ -1,0 +1,40 @@
+{
+  "skill_name": "model-catalog-refresh",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Anthropic just released Claude Haiku 5.5 (claude-haiku-5-5) and I heard xAI is shipping Grok 5 this week. Update our orchestrate model catalog for them. Set everything up and show me the plan, but STOP before dispatching any research agent \u2014 I want to approve first.",
+      "expected_output": "The new-model lane set (vendor, CLI catalogs, benchmarks, X, Reddit/HN, effort) plus a fresh-context fact-check gate, set up through the board with a plan file, a research contract seeded from the current catalog, per-lane briefs, and a flight plan; the apply and release steps named; nothing dispatched.",
+      "files": [],
+      "assertions": [
+        "setup went through the board (run journaled)",
+        "nothing was dispatched",
+        "per-lane briefs written to .orchestrate",
+        "a fresh-context fact-check gate is planned",
+        "all six new-model lanes planned",
+        "both trigger models seeded into the briefs/contract",
+        "X lane serialized via xrelay and Reddit via RSS",
+        "reply names both apply targets (catalog reference + board CATALOG)",
+        "reply names the release path"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "openai cut gpt-6-astra to $5/$25 today. refresh our catalog for the price change \u2014 setup only, don't run the research agents yet, just get it ready and tell me what will run",
+      "expected_output": "A narrow price-change scope (vendor specs + CLI catalogs, not a full sweep), the gate, board-backed setup and briefs, and the apply targets that a price change moves (catalog rows, cost columns, possibly role picks); nothing dispatched.",
+      "files": [],
+      "assertions": [
+        "setup went through the board (run journaled)",
+        "nothing was dispatched",
+        "per-lane briefs written to .orchestrate",
+        "a fresh-context fact-check gate is planned",
+        "scope stays narrow: no X or Reddit/HN lanes",
+        "vendor and CLI catalog lanes planned",
+        "reply names the catalog rows / cost figures the price moves",
+        "reply says whether role picks could change",
+        "price run limits the benchmark lane to cost rows"
+      ]
+    }
+  ],
+  "notes": "Setup-stage evals (a full refresh launches 7+ research agents). Run each prompt in a throwaway clone; grade_setup.py grades from the clone's .orchestrate and the run's outputs. Iteration 2 (2026-09-30): with skill 100%, without 36%."
+}

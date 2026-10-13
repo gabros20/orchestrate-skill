@@ -278,28 +278,34 @@ const Stage: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
   const opacity = io(frame, [98, 122], [0, 1]) * io(frame, [452, 470], [1, 0]);
   if (opacity <= 0.01) return null;
 
-  // traveling chips: brief 1 (controller → lane), report 1 (worker → lane),
-  // brief 2 (controller → lane)
+  // Independent tasks run at once: both briefs leave together, both workers run side by side,
+  // both report, both are discarded. Traveling chips: briefs (controller → lane), reports (worker → lane).
   const b1x = io(frame, [128, 162], [CTL.x + 40, LANE.x]);
   const b1y = io(frame, [128, 162], [CTL.y + 10, LANE.briefY]);
   const b1o = io(frame, [128, 140], [0, 1]);
+
+  const b2x = io(frame, [136, 170], [CTL.x + 40, LANE.x]);
+  const b2y = io(frame, [136, 170], [CTL.y + 24, LANE.brief2Y]);
+  const b2o = io(frame, [136, 148], [0, 1]);
 
   const r1x = io(frame, [202, 236], [WRK.x - 30, LANE.x]);
   const r1y = io(frame, [202, 236], [WRK.y1 + 14, LANE.reportY]);
   const r1o = io(frame, [202, 214], [0, 1]);
 
-  const b2x = io(frame, [354, 386], [CTL.x + 40, LANE.x]);
-  const b2y = io(frame, [354, 386], [CTL.y + 24, LANE.brief2Y]);
-  const b2o = io(frame, [354, 366], [0, 1]);
+  const r2x = io(frame, [214, 248], [WRK.x - 30, LANE.x]);
+  const r2y = io(frame, [214, 248], [WRK.y2 + 14, LANE.report2Y]);
+  const r2o = io(frame, [214, 226], [0, 1]);
 
   const w1bar = io(frame, [176, 216], [0.06, 0.52]);
+  const w2bar = io(frame, [184, 226], [0.06, 0.47]);
   const w1ghost = io(frame, [238, 266], [1, 0.34]);
+  const w2ghost = io(frame, [250, 278], [1, 0.34]);
 
-  // ledger typing
+  // ledger typing — one line per gated task
   const line1 = "✓ task 1 — spec ✓ quality ✓";
-  const line2 = "· task 2 in flight";
+  const line2 = "✓ task 2 — spec ✓ quality ✓";
   const l1chars = Math.round(io(frame, [326, 352], [0, line1.length]));
-  const l2chars = Math.round(io(frame, [396, 416], [0, line2.length]));
+  const l2chars = Math.round(io(frame, [358, 384], [0, line2.length]));
 
   return (
     <AbsoluteFill style={{ opacity }}>
@@ -329,17 +335,18 @@ const Stage: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
         opacity={io(frame, [150, 166], [0, 1]) * w1ghost}
       />
 
-      {/* worker 2 — the second fresh mind */}
+      {/* worker 2 — a second fresh mind, running at the same time */}
       <Box
         t={t}
         title="worker 2"
-        sub="fresh — empty context"
+        sub={frame < 262 ? "fresh — runs alongside" : "context discarded"}
+        dashed={frame >= 262}
         x={WRK.x}
         y={WRK.y2}
         w={WRK.w}
-        bar={0.06}
-        scale={io(frame, [372, 394], [0.85, 1])}
-        opacity={io(frame, [372, 390], [0, 1])}
+        bar={w2bar}
+        scale={io(frame, [158, 180], [0.85, 1])}
+        opacity={io(frame, [158, 174], [0, 1]) * w2ghost}
       />
 
       <FileChip t={t} label="task-1-brief.md" x={b1x} y={b1y} opacity={b1o} />
@@ -357,6 +364,19 @@ const Stage: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
         }
       />
       <FileChip t={t} label="task-2-brief.md" x={b2x} y={b2y} opacity={b2o} />
+      <FileChip
+        t={t}
+        label="task-2-report.md"
+        x={r2x}
+        y={r2y}
+        opacity={r2o}
+        stamp={
+          <>
+            <Stamp t={t} frame={frame} at={286} label="spec ✓" />
+            <Stamp t={t} frame={frame} at={316} label="quality ✓" />
+          </>
+        }
+      />
 
       {/* ledger strip */}
       <div
@@ -377,20 +397,20 @@ const Stage: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
       >
         <span style={{ color: t.accent, fontWeight: 600 }}>progress.md</span>
         <span style={{ color: t.good }}>{line1.slice(0, l1chars)}</span>
-        <span>{line2.slice(0, l2chars)}</span>
+        <span style={{ color: t.good }}>{line2.slice(0, l2chars)}</span>
       </div>
 
       <Caption t={t} frame={frame} from={118} to={190}>
-        A <b style={{ color: t.ink }}>controller</b> coordinates. It writes a brief file; a fresh worker takes the task.
+        A <b style={{ color: t.ink }}>controller</b> coordinates. It writes brief files; fresh workers take the tasks — <b style={{ color: t.ink }}>at once</b>.
       </Caption>
       <Caption t={t} frame={frame} from={196} to={264}>
-        The worker reports — then it is <b style={{ color: t.ink }}>thrown away</b>. The files stay.
+        Each worker reports — then it is <b style={{ color: t.ink }}>thrown away</b>. The files stay.
       </Caption>
       <Caption t={t} frame={frame} from={270} to={348}>
-        Two gates in fixed order — spec, then quality — then one ledger line.
+        Two gates in fixed order — spec, then quality — then one ledger line per task.
       </Caption>
       <Caption t={t} frame={frame} from={356} to={442}>
-        Every task gets a <b style={{ color: t.ink }}>fresh mind</b>. The run lives on disk.
+        Independent tasks never wait on each other. <b style={{ color: t.ink }}>The run lives on disk.</b>
       </Caption>
     </AbsoluteFill>
   );
@@ -419,18 +439,19 @@ const BeatHead: React.FC<{ t: Theme; frame: number; from: number; kicker: string
 // node per agent carrying `model @ effort` and isolation, gates as children, the final gate last,
 // then the gates / rails / budget / tweak footer strips.
 const PLAN_TREE: [string, string, string][] = [
-  ["staged  ×2 tasks", "plan.md · independent, suite verifies", ""],
-  ["├─ implementer", "task N · shared tree", "sonnet @ high"],
-  ["    ├─ spec gate", "did it build what was asked", "sonnet @ medium"],
-  ["    └─ quality gate", "runs only after spec ✓", "opus @ high"],
-  ["└─ final gate", "whole branch vs the stated goal", "opus @ high"],
+  ["hierarchical · 2 domains", "a build · the graph has 2 waves · Task 0 first", ""],
+  ["├─ task 0 · environment", "the approved tools only · every lead waits for it", "sonnet @ high"],
+  ["├─ lead · backend", "parallel waves · worktrees · merges its domain", "opus @ high"],
+  ["│   └─ implementers ×3", "spec ✓ → quality ✓ as each one lands", "sonnet @ high"],
+  ["├─ lead · web", "parallel waves · worktrees · merges its domain", "opus @ high"],
+  ["└─ final gate", "the whole branch vs the stated goal", "opus @ max"],
 ];
 
 const PLAN_STRIPS: [string, string][] = [
   ["gates", "spec → quality per task · final-deliverable gate at finish"],
-  ["rails", "branch first · PR cap 1 · never a duplicate agent on overload"],
-  ["budget", "7 agents · token range from the 15× multi-agent multiplier"],
-  ["tweak", "[1] strategy  [2] models  [3] effort  [4] engine  [5] review  [6] isolation"],
+  ["tools", "tests: bun test · e2e: agent-browser — chosen in Prepare"],
+  ["budget", "~12 agents · token band priced from past runs"],
+  ["tweak", "[1] strategy  [2] models  [3] effort  [5] review  [9] posture  [10] tools"],
 ];
 
 const FlightPlan: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
@@ -480,7 +501,7 @@ const FlightPlan: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
                   fontSize: 17,
                   fontWeight: head ? 600 : 400,
                   color: head ? t.accent : t.ink,
-                  width: 230,
+                  width: 290,
                   whiteSpace: "pre",
                 }}
               >
@@ -592,12 +613,256 @@ const FlightPlan: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
   );
 };
 
+// ---------- beat: prepare (take stock, then ask — before anything runs) ----------
+
+// What `scripts/capabilities` finds and what one clarify round looks like (shared-prepare.md):
+// the inventory first, then the frontier of open decisions — numbered, a recommended answer each —
+// and nothing installed without a yes.
+const INVENTORY: [string, string, string, "good" | "amber" | "muted" | "accent"][] = [
+  ["xrelay", "X research", "free", "good"],
+  ["ghrelay", "GitHub research", "free", "good"],
+  ["ytrelay", "missing → npm i -g youtube-relay-mcp", "gap", "amber"],
+  ["firecrawl", "web crawl at scale", "paid · fallback", "muted"],
+  ["skills", "134 on disk · 116 hidden from the model", "found", "accent"],
+];
+
+const ROUND: [string, string][] = [
+  ["Ship macOS first, Windows after v1?", "yes — one platform keeps v1 testable"],
+  ["Install ytrelay for the YouTube lane?", "yes — free and local"],
+  ["No toolchain yet — scout X and GitHub first?", "yes — track record over hype"],
+];
+
+const Prepare: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
+  const S = 0;
+  const opacity = io(frame, [S, S + 18], [0, 1]) * io(frame, [S + 272, S + 290], [1, 0]);
+  if (opacity <= 0.01) return null;
+  const colour = (c: string) => (c === "good" ? t.good : c === "amber" ? t.amber : c === "accent" ? t.accent : t.muted);
+  const panel: React.CSSProperties = {
+    position: "absolute",
+    top: 96,
+    background: t.panel,
+    border: `1.5px solid ${t.line}`,
+    borderRadius: 12,
+    padding: "14px 18px",
+  };
+  const head: React.CSSProperties = {
+    fontFamily: SANS,
+    textTransform: "uppercase",
+    letterSpacing: "0.12em",
+    fontWeight: 600,
+    fontSize: 12.5,
+    color: t.muted,
+    marginBottom: 10,
+  };
+  return (
+    <AbsoluteFill style={{ opacity }}>
+      <BeatHead t={t} frame={frame} from={S} kicker="before anything runs" title="prepare — take stock, then ask" />
+
+      <div style={{ ...panel, left: 60, width: 500, opacity: io(frame, [S + 8, S + 24], [0, 1]) }}>
+        <div style={head}>
+          <span style={{ color: t.file }}>▤</span>&nbsp; capabilities.md · zero tokens
+        </div>
+        {INVENTORY.map(([name, what, tag, c], i) => {
+          const from = S + 20 + i * 12;
+          const o = io(frame, [from, from + 12], [0, 1]);
+          return (
+            <div
+              key={name}
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: 12,
+                height: 42,
+                opacity: o,
+                translate: `${io(frame, [from, from + 12], [-10, 0])}px 0`,
+                borderTop: i ? `1px dashed ${t.line}` : "none",
+                paddingTop: 10,
+              }}
+            >
+              <span style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: t.ink, width: 96 }}>{name}</span>
+              <span style={{ fontFamily: SANS, fontSize: 14.5, color: c === "amber" ? t.amber : t.muted, flex: 1, whiteSpace: "nowrap" }}>{what}</span>
+              <span style={{ fontFamily: MONO, fontSize: 13, color: colour(c), border: `1px solid ${colour(c)}`, borderRadius: 20, padding: "1px 9px", whiteSpace: "nowrap" }}>
+                {tag}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ ...panel, left: 590, width: 550, opacity: io(frame, [S + 88, S + 104], [0, 1]) }}>
+        <div style={head}>clarify · round 1 · a recommended answer on each</div>
+        {ROUND.map(([q, a], i) => {
+          const from = S + 98 + i * 20;
+          const o = io(frame, [from, from + 12], [0, 1]);
+          return (
+            <div key={q} style={{ opacity: o, marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 700, color: t.accent, border: `1.5px solid ${t.accent}`, borderRadius: 6, padding: "0 6px" }}>
+                  Q{i + 1}
+                </span>
+                <span style={{ fontFamily: SANS, fontSize: 16, color: t.ink, whiteSpace: "nowrap" }}>{q}</span>
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: 14, color: t.good, marginTop: 4, marginLeft: 42, whiteSpace: "nowrap" }}>↳ {a}</div>
+            </div>
+          );
+        })}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 4, opacity: io(frame, [S + 176, S + 188], [0, 1]) }}>
+          <span style={{ fontFamily: MONO, fontSize: 15, color: t.accent, fontWeight: 600 }}>you ›</span>
+          <span style={{ fontFamily: MONO, fontSize: 15, color: t.ink }}>1 yes · 2 yes · 3 yes</span>
+        </div>
+        <div
+          style={{
+            marginTop: 10,
+            display: "flex",
+            gap: 14,
+            alignItems: "baseline",
+            opacity: io(frame, [S + 198, S + 208], [0, 1]),
+            scale: String(io(frame, [S + 198, S + 212], [1.25, 1])),
+            transformOrigin: "left center",
+          }}
+        >
+          <span style={{ fontFamily: MONO, fontSize: 14.5, fontWeight: 600, color: t.good }}>✓ D-1 D-2 D-3 · owner: you</span>
+          <span style={{ fontFamily: SANS, fontSize: 13.5, color: t.muted, opacity: io(frame, [S + 222, S + 234], [0, 1]) }}>
+            ytrelay installed · verified
+          </span>
+        </div>
+      </div>
+
+      <Caption t={t} frame={frame} from={S + 16} to={S + 104}>
+        First it takes stock — every skill and CLI on your machine, <b style={{ color: t.ink }}>even the ones your agent can&rsquo;t see</b>.
+      </Caption>
+      <Caption t={t} frame={frame} from={S + 110} to={S + 196}>
+        Then one round of questions, a recommended answer on each. <b style={{ color: t.ink }}>Facts it looks up; decisions stay yours.</b>
+      </Caption>
+      <Caption t={t} frame={frame} from={S + 202} to={S + 286}>
+        Nothing is installed without your yes — and <b style={{ color: t.ink }}>free, local tools come first</b>.
+      </Caption>
+    </AbsoluteFill>
+  );
+};
+
+// ---------- beat: research (one lane per source → synthesis → fact-check) ----------
+
+const LANES: [string, string, number][] = [
+  ["X", "xrelay", 12],
+  ["GitHub", "ghrelay · gh", 9],
+  ["YouTube", "ytrelay", 7],
+  ["web", "search + fetch", 10],
+  ["HN · Reddit", "curl · RSS", 8],
+];
+
+const Research: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
+  const S = 0;
+  const opacity = io(frame, [S, S + 18], [0, 1]) * io(frame, [S + 266, S + 284], [1, 0]);
+  if (opacity <= 0.01) return null;
+  const synthO = io(frame, [S + 140, S + 156], [0, 1]);
+  const checkO = io(frame, [S + 196, S + 210], [0, 1]);
+  return (
+    <AbsoluteFill style={{ opacity }}>
+      <BeatHead t={t} frame={frame} from={S} kicker="research · one lane per source" title="deep research, fanned out" />
+      <Box
+        t={t}
+        title="controller"
+        sub="one question, many sources"
+        color={t.accent}
+        x={52}
+        y={214}
+        w={232}
+        opacity={io(frame, [S + 8, S + 24], [0, 1])}
+        scale={io(frame, [S + 8, S + 24], [0.9, 1])}
+      />
+      <div style={{ position: "absolute", left: 292, top: 238, fontFamily: MONO, fontSize: 30, color: t.accent, opacity: io(frame, [S + 18, S + 34], [0, 1]) }}>→</div>
+      {LANES.map(([src, tool, q], i) => {
+        const from = S + 20 + i * 8;
+        const o = io(frame, [from, from + 12], [0, 1]);
+        const queries = Math.round(io(frame, [S + 40 + i * 4, S + 118 + i * 4], [0, q]));
+        const fileO = io(frame, [S + 122 + i * 6, S + 134 + i * 6], [0, 1]);
+        return (
+          <div
+            key={src}
+            style={{
+              position: "absolute",
+              left: 336,
+              top: 102 + i * 64,
+              width: 470,
+              height: 50,
+              opacity: o,
+              translate: `${io(frame, [from, from + 12], [-12, 0])}px 0`,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              background: t.panel,
+              border: `1.5px solid ${t.line}`,
+              borderRadius: 10,
+              padding: "0 14px",
+            }}
+          >
+            <span style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: t.ink, width: 104, whiteSpace: "nowrap" }}>{src}</span>
+            <span style={{ fontFamily: MONO, fontSize: 13, color: t.accent, border: `1.5px dashed ${t.accent}`, borderRadius: 7, padding: "2px 8px", whiteSpace: "nowrap" }}>
+              {tool}
+            </span>
+            <span style={{ fontFamily: SANS, fontSize: 13.5, color: t.muted, flex: 1, whiteSpace: "nowrap" }}>{queries} queries</span>
+            <span style={{ fontFamily: MONO, fontSize: 13, color: t.ink, background: t.codeBg, border: `1px solid ${t.line}`, borderRadius: 7, padding: "3px 8px", opacity: fileO, whiteSpace: "nowrap" }}>
+              <span style={{ color: t.file }}>▤</span> lane-{i + 1}.md
+            </span>
+          </div>
+        );
+      })}
+      <div style={{ position: "absolute", left: 818, top: 238, fontFamily: MONO, fontSize: 30, color: t.accent, opacity: synthO }}>→</div>
+      <Box t={t} title="synthesizer" sub="fresh context · reads the lanes" x={866} y={104} w={282} opacity={synthO} scale={io(frame, [S + 140, S + 156], [0.9, 1])} />
+      <FileChip t={t} label="report.md" x={866} y={206} opacity={io(frame, [S + 168, S + 182], [0, 1])} />
+      <div
+        style={{
+          position: "absolute",
+          left: 866,
+          top: 266,
+          width: 282,
+          background: t.panel,
+          border: `1.5px solid ${t.line}`,
+          borderRadius: 12,
+          padding: "10px 14px",
+          opacity: checkO,
+        }}
+      >
+        <div style={{ fontFamily: SANS, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600, fontSize: 12, color: t.muted, marginBottom: 6 }}>
+          fact-check · refute-first
+        </div>
+        <div style={{ fontFamily: MONO, fontSize: 14, color: t.good }}>11 claims confirmed</div>
+        <div style={{ fontFamily: MONO, fontSize: 14, color: t.bad, opacity: io(frame, [S + 210, S + 220], [0, 1]) }}>1 refuted → back to synthesis</div>
+        <div
+          style={{
+            marginTop: 8,
+            fontFamily: MONO,
+            fontSize: 16,
+            fontWeight: 700,
+            color: t.good,
+            opacity: io(frame, [S + 236, S + 246], [0, 1]),
+            scale: String(io(frame, [S + 236, S + 250], [1.3, 1])),
+            transformOrigin: "left center",
+          }}
+        >
+          ✓ ships
+        </div>
+      </div>
+      <Caption t={t} frame={frame} from={S + 16} to={S + 100}>
+        A research question fans out — <b style={{ color: t.ink }}>one lane per source</b>, the best free tool for each.
+      </Caption>
+      <Caption t={t} frame={frame} from={S + 106} to={S + 190}>
+        Many keyword variants, then a snowball on every name found — <b style={{ color: t.ink }}>every claim traced to its source</b>.
+      </Caption>
+      <Caption t={t} frame={frame} from={S + 196} to={S + 280}>
+        A synthesizer writes the report; a <b style={{ color: t.ink }}>fresh fact-check</b> tries to refute it before it ships.
+      </Caption>
+    </AbsoluteFill>
+  );
+};
+
 // ---------- beat 3: nine strategies (the option space) ----------
 
 const STRATS: [string, string][] = [
-  ["staged", "sequential tasks · dual review"],
-  ["parallel", "concurrent · isolated worktrees"],
-  ["hierarchical", "domain sub-orchestrators"],
+  ["staged", "a true chain · dual review"],
+  ["parallel", "waves on the graph · worktrees"],
+  ["hierarchical", "a lead per domain, own fleet"],
   ["team", "workers message & debate"],
   ["workflow", "deterministic script fan-out"],
   ["loop", "repeat until goal / schedule"],
@@ -612,13 +877,13 @@ const Strategies: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
   if (opacity <= 0.01) return null;
   return (
     <AbsoluteFill style={{ opacity }}>
-      <BeatHead t={t} frame={frame} from={S} kicker="one mechanic · nine strategies" title="pick the shape the work needs" />
+      <BeatHead t={t} frame={frame} from={S} kicker="one mechanic · nine strategies" title="the kind picks the play · the graph picks the shape" />
       {STRATS.map(([name, desc], i) => {
         const col = i % 3;
         const row = Math.floor(i / 3);
         const from = S + 20 + i * 8;
         const o = io(frame, [from, from + 12], [0, 1]);
-        const seen = name === "staged";
+        const seen = name === "parallel";
         const isXcli = name === "xcli";
         const edge = seen || isXcli ? t.accent : t.line;
         return (
@@ -652,7 +917,7 @@ const Strategies: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
         );
       })}
       <Caption t={t} frame={frame} from={S + 34} to={738}>
-        <b style={{ color: t.ink }}>staged</b> is one of nine — same controller, different topology.
+        <b style={{ color: t.ink }}>Concurrency is the default</b> — staged only when every task needs the one before it.
       </Caption>
     </AbsoluteFill>
   );
@@ -664,7 +929,7 @@ const KNOBS: [string, string][] = [
   ["review", "off · spec · quality · dual · panel:N · consensus:N"],
   ["models", "pin a tier per role — never inherit a default"],
   ["isolation", "worktree · branch — parallel writers never collide"],
-  ["trigger", "once · goal · interval · schedule"],
+  ["prep", "auto · full · off — interview, tool inventory, scout"],
   ["budget", "cap cycles · agents · tokens · open PRs"],
 ];
 
@@ -734,7 +999,7 @@ const Dimensions: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
 
 // ---------- beat 5: external CLIs (xcli) ----------
 
-const ENGINES = ["codex", "grok", "cursor", "agy", "opencode", "hermes", "kimi"];
+const ENGINES = ["codex", "grok", "cursor", "agy", "opencode", "hermes", "kimi", "pi"];
 
 const Xcli: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
   const S = 1004;
@@ -750,19 +1015,18 @@ const Xcli: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
         sub="pins an engine per dispatch"
         color={t.accent}
         x={72}
-        y={214}
+        y={196}
         w={244}
         opacity={io(frame, [S + 12, S + 30], [0, 1])}
         scale={io(frame, [S + 12, S + 30], [0.9, 1])}
       />
-      <div style={{ position: "absolute", left: 330, top: 246, fontFamily: MONO, fontSize: 34, color: t.accent, opacity: io(frame, [S + 26, S + 46], [0, 1]) }}>→</div>
+      <div style={{ position: "absolute", left: 330, top: 228, fontFamily: MONO, fontSize: 34, color: t.accent, opacity: io(frame, [S + 26, S + 46], [0, 1]) }}>→</div>
       <div
         style={{
           position: "absolute",
           left: 400,
-          top: 112,
+          top: 120,
           right: 72,
-          height: 300,
           background: t.panel,
           border: `1.5px solid ${t.line}`,
           borderRadius: 14,
@@ -901,17 +1165,17 @@ const Board: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
       <div
         style={{
           position: "absolute",
-          top: 92,
+          top: 84,
           left: 60,
           right: 60,
-          height: 400,
+          height: 380,
           background: t.codeBg,
           border: `1.5px solid ${t.line}`,
           borderRadius: 12,
           opacity: panelOp,
         }}
       />
-      <div style={{ position: "absolute", top: 104, left: L, fontFamily: MONO, fontSize: 14.5, lineHeight: "22px", whiteSpace: "pre", opacity: panelOp }}>
+      <div style={{ position: "absolute", top: 96, left: L, fontFamily: MONO, fontSize: 14.5, lineHeight: "22px", whiteSpace: "pre", opacity: panelOp }}>
         <div>
           <span style={{ color: t.accent, fontWeight: 600 }}>ORCHESTRATE</span>
           <span style={{ color: t.ink }}>   payments-api @ main</span>
@@ -932,17 +1196,17 @@ const Board: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
           <span style={{ color: t.amber }}>learn 2 · 2 new for controller</span>
         </div>
       </div>
-      <Lane t={t} title="IN PROGRESS" rows={inProgress} x={L} y={192} w={W} opacity={panelOp * laneOp(0)} />
-      <Lane t={t} title="REVIEW" rows={review} x={L} y={266} w={W} opacity={panelOp * laneOp(1)} />
-      <Lane t={t} title="DONE" rows={done} x={L} y={landed ? 318 : 340} w={W} opacity={panelOp * laneOp(2)} />
-      <Lane t={t} title="BLOCKED" rows={blocked} x={L} y={landed ? 392 : 414} w={W} opacity={panelOp * laneOp(3)} />
+      <Lane t={t} title="IN PROGRESS" rows={inProgress} x={L} y={178} w={W} opacity={panelOp * laneOp(0)} />
+      <Lane t={t} title="REVIEW" rows={review} x={L} y={252} w={W} opacity={panelOp * laneOp(1)} />
+      <Lane t={t} title="DONE" rows={done} x={L} y={landed ? 304 : 326} w={W} opacity={panelOp * laneOp(2)} />
+      <Lane t={t} title="BLOCKED" rows={blocked} x={L} y={landed ? 378 : 400} w={W} opacity={panelOp * laneOp(3)} />
       {/* the controller's reply, then the gate closing — both are journal lines, so the board moves */}
       {([[S + 116, S + 146, S + 156, 'board send --from controller --to impl-3 --re 23 "cookie auth (D-01)"'], [S + 168, S + 194, S + 208, 'board gate 2 --kind quality --verdict ok']] as [number, number, number, string][]).map(([a, b, c, cmd]) => {
         const chars = Math.round(io(frame, [a, b], [0, cmd.length]));
         const o = io(frame, [a, a + 6], [0, 1]) * io(frame, [c, c + 10], [1, 0]);
         if (o <= 0.01) return null;
         return (
-          <div key={cmd} style={{ position: "absolute", left: L, top: 458, fontFamily: MONO, fontSize: 14, whiteSpace: "pre", opacity: o }}>
+          <div key={cmd} style={{ position: "absolute", left: L, top: 442, fontFamily: MONO, fontSize: 14, whiteSpace: "pre", opacity: o }}>
             <span style={{ color: t.accent, fontWeight: 600 }}>$ </span>
             <span style={{ color: t.ink }}>{cmd.slice(0, chars)}</span>
             <span style={{ color: t.muted, opacity: chars >= cmd.length ? io(frame, [b + 4, b + 10], [0, 1]) : 0 }}>   ↵  journaled — the board re-renders</span>
@@ -1112,7 +1376,7 @@ const Close: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
       <div style={{ textAlign: "center" }}>
         <div style={{ fontFamily: MONO, fontSize: 36, color: t.ink, letterSpacing: "-0.01em" }}>coordinate — don&rsquo;t implement</div>
         <div style={{ fontFamily: SANS, fontSize: 20, color: t.muted, marginTop: 16, maxWidth: 860 }}>
-          the controller dispatches; fresh agents work; every run is a folder you can read.
+          it prepares first · fresh agents work in parallel · every run is a folder you can read.
         </div>
         <div style={{ fontFamily: MONO, fontSize: 16, color: t.accent, marginTop: 24, opacity: io(frame, [S + 30, S + 52], [0, 1]) }}>
           $orchestrate&nbsp;&nbsp;·&nbsp;&nbsp;/orchestrate&nbsp;&nbsp;·&nbsp;&nbsp;@orchestrate
@@ -1124,38 +1388,39 @@ const Close: React.FC<{ t: Theme; frame: number }> = ({ t, frame }) => {
 
 // ---------- composition ----------
 
-// Reader-first pacing: each beat animates in, HOLDS long enough to read, then fades out before the
-// next begins. Beats 1–3 (Problem, FlightPlan, Stage) are the life of a task — the plan is printed
-// and approved BEFORE the fleet exists; 4–7 enrich it with the strategy space, the dimension knobs,
-// external-CLI workers, and a close. ~56s, loops.
-//   B1 problem      0–113
-//   B2 flight plan  108–368    (print the design, gate on approval, then dispatch)
-//   B3 stage        350–722    (the staged strategy — the poster beat)
-//   B4 strategies   722–992    nine strategies
-//   B5 dimensions   996–1252   compose the run
-//   B6 xcli         1256–1544  external CLIs, first-class
-//   B7 board        1548–1838  the journal as a live kanban — attention says what needs you
-//   B8 shared ctx   1848–2178  learn → digest → memory: one journal, one watermark
-//   B9 close        2188–2332
-// Beats from Stage on keep their original internal timing and are offset by SHIFT, so the flight
-// plan could be inserted without re-timing four beats by hand.
-const SHIFT = 252;
-
+// Two acts, reader-first pacing: each beat animates in, HOLDS long enough to read, then fades out
+// before the next begins. Act 1 is one run, start to finish — the problem, Prepare, the flight plan
+// (approved BEFORE the fleet exists), fresh workers in parallel, the board, shared context. Act 2 is
+// the menu — the strategies (the kind picks the play), research lanes, the knobs, external CLIs —
+// then the close. Each beat keeps its own internal frame numbers; its absolute start is set here.
+//   ch  beat             abs frames   site chapter (s) — mirror in site/index.html data-chapters
+//    1  problem          0–113        0
+//    2  prepare          108–398      3.6
+//    3  flight plan      394–654      13.13
+//    4  fresh workers    640–1012     21.33
+//    5  board            1016–1306    33.87
+//    6  shared context   1310–1640    43.67
+//    7  strategies       1644–1914    54.8
+//    8  research         1918–2202    63.93
+//    9  compose          2206–2462    73.53
+//   10  external CLIs    2466–2754    82.2
+//   11  close            2758–2902    91.93      (durationInFrames 2902 in Root.tsx)
 export const LifeOfATask: React.FC<{ theme: ThemeName }> = ({ theme }) => {
   const frame = useCurrentFrame();
   const t = themes[theme];
-  const late = frame - SHIFT;
   return (
     <AbsoluteFill style={{ background: t.bg }}>
       <Problem t={t} frame={frame} />
-      <FlightPlan t={t} frame={frame} />
-      <Stage t={t} frame={late} />
-      <Strategies t={t} frame={late} />
-      <Dimensions t={t} frame={late} />
-      <Xcli t={t} frame={late} />
-      <Board t={t} frame={late} />
-      <SharedContext t={t} frame={late} />
-      <Close t={t} frame={late} />
+      <Prepare t={t} frame={frame - 108} />
+      <FlightPlan t={t} frame={frame - 286} />
+      <Stage t={t} frame={frame - 542} />
+      <Board t={t} frame={frame + 280} />
+      <SharedContext t={t} frame={frame + 286} />
+      <Strategies t={t} frame={frame - 1174} />
+      <Research t={t} frame={frame - 1918} />
+      <Dimensions t={t} frame={frame - 1462} />
+      <Xcli t={t} frame={frame - 1462} />
+      <Close t={t} frame={frame - 822} />
     </AbsoluteFill>
   );
 };

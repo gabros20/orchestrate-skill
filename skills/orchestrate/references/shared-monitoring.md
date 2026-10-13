@@ -119,7 +119,8 @@ controller-side signals, read from the ledger, artifacts and raw logs with no ex
 infrastructure: the same action returning the same observation ~3× · one error class ~3× back to
 back · two actions alternating ~4× within the last ~8 · rewrite→retest→fail cycles (here the agent
 never repeats an *identical* action, so naive loop detection stays silent) · no successful
-execution for N steps. **Progress means a successful execution, not a file rewrite** — counting
+execution for N steps · no work-log entry across many tool calls (the WORKER block asks for one
+per milestone — a heartbeat to read in its transcript, never liveness: rule 3b). **Progress means a successful execution, not a file rewrite** — counting
 rewrites as progress is exactly what lets a thrashing agent look healthy. The thresholds are
 illustrative defaults from one working-code source, chosen by reasoning rather than by benchmark;
 tune them per run.

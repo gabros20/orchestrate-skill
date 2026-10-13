@@ -1,22 +1,21 @@
 ---
 name: orchestrate
 description: >-
-  Coordinate multi-agent work by selecting and running a bounded orchestration strategy. Use for
-  implementation plans or multi-step tasks needing staged reviews, parallel worktrees, hierarchical
-  fleets, agent teams, workflows, goal loops, advisor/executor splits, adversarial
-  planning, or external coding CLIs. Triggers include "orchestrate this", "run this plan with
-  subagents", "fan out agents", "goal loop", and "agent swarm". Do not use for small coupled tasks
-  one agent can complete efficiently or for choosing a digital-product lifecycle; orchestrate only
-  coordinates agents and execution.
+  Coordinate multi-agent work: prepare the run (interview when unclear, inventory installed skills
+  and CLIs, propose missing tools), then pick and run a bounded strategy for implementation plans,
+  app builds and deep multi-source research — parallel worktrees, hierarchical fleets, staged
+  reviews, teams, workflows, goal loops, advisor splits, adversarial planning, external coding CLIs.
+  Triggers: "orchestrate this", "run this plan with subagents", "fan out agents", "deep research",
+  "agent swarm". Not for small coupled tasks, single lookups, or choosing a product lifecycle.
 ---
 
 # Orchestrate
 
 ## Mission and boundary
 
-Coordinate, dispatch, review, and gate multi-agent work through one of nine strategy presets. The
-invoking agent is the controller: it resolves the execution topology and maintains durable state;
-subagents perform the implementation or investigation.
+Prepare the run, then coordinate, dispatch, review, and gate multi-agent work through nine strategy
+presets. The invoking agent is the controller: it prepares the run, resolves the topology, and keeps
+durable state; subagents implement or investigate.
 
 `orchestrate` owns **how work is assigned across agents**. It does not decide which product-lifecycle
 domains are required, replace a domain skill, or own product progress. A lifecycle composer such as
@@ -30,7 +29,8 @@ slash-command clients, or the host's equivalent. Documentation uses `/orchestrat
 ```text
 <plan-file | task description>
   [strategy=auto|staged|parallel|hierarchical|team|workflow|loop|advisor|adversarial|xcli]
-  [review=dual|spec|quality|panel:N|consensus:N|off]
+  [kind=build|research|fix|review|content|ops|other] [prep=auto|full|off]
+  [review=dual|spec|quality|panel:N|consensus:N|factcheck|off]
   [engine=claude|codex|grok|cursor|agy|opencode|hermes|kimi|pi|mixed]
   [models=orchestrator:<tier>,worker:<tier>,advisor:<tier>,reviewer:<tier>] [posture=frontier|balanced|economy]
   [effort=<level | role:level map>]
@@ -45,18 +45,25 @@ Selection priority: explicit `strategy=` > `alias=` from [config.yaml](config.ya
 ## Route before acting
 
 1. Reject orchestration when the coordination cost exceeds the expected benefit.
-2. Resolve the host and its available primitives before choosing a strategy.
+2. Prepare before routing: clarify, equip, scout, set up ([prepare](references/shared-prepare.md)).
+   Resolve the host and its available primitives before choosing a strategy.
 3. Select one strategy and record all resolved dimensions in `.orchestrate/run.md`.
 4. Read the selected strategy plus only the supporting routes its roles and gates require.
 5. Never preload the entire reference library.
 
 ### Strategy route
 
+**Auto mode — the kind picks the play, the dependency graph the shape**
+([triage](references/triage.md)): **build** → hierarchical across domains, parallel waves inside
+one, staged only for a true chain · **research** → parallel source lanes · **fix** → solo, team
+debug, or loop · **review** → parallel lenses · **content** → research lanes, then production lanes
+· **ops** → loop on a trigger.
+
 | Strategy | Use when | Read | Contribution |
 |---|---|---|---|
-| **staged** *(default)* | Mostly independent plan tasks need fresh implementation and ordered dual review | [Staged](references/strategy-staged.md) | Sequential task cycle, fix-wave rules, and merge gate |
-| **parallel** | Tasks share no files and can run concurrently in isolated worktrees | [Parallel](references/strategy-parallel.md) | Partition, fan-out, integration, and overload behavior |
-| **hierarchical** | Work is too broad for one context and needs domain sub-orchestrators | [Hierarchical](references/strategy-hierarchical.md) | Domain decomposition and delegated controller hierarchy |
+| **staged** | The plan's tasks form a true chain, each needing the previous one's output | [Staged](references/strategy-staged.md) | Sequential task cycle, fix-wave rules, and merge gate |
+| **parallel** | Two or more tasks with no edge between them; one-domain builds and research lanes | [Parallel](references/strategy-parallel.md) | Waves on the graph, dispatch on readiness, integration, overload behavior |
+| **hierarchical** | A build spans domains that each need a lead, workers, and integration | [Hierarchical](references/strategy-hierarchical.md) | Domain leads running their own waves, gates, and merges |
 | **team** | Workers must message, debate, or coordinate across layers | [Team](references/strategy-team.md) | Shared-context team protocol and host degradation |
 | **workflow** | Large deterministic fan-out should be held by a script rather than model memory | [Workflow](references/strategy-workflow.md) | Pilot, budget, batch, verify, and aggregation procedure |
 | **loop** | Work repeats until a verifiable goal or scheduled condition is met | [Loop](references/strategy-loop.md) | Bounded cycle, stop condition, kill switch, and evolution pass |
@@ -71,6 +78,8 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 
 | Condition | Read | Contribution |
 |---|---|---|
+| Every run, before triage | [Prepare](references/shared-prepare.md) | Clarify rounds, tool inventory, install proposals, scout, Task 0 |
+| Research tasks and Prepare's scout | [Research](references/shared-research.md) | Source lanes, query rounds, provenance, synthesis, fact-check |
 | Any non-reference host or uncertain primitive | [Hosts](references/shared-hosts.md) | Host detection, primitive binding, and honest degradation |
 | Before the first multi-agent dispatch | [Flight plan](references/shared-flight-plan.md) | Rendered topology plan, approval gate, and tweak loop |
 | Every dispatched task | [Contracts](references/shared-contracts.md) | Brief, status, report, findings, and workspace schemas |
@@ -94,6 +103,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | Quality reviewer | [Quality reviewer](references/prompt-quality-reviewer.md) | Maintainability and correctness review prompt |
 | Integration owner | [Integrator](references/prompt-integrator.md) | Cross-worktree merge and conflict-resolution prompt |
 | Domain sub-orchestrator | [Sub-orchestrator](references/prompt-sub-orchestrator.md) | Delegated planning, dispatch, and summary contract |
+| Research or scout lane | [Researcher](references/prompt-researcher.md) | Source funnel and cited lane-file contract |
 | Advisor | [Advisor prompt](references/prompt-advisor.md) | Bounded consultation prompt |
 | Triage assessor | [Triage assessor](references/prompt-triage-assessor.md) | Independent strategy-assessment prompt |
 | Verification-only worker | [Verifier](references/prompt-verifier.md) | Minimal objective verification prompt |
@@ -106,8 +116,11 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | Dimension | Values | Default |
 |---|---|---|
 | `topology` | solo · staged · parallel · hierarchical · team · workflow · loop | selected strategy |
-| `planning` | none · plan-first · interview · adversarial | plan-first |
-| `review` | off · spec · quality · dual · panel:N · consensus:N | dual |
+| `kind` | build · research · fix · review · content · ops · other | triage (`board set kind=…`) |
+| `prep` | auto · full · off | auto ([prepare](references/shared-prepare.md)) |
+| `tools` | the run's toolchain line, free first | Prepare (`board set tools=…`) |
+| `planning` | none · plan-first · interview · adversarial | plan-first (`interview` forces clarify) |
+| `review` | off · spec · quality · dual · panel:N · consensus:N · factcheck (research lanes) | dual |
 | `engine` | claude · codex · grok · cursor · agy · opencode · hermes · kimi · pi · mixed | host-appropriate |
 | `models` | advisor · orchestrator · reasoner · worker · reviewer · peer tier map | model routing |
 | `posture` | frontier · balanced · economy — the cost dial for unpinned roles | balanced ([catalog](references/shared-model-catalog.md)) |
@@ -129,8 +142,9 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    repository state over recollection.
 6. **Keep safety rails active.** Never begin on main/master without consent; cap loops and open work;
    on overload resume or nudge the existing agent rather than spawn a duplicate.
-7. **Prime with pointers, work silent, report dense.** Preserve required safety and coordination
-   messages while eliminating routine narration and raw output dumps.
+7. **Prime with pointers, log milestones, report dense.** Workers keep a short work log in their
+   own transcript; required safety and coordination messages always go out; routine narration and
+   raw output dumps never do.
 8. **Do not orchestrate small coupled work.** If one agent can complete the task efficiently within
    one coherent context, use solo execution and optionally one reviewer.
 9. **No silent launch.** Before the first multi-agent dispatch, print the flight plan — the
@@ -140,27 +154,37 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 10. **Reality over plan — redesign, never patch.** A failed plan assumption comes back up the
    hierarchy as `DESIGN_CONFLICT`, never as a workaround; route it to a fresh strongest-tier
    architect (internal design) or the user (product behavior) ([replan](references/shared-replan.md)).
+11. **Prepare before you dispatch.** Clarify every decision you would otherwise guess (rounds, a
+   recommended answer each; facts are looked up, never asked); use what the machine has, free and
+   local first; propose installs and paid tools, never run them unasked; scout only an undecided
+   toolchain.
+12. **Concurrency is the default; sequence is a finding.** Independent tasks run at once — dispatched
+   on readiness, reviewed as each lands, merged continuously; only a real dependency makes work
+   wait, and the gates never change with the shape.
 
 ## Core workflow
 
-1. Inspect the task, plan, repository state, host capabilities, and stop condition (resuming a run: `board version`) — and the
-   repo's project memory when it keeps one (`board init` names it): one `ctx context --scope`
-   packet per scope, pinned in the briefs, so the run starts from what earlier runs learned.
-2. Resolve strategy, dimensions, roles, models, budget, isolation, review, and degradation.
-3. Initialize `.orchestrate/` with [workspace](scripts/workspace); record the resolved run with
-   [board](scripts/board) — `board init PLAN --strategy … --goal "…"` writes the `## Resolved`
-   block of `run.md` and queues every planned task; prose (the why) goes below the block. **An
+1. **Prepare** ([prepare](references/shared-prepare.md)): [workspace](scripts/workspace), then
+   [board](scripts/board) `init --goal "…" --prep auto` (decisions need the journal; no plan yet), equip
+   ([capabilities](scripts/capabilities) `--refresh`), clarify, propose gaps, scout an undecided
+   toolchain, set up Task 0. Read the repository state, host, and stop condition (resuming:
+   `board version`) and the repo's project memory when it keeps one (`board init` names it): one
+   `ctx context --scope` packet per scope, pinned in the briefs.
+2. Triage: resolve kind, strategy, dimensions, roles, models, budget, isolation, review, and
+   degradation; record them — `board set strategy=… kind=… tools=…`, or `board init PLAN --resume
+   --strategy …` once the plan exists (it keeps Prepare's record and queues the plan's tasks). The
+   `## Resolved` block of `run.md` is generated; prose (the why) goes below it. **An
    existing `.orchestrate/` with work in it is adopted, never restarted**: `board init … --resume`
    starts or continues the journal over the ledger and reports that are there (a workspace from
    an older skill included — `board check` says "predates the journal"); a bare `init` refuses,
    and only `--fresh` archives unfinished work on purpose. Re-resolve a dimension with `board set key=value`, never by editing; declare
    the board's lanes when the shape has more stages than the five defaults (`--lanes`).
-4. Create task briefs with [task-brief](scripts/task-brief) and validate them with
+3. Create task briefs with [task-brief](scripts/task-brief) and validate them with
    [brief-check](scripts/brief-check).
-5. Render the flight plan from the resolved record (`board plan --why "…"`; in a text fence on terminals, `--format md` in apps) and gate on the
+4. Render the flight plan from the resolved record (`board plan --why "…"`; in a text fence on terminals, `--format md` in apps) and gate on the
    user's approval ([flight plan](references/shared-flight-plan.md)); apply any tweaks by
    re-resolving that dimension and re-asking; record the outcome (`board plan approved`).
-6. Dispatch only ready work, and journal it: every dispatch and return (`board dispatch N
+5. Dispatch ready work the moment it is ready (rule 12), and journal it: every dispatch and return (`board dispatch N
    --model M` names the agent `<role>-<task>` for you — `impl-3`, `lead-1`, `impl-1.1` — and
    `board return N --agent …` closes it; a subprocess lane is one command, `board launch N --agent --engine --model
    [--after M] -- brief.md`, which sleeps in the shell until task M's work is on disk, journals
@@ -175,16 +199,17 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    --agent controller`, `board check`, and one blocking `board wait --task N --timeout 0` in a
    background shell per landing you wait on (exit 3 = it cannot land). Integrate through the
    selected strategy's owner.
-7. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
+6. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
    and send failures back to the correct worker or owner.
-8. Close each gated unit with `board done N` (it writes the ledger line; refused over a failed
+7. Close each gated unit with `board done N` (it writes the ledger line; refused over a failed
    gate or check); `board check --finish` must be clean (it refuses processes the run left: `board reap`) and `board finish --gate pass|fail --evidence`
    recorded before you finish or hand off (`board resume` is the handoff's state layer, with a
    receipt; `board postmortem` feeds the evolve pass; `board memory` renders the run as one
    project-context record when the repo keeps project memory). Finish only when the stop
    condition is verified.
 
-Use [toolbox](scripts/toolbox) to inventory available tools once and reuse the recorded result.
+Run [toolbox](scripts/toolbox) (repo recipes) and [capabilities](scripts/capabilities) (machine tools)
+once; reuse their files.
 The journal (`.orchestrate/journal.jsonl`) is the run's spine and the board a view over it, never
 a second record; `board --help` is grouped by role — the controller records transitions, workers
 only observe (`board note` / `exec --agent <you>` / `learn` / mail; a read-only lane prints the

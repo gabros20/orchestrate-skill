@@ -1,9 +1,9 @@
-# staged — fresh implementer per task, dual review gate (default strategy)
+# staged — fresh implementer per task, dual review gate (the chain case)
 
-Purpose: Run mostly independent plan tasks through fresh implementation and ordered review cycles.
+Purpose: Run a chain of plan tasks — each needing the previous one's output — through fresh implementation and ordered review cycles.
 
 Read when:
-- Tasks can be completed sequentially and benefit from per-task spec and quality gates.
+- The tasks form a true chain — each needs the previous one's output — or the run has one writer by design.
 
 Skip when:
 - Tasks must modify the same coupled state continuously or require active worker-to-worker communication.
@@ -23,7 +23,8 @@ Produces:
 - Red flags (inherited from the original skill — still law)
 
 Preset: `topology=staged planning=plan-first review=dual isolation=off trigger=once`.
-Sequential per-task cycles. The controller never implements; every task gets a FRESH subagent with
+Sequential per-task cycles — what triage picks when the dependency graph is a chain (`triage.md`):
+two tasks with no edge between them belong to `parallel`, gates unchanged. The controller never implements; every task gets a FRESH subagent with
 a curated brief; two ordered reviews gate every task. Descends from superpowers SDD.
 
 Read with this file: `shared-contracts.md`, `shared-review-gates.md`, `shared-model-routing.md`,
@@ -33,14 +34,17 @@ Prompts: `prompt-implementer.md`, `prompt-spec-reviewer.md`, `prompt-quality-rev
 ## Setup (once per run)
 
 1. `scripts/workspace` → `.orchestrate/` (self-ignoring; survives compaction, invisible to git).
-2. **Pre-flight plan scan**: read the whole plan ONCE. Collect contradictions, ambiguities, and
-   plan-mandated defects into ONE batched question to the human. Then no more between-task
-   check-ins — continuous execution until BLOCKED, genuine ambiguity, or done.
+2. **Pre-flight plan scan**: read the whole plan ONCE. Contradictions, ambiguities, and
+   plan-mandated defects go to the human as clarify rounds (`shared-prepare.md` P1 — numbered, a
+   recommended answer each). Then no more between-task check-ins — continuous execution until
+   BLOCKED, genuine ambiguity, or done.
 3. Read `.orchestrate/progress.md` if it exists (resume): tasks with a `complete` line are DONE —
    resume at the first task without one. Trust the ledger + `git log` over recollection; the most
    expensive observed failure mode is re-dispatching completed task sequences after compaction.
-4. `board init PLAN --strategy staged --review … --models … --goal "…"` — writes the resolved
+4. `board init PLAN --resume --strategy staged --review … --models …` — over Prepare's init
+   (`shared-prepare.md`), which recorded the goal: it keeps that record, writes the resolved
    dimensions into `.orchestrate/run.md` (Resolved block) and queues every task; prose below.
+   Prepare skipped (`prep=off` with no init yet): the same without `--resume`, plus `--goal "…"`.
    Resuming (step 3 found a ledger, or the workspace predates the journal): add `--resume` —
    the journal is adopted over the existing ledger/reports and the Resolved block goes above the
    prose; a bare `init` refuses rather than archive live work, `--fresh` archives on purpose.

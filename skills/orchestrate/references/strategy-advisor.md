@@ -36,8 +36,8 @@ Prompt: `prompt-advisor.md`.
 ## Variant B — planner writes, executor runs (plan.md handoff)
 
 The strong model does the highest-leverage step once — review + plan — then leaves the room:
-1. **Interview first**: ask what the project is for, what good looks like, what's being optimized
-   for. Don't assume.
+1. **Interview first** (clarify rounds, `shared-prepare.md` P1): ask what the project is for, what
+   good looks like, what's being optimized for. Don't assume.
 2. **Read everything**, then review across four lenses: overbuilt/redundant → cut · fragile/
    unclear → fix · missing for the goal → add · structure fights the goal → restructure.
 3. **Write ONE plan file** ranked by leverage: per change — what, why, which files, order, how to

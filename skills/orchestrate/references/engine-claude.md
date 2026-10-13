@@ -19,8 +19,14 @@ Live-verified 2026-09-28, Claude Code 2.1.284 (Sonnet 5.5 launch day); flags fro
 - **Models.** `claude-sonnet-5-5` (Sonnet 5.5: 1M ctx, 128k out, $2/$10 per M — Sonnet 5's price,
   ~30% faster, fewer tokens per task; adaptive thinking, Claude Code default effort `medium`) ≈
   worker/reviewer. `claude-opus-5-5` (Opus 5.5: $4/$20, default `medium`, thinking always on) ≈
-  orchestrator/reasoner. `claude-fable-5-1` ($10/$50) = hardest reasoning. `haiku` = 4.5 until
-  Haiku 5.5 ships. Effort levels are recalibrated per model — re-sweep, never carry a setting over.
+  orchestrator/reasoner. `claude-fable-5-1` ($10/$50) = hardest reasoning. `claude-haiku-5-5`
+  (Haiku 5.5, 2026-10-07: 1M ctx, 128k out, $0.10/$0.50 up to a 100K-token prompt and $0.50/$2.50 for
+  the whole request above it; effort `low..max`, default `medium`) = the cheap Claude worker; `haiku`
+  resolves to it on the Anthropic API from 2.1.293, to Haiku 4.5 (legacy) on Bedrock, Google Cloud,
+  Foundry and Claude Platform on AWS — pin the provider's Haiku 5.5 id there (Bedrock
+  `anthropic.claude-haiku-5-5`) or set `ANTHROPIC_DEFAULT_HAIKU_MODEL` (re-checked 2026-10-13 on
+  2.1.296, listing only). Dispatch it with an explicit effort — `medium` by default. Effort levels are
+  recalibrated per model — re-sweep, never carry a setting over.
 - **Aliases move server-side, mid-session — pin full ids.** On launch day, same 2.1.284 binary,
   `--model sonnet` served `claude-sonnet-5`, then `claude-sonnet-5-5` ~30 min later (`opus` →
   `claude-opus-5-5`, `haiku` → `claude-haiku-4-5-20251001`). `board launch` journals the served id from `modelUsage` as the

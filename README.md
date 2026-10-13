@@ -1,8 +1,10 @@
 # Orchestrate
 
 Select and run bounded multi-agent execution strategies with durable artifacts, explicit model
-routing, typed review gates, and safe recovery. Point `orchestrate` at a plan or multi-step task;
-it chooses a strategy—or follows one you force—and coordinates the workers without absorbing their
+routing, typed review gates, and safe recovery. Point `orchestrate` at a plan, a loose idea, or a
+research question: it prepares the run first — interviews you where the request is unclear,
+inventories the skills and CLIs already on your machine, proposes the tools it is missing — then
+chooses a strategy (or follows one you force) and coordinates the workers without absorbing their
 implementation into the controller context.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -19,13 +21,43 @@ multi-agent execution; neither skill depends on the other.
 Do not orchestrate small, tightly coupled work that one agent can complete efficiently in one
 context.
 
+## Prepare — before any agent runs
+
+Every run starts with preparation ([shared-prepare.md](skills/orchestrate/references/shared-prepare.md)):
+
+1. **Equip** — `scripts/capabilities` (zero tokens) inventories research and data CLIs (free or
+   paid, installed or missing, with install hints), build and test tooling, coding engines, and
+   every skill on disk for every host — including manual-only skills
+   (`disable-model-invocation: true`) that never appear in a model's skill list.
+2. **Clarify** — when the request is not yet a spec, the controller interviews you in rounds: every
+   open decision whose prerequisites are settled, numbered, each with a recommended answer you can
+   accept with "yes". Facts it looks up itself; decisions stay yours. (The technique is Matt
+   Pocock's [`grilling`](https://github.com/mattpocock/skills).)
+3. **Gaps** — a missing tool becomes a question with its exact install command. Nothing is
+   installed, and no paid service is used, without your yes. Free and local tools come first.
+4. **Scout** — when the toolchain is undecided (a new project or platform), a small research run
+   compares candidates on X, GitHub, the web and registries, preferring tools with a track record,
+   and faster tools on a tie.
+5. **Set up** — approved tools become Task 0: installed, configured, smoke-tested, and recorded so
+   every worker uses the same toolchain.
+
+`prep=full` forces the interview and the scout; `prep=off` skips both.
+
 ## Strategies
+
+You never need a strategy name. Auto-triage classifies the task and lets its dependency graph pick
+the shape — **concurrency is the default; sequence is a finding**: a **build** runs hierarchical
+across domains (a lead per domain running its own parallel waves, reviews and merges), parallel
+waves inside one domain, and staged only for a true chain; **research** runs as parallel source
+lanes ([shared-research.md](skills/orchestrate/references/shared-research.md)) with synthesis and a
+fact-check; **fix**, **review**, **content** and **ops** have their own defaults
+([triage.md](skills/orchestrate/references/triage.md)). The gates never change with the shape.
 
 | Strategy | Use when |
 |---|---|
-| **staged** *(default)* | Mostly independent tasks need fresh implementation and ordered dual review |
-| **parallel** | Independent tasks can run concurrently in isolated worktrees |
-| **hierarchical** | Several domains need their own sub-orchestrators and workers |
+| **staged** | The tasks form a true chain, each needing the previous one's output |
+| **parallel** | Two or more tasks with no edge between them — dispatched as they become ready; also research lanes |
+| **hierarchical** | A build spans domains that each need a lead, workers, and integration |
 | **team** | Workers must message, debate, or coordinate across layers |
 | **workflow** | Large repeated fan-out should be held by a deterministic script |
 | **loop** | Work repeats until a verifiable goal or scheduled condition is met |
@@ -75,6 +107,8 @@ Codex explicit invocation uses `$orchestrate`:
 
 ```text
 Use $orchestrate to execute plan.md with automatic strategy selection.
+Use $orchestrate to build a desktop notes app — I have not picked the stack yet.
+Use $orchestrate to deep-research the fastest proven e2e test tooling for Tauri apps.
 Use $orchestrate to run plan.md strategy=parallel workers=4.
 Use $orchestrate to audit every service strategy=workflow.
 Use $orchestrate to keep iterating until tests pass strategy=loop budget=cycles:10.
@@ -127,6 +161,8 @@ live-verified against v0.28.0; end-to-end smoke run pending.
 - **Ledger before memory**: durable progress wins over recollection after resume or compaction.
 - **No duplicate workers on overload**: resume or nudge the existing worker.
 - **Branch and loop rails stay active**: explicit consent, cycle caps, kill switch, and open-work cap.
+- **Machine changes are yours to approve**: installs, paid services and credits are proposed with
+  the exact command and why — never run unasked.
 
 ## The journal and the board
 
@@ -228,8 +264,8 @@ Command reference: [docs/usage.md](docs/usage.md#the-journal-flight-plan--board-
 ```text
 skills/orchestrate/SKILL.md       activation, routing, workflow, and completion
 skills/orchestrate/config.yaml    saved strategy/dimension aliases
-skills/orchestrate/references/    41 flat strategy, shared, engine, and prompt references
-skills/orchestrate/scripts/       workspace, brief, review-package, toolbox, and board helpers
+skills/orchestrate/references/    47 flat strategy, shared, engine, and prompt references
+skills/orchestrate/scripts/       workspace, brief, review-package, toolbox, capabilities, and board helpers
 ```
 
 All references are directly linked from `SKILL.md`; no required route depends on directory
@@ -286,6 +322,12 @@ change and release workflow. The repository is independently versioned and remai
   coding CLI.
 - `git` for branch/worktree isolation.
 - Any selected external engine installed, authenticated, and verified with its current `--help`.
+
+## Credits
+
+The clarify interview adapts the technique of Matt Pocock's `grilling` skill
+([mattpocock/skills](https://github.com/mattpocock/skills), MIT). The staged strategy descends from
+obra's superpowers subagent-driven development.
 
 ## License
 

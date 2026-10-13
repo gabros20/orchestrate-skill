@@ -11,6 +11,161 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.31.0] — 2026-10-13
+
+### Added
+
+- **Prepare — the run is prepared before anything dispatches** (`references/shared-prepare.md`,
+  universal rule 11). Five steps, each only when needed: **equip** (always, zero tokens) ·
+  **clarify** (when the request is not yet a spec) · **gaps** · **scout** (only an undecided
+  toolchain) · **set up** (Task 0). `prep=auto|full|off` (default auto).
+  - *Clarify* adopts Matt Pocock's `grilling` technique (mattpocock/skills, MIT) as the one interview
+    every strategy uses: a design tree asked in rounds — the whole frontier of open decisions per
+    round, numbered, each with a recommended answer worded so "yes" accepts it; facts looked up (an
+    explorer subagent), never asked; done when the frontier is empty and the user confirms. Answers
+    are journaled (`board decide … --owner user`); headless runs record assumptions, and the flight
+    plan counts them.
+  - *Equip*: `scripts/capabilities` writes `.orchestrate/capabilities.md` — research and data CLIs
+    with their cost class (free · free-account · paid), installed or missing with install hints,
+    build/test/browser tooling, coding engines, and every skill on disk for every host, including
+    manual-only skills (`disable-model-invocation: true`) that never appear in a model's skill list.
+    Measured on the author's machine: 116 of 123 global skills were invisible that way, including
+    the X, GitHub and YouTube research skills; the script also flagged `ytrelay` missing behind an
+    installed youtube-relay skill. Free and local tools come first; paid tools only as a named,
+    approved fallback.
+  - *Gaps*: a missing tool becomes a clarify question with its exact install command — nothing is
+    installed and no paid service is used without the user's yes (`shared-safety-rails.md`: machine
+    changes are the user's call).
+  - *Scout*: a small research run on the toolchain when none is chosen (new project or platform, no
+    test runner): X, GitHub, the web, registries, HN/Reddit; track record beats novelty, the faster
+    tool wins a tie, a speed claim needs a benchmark you can open.
+  - *Set up*: approved project tooling becomes Task 0, the approved plan's first node — run by a
+    worker in the main tree, its brief limited to the approved commands, smoke-verified and
+    recorded once (`board decide D-tools`, `board set tools=…`) so no worker picks its own test
+    runner. Machine tools the agents run (a research CLI) are installed by the controller after the
+    user's yes.
+  - Manual-only skills that send, post, deploy, buy or log in are used only when the user named
+    them in a clarify round.
+- **The research play** (`references/shared-research.md`, `references/prompt-researcher.md`): a
+  research question runs as parallel source lanes (read-only), each with the best free tool for its
+  source — `xrelay` for X, `ghrelay`/`gh` for GitHub, `ytrelay` for YouTube, curl for the HN Algolia
+  API, Reddit RSS and package registries, web search and fetch for docs and engineering blogs.
+  Queries are keyword-rich in two rounds (6–10 variants, then a snowball on every name round 1
+  surfaced); the funnel ranks on metadata and deep-reads finalists only; every claim is traced to the
+  source that owns it and graded [V]/[B]/[P]/[U]. A synthesizer (the researcher prompt's synthesis
+  mode) writes the report and the final gate is the fact-check (`prompt-verifier.md`'s new
+  fact-check mode: refute every load-bearing claim from its source).
+- **Board**: `kind` (build · research · fix · review · content · ops · other), `prep` (auto · full · off) and
+  `tools` dimensions — validated, shown in `run.md`'s Resolved block and on the flight plan (a
+  `kind · prep · decisions` header line counting user decisions and assumptions, a `tools` strip,
+  tweak key `[10] tools`). Research runs render as researcher lanes, a synthesizer and a
+  fact-checking final gate; hierarchical builds show each lead's loop and the integrator that merges
+  the domains (top-level tasks are domains; Prepare's Task 0 renders as a setup worker). The plan
+  refuses to render before a strategy is resolved (no more silent `staged`), counts tasks already
+  done instead of re-billing them, and draws a research run's synthesis task as the synthesizer.
+  `researcher` and `synthesizer` roles map to the worker and orchestrator tiers (`research-N`,
+  `synth-N`); `capabilities.md` survives a kickoff like `toolbox.md`.
+- **The user's decisions are protected**: a decision recorded `--owner user` is revised only with
+  `--owner user` — the board refuses anyone else; leads namespace their ids `D-<task>.<n>`.
+- `scripts/check-sync` smoke-tests `scripts/capabilities` on a fixture home (a manual-only skill
+  behind a byte-order mark and a folded description, a missing CLI, an unrelated installer).
+
+### Changed
+
+- **Concurrency is the default; sequence is a finding** (universal rule 12, `references/triage.md`).
+  Triage classifies the kind first, then reads the plan's dependency graph (the fake-edge test —
+  numbering is not a dependency): a build across ≥2 domains → `hierarchical`; one domain with ≥2
+  independent tasks → `parallel`; `staged` only for a true chain; research → parallel source lanes.
+  `staged` is no longer "the default" — it is the chain case. The gates never change with the
+  shape: criteria before code, spec then quality per task, machine checks, the final gate.
+- **Parallel runs waves on the graph**: a task starts the moment it is ready, never at a wave
+  barrier — at once when it needs only an agreed interface, after the gate and the merge when it
+  needs another task's code (its worktree cut from the integration branch then). Reviews and merges
+  happen as each task lands; every task's acceptance checks are written once, by a non-implementer,
+  before the first implementation dispatch. One snapshot per dispatch, not per batch.
+- **Hierarchical is the multi-domain build default**, and its depth note is corrected: Claude Code
+  subagents *can* spawn subagents — probed live on Claude Code 2.1.296 (a subagent dispatched a
+  nested one, which reported the Agent tool too). Leads are background subagents running the build
+  play inside their domain (interfaces first, criteria once, parallel waves in worktrees, spec then
+  quality, merges into the domain branch) and never implement — even a one-task domain gets a fresh
+  implementer and reviewers; 2–7 domains per level. The controller decides cross-domain contracts
+  first and an integrator merges the domains. The sub-orchestrator prompt carries the loop and
+  returns the domain branch, its head and its green checks.
+- `board init PLAN --resume` now merges with the dimensions the run already recorded (Prepare's goal,
+  prep and tools) instead of replacing them, keeps the run's branch and base, and puts an approved
+  plan back to pending when it re-resolves anything — the scout's approval never covers the run.
+- Adversarial and advisor interviews point at Prepare's clarify rounds (one technique, one place);
+  staged's pre-flight scan asks its batched questions as clarify rounds.
+- Activation now covers deep multi-source research; README, usage, strategies, site, llms.txt,
+  plugin metadata and AGENTS.md (the boundary now names preparation) follow.
+- **Site restructured for a first read**: install and three no-flag examples in the hero; sections
+  in the order a reader needs them — the idea → how a run works → **Prepare** (new) → it picks the
+  shape (what you hand it → what it runs) → **research** (new: one lane per source) → gates → the
+  board → shared context → knobs → cost → start. The static diagram shows two workers running at
+  once; phones keep it first with the player below, opt-in.
+- **Explainer re-cut in two acts** (Remotion, 96.7 s, ~4 MB per theme — the silent audio track is
+  gone): one run start to finish (the problem, Prepare, the flight plan, fresh workers in parallel,
+  the board, shared context), then the menu (strategies picked by kind and graph, research lanes,
+  the knobs, external CLIs). The board beat no longer runs under its caption.
+- **A real player**: pause, scrub with chapter ticks and a time/chapter tooltip, ±5 s buttons,
+  full screen, keyboard (Space/K, ←/→ or J/L, F). Controls fade out while playing for an
+  undisturbed view and come back on hover, tap or focus; they live in a strip under the picture so
+  the film's captions are never covered; an explicit pause is never auto-resumed. Touch: tap shows,
+  tap again toggles, double-tap a side skips 5 s. Autoplay (muted) only on screen, never under
+  reduced motion or on phones.
+- **Workers keep a work log instead of working silent.** The WORKER block (implementer,
+  sub-orchestrator, integrator, evolve, loop executor, xcli workers, teammates) no longer says
+  "routine narration is silence". At each milestone — orientation done, a step verified, a failure,
+  a fix, a change of direction — the worker writes a short entry before its next tool call: what it
+  did, how it went, what comes next. About 50 words is the target, not a cap: longer when a detail
+  matters, never chatty. A worker thinking for several steps without acting writes the entry, then
+  takes the smallest next action. Why: in practice, silent workers with nothing but thinking between
+  tool calls lost the thread, looped and stalled, and their sessions showed the operator nothing.
+  The log stays in the worker's own transcript; the controller still reads only the dense report,
+  so controller context is unchanged.
+- Rule 7 reads "prime with pointers, log milestones, report dense"; the team exemption, xcli task
+  text (the log goes to the lane's log file), usage and site follow.
+- Monitoring: a worker with no log entry across many tool calls joins the trajectory-stall signals
+  — a heartbeat, never liveness (artifact mtimes stay the liveness signal).
+- Honest numbers: WORKER ≈ 751 tok/dispatch (was 624), plus the log's own spend, a few hundred
+  output tokens per task.
+- **Model catalog refreshed for Claude Haiku 5.5** (`shared-model-catalog.md`, as of 2026-10-13;
+  evidence in `docs/research/model-selection/refresh-2026-10-13/`: six research lanes and a
+  fresh-context Opus fact-check, whose 18 round-1 findings were all applied).
+  - New row `claude-haiku-5-5`: 1M context, $0.10 / $0.50 per MTok up to a 100K-token prompt and
+    $0.50 / $2.50 for the whole request above it, AA II 43 max · 41 xhigh · 38 high, CAI 41 at xhigh.
+    `haiku` resolves to it on the Anthropic API (Claude Code ≥ 2.1.293) but still to Haiku 4.5 on
+    Bedrock, Google Cloud, Foundry and Claude Platform on AWS — pin the provider's id there. Haiku 4.5
+    is legacy.
+  - Picks:
+    - economy Claude-only cheap worker `haiku` → `haiku @medium` (high for instruction-heavy edits,
+      xhigh as an opt-in for offline batches);
+    - balanced standard worker and economy long-horizon worker `codex · gpt-6.1-sol · high` →
+      `· medium` (Sol's Coding Agent Index knee; high and xhigh are within noise);
+    - balanced grinder `claude · opus-5-5 · xhigh` → `codex · gpt-6.1-sol · xhigh` (CAI 62.9 at $1.04
+      a task vs Opus 66.0 at $13.04; Bug Hunt Bench agrees).
+    The board's balanced worker default follows (`codex gpt-6.1-sol @medium`).
+  - Effort: on Claude Code ≥ 2.1.292 a native subagent carries its own effort (agent frontmatter, or
+    the Agent tool's per-invocation parameter), and Codex defaults Sol and Astra to `low`. Routing
+    rule 1 and the catalog now say so, and the catalog's effort section adds levels per role for
+    Haiku 5.5 and Sol.
+  - Updated evidence notes:
+    - Sonnet 5.5's cache-read price cut;
+    - Luna at AA 38;
+    - Terminal-Bench 4.0, where Opus 5.5 is #1;
+    - independent vision numbers;
+    - DeepSeek V4.1 Flash runs with stub secrets only;
+    - Gemini 3.8 Flash's price from 2027;
+    - after a safety refusal, the served model can differ from the requested one;
+    - Gemini 4 Argon and Muse Wonder added to the watch list.
+  - The refresh skill's lane briefs carry this run's method notes:
+    - AA's price tiers;
+    - community-run benchmarks as corroboration only;
+    - fetch recipes (raw-markdown vendor docs, embedded JSON over screenshots);
+    - opencode's stale model cache;
+    - X search budgets and templated posts;
+    - Reddit consensus bots.
+
 ## [1.30.1] — 2026-09-30
 
 ### Added

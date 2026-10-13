@@ -6,11 +6,13 @@ plugin package name is `orchestrate-skill`; the runtime identifier and Codex inv
 
 ## Ownership boundary
 
-`orchestrate` owns how work is assigned across agents: topology selection, dispatch, isolation,
-monitoring, review gates, durable state, recovery, and handoff. It does not decide which digital-
-product lifecycle domains are required and does not replace design, frontend, backend, growth, or
-other domain skills. A lifecycle composer may request orchestration, but the two capabilities stay
-independent.
+`orchestrate` owns how work is assigned across agents: the run's preparation (clarifying the
+request, inventorying the machine's tools, proposing — never silently performing — installs, scouting
+an undecided toolchain), topology selection, dispatch, isolation, monitoring, review gates, durable
+state, recovery, and handoff. It does not decide which digital-product lifecycle domains are
+required and does not replace design, frontend, backend, growth, or other domain skills — it reads
+and points workers at them. A lifecycle composer may request orchestration, but the two
+capabilities stay independent.
 
 ## Repository contract
 

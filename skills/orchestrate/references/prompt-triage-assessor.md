@@ -25,7 +25,11 @@ You are assessing a task to recommend an orchestration strategy. Measure; don't 
 [the user's request + plan file path if any]
 
 ## Measure (cheap reads/greps only — no deep dives)
+- Kind: build | research | fix | review | content | ops (triage.md Step 1)
 - Plan: does one exist? task count (# Task N headings) and per-task file lists
+- Graph: per task, which tasks must land first? (does it actually need their output? numbering
+  is not a dependency) → waves and the widest wave
+- Domains: distinct areas that each need their own planning and integration
 - Independence: do tasks' file lists overlap? shared state/config touched by several?
 - Size: rough token estimate of context needed (files to read + expected diffs)
 - Verifiability: test suite? build? lint? a metric? — can a machine fail bad work?
@@ -36,7 +40,10 @@ No preamble, no narration: return only your schema. Quote literals verbatim; sta
 uncertainty explicitly.
 
 ## Return (this schema, nothing else)
+kind: build | research | fix | review | content | ops
 scale: small(1-2 files) | medium(3-5) | large(6+)
+graph: <waves> waves, widest <n> | chain
+domains: <n> (<names>)
 est_tokens: <number>
 independent: yes | partial(overlaps: …) | no
 verifiable_stop: yes(<command/metric>) | no

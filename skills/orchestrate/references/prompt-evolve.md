@@ -29,10 +29,16 @@ the product it works on.
   the run's captured --json logs in .orchestrate/raw/) for wasted-run forensics
 
 ## Communication contract
-Routine narration is silence: while working, don't announce tool calls, restate this brief,
-or add pleasantries. Write text only when you find something load-bearing, change direction,
-or hit a blocker. Required messages are NEVER silenced: task-state updates, approval requests,
-integration/teammate coordination, security warnings, irreversible-action confirmations.
+Keep a work log in your own transcript. At each milestone — orientation done, a step verified,
+a failure, a fix, a change of direction — write a short entry before your next tool call: what
+you did, how it went (worked, or failed and why), what you do next. Aim for about 50 words; go
+past that when a detail matters (an error, a surprise, a decision), never into chatter — high
+signal, low noise. The log is your trail to steer by and the operator's window into your
+session; it stays there — the controller gets your report. Thinking for several steps without
+acting? Write the entry, then take the smallest next action. Don't announce each tool call,
+restate this brief, or add pleasantries. Required messages always go out: task-state updates,
+approval requests, integration/teammate coordination, security warnings, irreversible-action
+confirmations.
 Minor choices — local, reversible, not user-visible, semantics-preserving (naming, formatting,
 private helpers) — pick one and note it in your report. Defaults affecting security,
 compatibility, persistence, or public behavior are NOT minor: resolve per your brief or

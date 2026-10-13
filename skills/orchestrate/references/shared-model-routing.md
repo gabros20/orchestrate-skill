@@ -61,15 +61,19 @@ end, never renumber.
 
 1. **Model — and reasoning effort — explicit on EVERY dispatch.** An omitted model silently
    inherits the session's most expensive one; an unset effort silently takes the host default
-   (codex: medium), the same silent-inheritance bug one rung down. Both appear in every prompt
-   template header; where the dispatch surface has no per-dispatch effort parameter (the reference
-   host's Agent tool — only workflow `agent()` and xcli flags pin effort per call), the session
-   effort governs — record it in `run.md` rather than pretending it was pinned.
+   (Codex: `low` for gpt-6.1-sol and gpt-6-astra, `medium` for gpt-6-luna — and a user's config.toml
+   can pin it), the same silent-inheritance bug one rung down. Both appear in every prompt template
+   header. Claude Code's Agent tool takes a per-invocation `effort` (≥ 2.1.292; agent frontmatter
+   `effort` too; `CLAUDE_CODE_EFFORT_LEVEL` outranks both), as do workflow `agent()` and xcli flags;
+   where a surface has none, the session effort governs — record it in `run.md` rather than pretending
+   it was pinned.
 2. **"Turn count beats token price."** Too-cheap models take 2–3× the turns and lose the savings.
    Mid-tier is the FLOOR for reviewers and prose-driven implementers; the cheapest tier only for
    transcription-grade work (the plan already contains the code). Corroboration: a harness vendor
    reports observing complex code-execution workflows on Haiku 4.5 costing more than the same work
-   on Sonnet 4.6, purely on turn count (vendor-observed, unquantified).
+   on Sonnet 4.6, purely on turn count (vendor-observed, unquantified); Haiku 5.5 lists at Luna's
+   price for prompts up to 100K tokens (5× above) but spends 3–4× its output tokens at max (AA
+   Index, FrontierCode, 2026-10).
 3. **Task-class signals**: 1–2 files + complete spec → cheap worker · multi-file integration →
    standard worker · design judgment / whole-branch review → most capable.
 4. **Escalation is a model change, and evidence triggers it — not only a self-report.**

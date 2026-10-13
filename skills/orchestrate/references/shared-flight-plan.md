@@ -35,11 +35,16 @@ node, a deliberate cost posture) beneath the printed tree — never retype the t
   must not hang the run (several hosts auto-answer or suppress questions headless).
 - Re-triage mid-run (scope expansion) → the NEW plan goes through the gate again; a changed
   design is a new launch.
+- **Prepare's scout** (`shared-prepare.md` P4) dispatches before the run's plan exists: its lanes,
+  models and budget are announced as their own question inside a clarify round, and the yes is its
+  approval (`board plan approved --msg "scout"`). The run's own flight plan follows after triage.
 
 ## The format — topology tree + tweak keys (three blocks, plain Unicode)
 
 1. **Header**: `strategy=<x>` + the triage pick's one-line why, and the originally stated goal
-   verbatim (the same line the final-deliverable gate will judge against).
+   verbatim (the same line the final-deliverable gate will judge against); then the posture line,
+   and a `kind · prep · decisions` line — how many decisions the user made in clarify and how many
+   were assumed (headless), so assumptions are checked before the fleet exists.
 2. **Topology tree**: one node per agent that will exist; `├─`/`└─` nesting shows who spawns
    whom. Each node line carries: role · assignment (card/task/domain) · `model @ effort` ·
    isolation (worktree name, shared tree, or subprocess engine). Review gates appear as child
@@ -55,12 +60,15 @@ node, a deliberate cost posture) beneath the printed tree — never retype the t
    `lanes` — only when declared (`--lanes …`), the board's projected lanes ·
    `mail` — on parallel / team / hierarchical / workflow runs: checkpoint delivery, `board peers`
    for ownership, asks rendezvous via `board wait` — the latency is stated, never implied ·
+   `tools` — the run's toolchain from Prepare (`board set tools=…`): which tool serves which need,
+   free first, any approved paid fallback named ·
    `board` — `open a pane and run  board  (or .orchestrate/board)` — the live kanban the user
    watches; printed every run so nothing has to be remembered ·
    `tweak` — the numbered keys.
 
 Tweak keys number the standard dimensions — `[1] strategy [2] models [3] effort [4] engine
-[5] review [6] isolation [7] budget [8] lanes [9] posture` — plus strategy-specific extras as `[10]+`.
+[5] review [6] isolation [7] budget [8] lanes [9] posture [10] tools` — plus strategy-specific extras
+as `[11]+`.
 The header prints the **posture** (frontier · balanced · economy) and which catalog column unpinned
 roles took; the tree ends with the architect a `DESIGN_CONFLICT` would get (`shared-model-catalog.md`). A "change N …"
 answer re-resolves that dimension, reprints ONLY the changed lines, and re-asks; approval
@@ -70,7 +78,12 @@ users can read any run's plan the same way.
 ## Shape per strategy (same three blocks; the tree adapts)
 
 - **parallel / hierarchical / team** — the literal spawn tree: workers, sub-orchestrators, or
-  teammates as children; the integrator or lead as the last node.
+  teammates as children; the integrator or lead as the last node. A hierarchical build shows each
+  lead's loop (parallel waves, worktrees, gates per task, domain integration) and the integrator
+  that merges the domain branches.
+- **research** (`kind=research`) — one researcher node per source lane (read-only, its lane file),
+  the synthesizer, and the final-deliverable gate as the fact-check of the load-bearing claims;
+  per-lane gates only when `review` is not off.
 - **staged / loop** — the tree shows the REPEATING unit once (implementer → spec ✓ → quality ✓)
   with `×N tasks` or `×≤N cycles` on the header line; Finish / goal-met close the tree.
 - **workflow** — phases as nodes with per-phase agent counts and models (`find ×5 · verify ×3
@@ -97,9 +110,9 @@ The plan is the same record; the surface decides the form. Pick by what the host
 
 Terminal (excerpt):
 ```text
-posture: balanced · model catalog 2026-09-30, cross-harness column · change: board set posture=…
+posture: balanced · model catalog 2026-10-13, cross-harness column · change: board set posture=…
 controller · orchestrator claude opus-5-5 @high · host
-├─ worker · card 1 API · codex gpt-6.1-sol @high · worktree wt-1
+├─ worker · card 1 API · codex gpt-6.1-sol @medium · worktree wt-1
 budget  ~11 agents · cap 8 · tokens: no receipts yet — state a range, never a precision you
         don't have
 ```
@@ -108,7 +121,7 @@ App (excerpt of `--format md`):
 ```markdown
 | Role | Model · effort | Where · notes |
 |---|---|---|
-| worker ×3 | codex gpt-6.1-sol @high | card 1 API · worktree wt-1, card 2 UI · worktree wt-2, … |
+| worker ×3 | codex gpt-6.1-sol @medium | card 1 API · worktree wt-1, card 2 UI · worktree wt-2, … |
 **Approve?** Reply `approve`, or change one — 1 strategy · 2 models · … · 9 posture.
 ```
 

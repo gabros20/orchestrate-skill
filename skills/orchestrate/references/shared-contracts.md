@@ -66,8 +66,9 @@ redundant summaries, or boilerplate (current models write long files by default)
 | verifier | `pass` / `fail` / `blocked` / `needs-human-judgment` · expected · observed · evidence path |
 | sub-orchestrator | <1500 tokens: verdict · findings summary · artifact paths · optional `surprise:` line |
 | parallel worker | verdict first, <1000 tokens: branch/PR ref · report path · optional `surprise:` line |
-| triage assessor | scale · independence · verifiability · recommended strategy + why |
+| triage assessor | kind · scale · graph (waves, widest) · domains · independence · verifiability · recommended strategy + why |
 | search/explore worker | `path:line — symbol — ≤10-word note` per hit + `totals: <n> files` (or `No match.`) |
+| researcher (lane or scout) | ≤12 lines: Status · up to 5 graded findings with source URLs · lane file path · queries run · gaps |
 
 Failure returns are single structured lines, never essays:
 `BLOCKED — what / evidence (excerpt + raw path) / what you tried / what you need`.
@@ -94,7 +95,9 @@ Reviewer "read-only" means the REPO; `.orchestrate/` is the one place a reviewer
 - `task-N-brief.md` / `task-N-report.md` — per-task handoffs (report named off brief); briefs
   follow the priming anatomy and pass `scripts/brief-check` (`shared-token-economy.md`)
 - `decisions.md` — cross-cutting decisions, one line each: ID + owner (small runs: keep in
-  `run.md`). Briefs CITE IDs, never restate.
+  `run.md`). Briefs CITE IDs, never restate. A lead's ids are namespaced to its task
+  (`D-<task>.<n>`); a user-owned decision (`--owner user`, from clarify) is revised only by the
+  user — the board refuses anyone else.
   Contradictions reconcile in the record FIRST, by the owner (integrator only when explicitly
   designated, never invents design intent), then propagate outward.
   **The record outranks the brief**: when a brief and the binding record (decisions.md, the
@@ -110,6 +113,11 @@ Reviewer "read-only" means the REPO; `.orchestrate/` is the one place a reviewer
 - `review-task<N>-<kind>-r<round>.md` — reviewer findings files
 - `raw/` — full command/tool output, redirected at execution time (`shared-token-economy.md`)
 - `toolbox.md` — this repo's probed orientation recipes (`scripts/toolbox`; read, don't re-probe)
+- `capabilities.md` — what the machine can do: research/data CLIs (free or paid, installed or
+  missing), gaps with install hints, engines, every skill on disk including manual-only ones
+  (`scripts/capabilities`; refreshed by Prepare, kept across kickoffs like `toolbox.md`)
+- `research/` — `lane-<N>.md` per research or scout lane (queries · candidates · graded findings ·
+  dissent · gaps) and the synthesizer's `report.md` (`shared-research.md`)
 - `journal.jsonl` + `board` — the run's append-only, hash-chained journal (schema 2) and a
   runnable copy of `scripts/board` (the journal section below); `archive/<run-id>/` holds every
   previous run's whole workspace — one workspace, one run
@@ -147,7 +155,10 @@ exact cursor it was generated at. **Never edit the journal; re-resolve with `boa
 
 Vocabulary (all through `scripts/board`): `board init PLAN --strategy … --goal` (kickoff: archives
 the previous run's workspace to `archive/<run-id>/`, writes the `run` record with branch + base
-sha, queues every task, generates `run.md`'s Resolved block) · `board set key=value` (re-resolve a
+sha, queues every task, generates `run.md`'s Resolved block; Prepare inits with `--goal --prep`
+only and triage records the rest with `board init PLAN --resume --strategy …`, which keeps what was
+recorded, keeps the run's branch and base, and puts an approved plan back to pending when it
+re-resolves anything) · `board set key=value` (re-resolve a
 dimension; the plan goes back to pending; `lanes=todo,implement,verify,review,integrate,done,blocked`
 declares the board's lanes — a projection of state × role, `todo/done/blocked` required) · `board
 plan approved|changed|skipped` · `board dispatch N --model M [--agent --role --engine
@@ -156,7 +167,7 @@ plan approved|changed|skipped` · `board dispatch N --model M [--agent --role --
 is what `board resume` resumes by). **Agent names are `<role>-<task>[-tag]`** — `impl-3`, `lead-1`,
 `impl-1.1` (under `lead-1`), `spec-3`, `quality-3`, `verify-3`, `integ-1`, `fix-3-r2`: the role says
 what the sender IS when a worker reads `[peer impl-1.2]`, the task id says WHERE it sits in the tree,
-the run makes it unique. Omit `--agent` and the board derives it from `--role` and the task
+the run makes it unique (`research-2` for a research lane, `synth-5` for its synthesizer). Omit `--agent` and the board derives it from `--role` and the task
 (`-rN` when the name would repeat — a re-dispatch is attempt N); an explicit name is refused unless
 it fits; `controller` is reserved; a trailing tag tells twins apart (`spec-3-codex`). Spawn native
 subagents under the same name (`name:`) so the journal and the host agree · `board return N --agent A --status

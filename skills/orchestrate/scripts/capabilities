@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""capabilities [--refresh] [--root DIR] — inventory what this machine can already do (zero tokens).
+
+Writes .orchestrate/capabilities.md: research and data CLIs (free or paid, installed or missing,
+with install hints), build/test/browser tooling, coding engines on PATH, every skill on disk for
+every host (global and project) — including manual-only skills (`disable-model-invocation: true`)
+that never appear in a model's skill list — and the gaps: a skill whose CLI is missing, a known free
+research tool that is absent. Read it in the Prepare step (references/shared-prepare.md); grep it
+for the task's words. Idempotent; --refresh regenerates. MCP servers are invisible to a script —
+the controller reads its own tool list for those.
+"""
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HOME = Path.home()
+CODEX_HOME = Path(os.environ.get("CODEX_HOME") or HOME / ".codex")
+
+# Global skill dirs per host (mirrors install.sh); project dirs are resolved against the repo root.
+GLOBAL_DIRS = [
+    ("claude", HOME / ".claude/skills"), ("codex", CODEX_HOME / "skills"), ("agents", HOME / ".agents/skills"),
+    ("cursor", HOME / ".cursor/skills"), ("antigravity", HOME / ".gemini/config/skills"),
+    ("agy-cli", HOME / ".gemini/antigravity-cli/skills"), ("opencode", HOME / ".config/opencode/skills"),
+    ("grok", HOME / ".grok/skills"), ("hermes", HOME / ".hermes/skills"), ("kimi", HOME / ".kimi-code/skills"),
+    ("pi", HOME / ".pi/agent/skills"), ("jcode", HOME / ".jcode/skills"),
+]
+PROJECT_DIRS = [
+    ("project:claude", ".claude/skills"), ("project:agents", ".agents/skills"), ("project:codex", ".codex/skills"),
+    ("project:cursor", ".cursor/skills"), ("project:kimi", ".kimi-code/skills"), ("project:pi", ".pi/skills"),
+    ("project:opencode", ".opencode/skills"),
+]
+
+# Known tools: (cli, job, cost, install). cost: free · free-account (needs a login, cookies or token) · PAID.
+RESEARCH = [
+    ("xrelay", "X/Twitter: live search, threads, profiles, bookmarks", "free-account (browser cookies)", "npm i -g x-relay-mcp"),
+    ("ghrelay", "GitHub: repo discovery, health and star-skeptical ranking", "free-account (zero-permission PAT)", "npm i -g github-relay-mcp"),
+    ("ytrelay", "YouTube: search, metadata, chapters, transcripts", "free", "npm i -g youtube-relay-mcp"),
+    ("lnrelay", "LinkedIn: people, companies, posts from your account", "free-account (your session)", "npm i -g linkedin-relay-mcp"),
+    ("gh", "GitHub CLI: issues, PRs, releases, code search, REST/GraphQL API", "free-account (gh auth)", "brew install gh"),
+    ("yt-dlp", "video and subtitle download (any site yt-dlp supports)", "free", "brew install yt-dlp"),
+    ("agent-browser", "headless browser for agents: dynamic pages, screenshots", "free", "npm i -g agent-browser"),
+    ("curl", "HTTP: HN Algolia API, Reddit search.rss, npm / PyPI / crates.io registries, arXiv", "free", "(system)"),
+    ("jq", "JSON slicing for API responses", "free", "brew install jq"),
+    ("firecrawl", "web scrape / crawl / search at scale", "PAID (credits)", "npm i -g firecrawl-cli"),
+    ("treg", "paid data and tool marketplace", "PAID", "(vendor installer)"),
+]
+BUILD = [
+    ("node", "runtime"), ("bun", "runtime + test runner + bundler"), ("deno", "runtime + test runner"),
+    ("pnpm", "package manager"), ("uv", "Python package/project manager"), ("python3", "runtime"),
+    ("cargo", "Rust toolchain"), ("go", "Go toolchain"), ("docker", "containers"),
+    ("playwright", "browser automation / e2e"), ("ffmpeg", "media transcode / frames"),
+    ("hyperfine", "command benchmarking"), ("rg", "ripgrep search"), ("fd", "file finder"),
+    ("ast-grep", "structural code search"), ("tree", "directory tree"),
+]
+ENGINES = ["claude", "codex", "grok", "kimi", "opencode", "hermes", "cursor-agent", "agy", "pi", "muse"]
+
+CLI_PATTERNS = [
+    re.compile(r"`([a-z][a-z0-9._-]{1,30})` (?:CLI|binary|command-line)", re.I),
+    re.compile(r"CLI \(`([a-z][a-z0-9._-]{1,30})`\)"),
+    re.compile(r"CLI,? `([a-z][a-z0-9._-]{1,30})`"),
+    re.compile(r"\b(?:the|via|using) ([a-z][a-z0-9._-]{1,30}) CLI\b"),   # "via the slackrelay CLI" — lowercase only: a binary name
+]
+# installer verb, optional flags, then the package token
+INSTALL = re.compile(r"((?:npm (?:i|install) -g|pnpm add -g|bun add -g|brew install|pipx install|uv tool install|cargo install|go install)"
+                     r"(?: -{1,2}[\w-]+)*) ([A-Za-z0-9@][A-Za-z0-9@/._:-]*)")
+NOT_A_CLI = {"npm", "npx", "node", "git", "bash", "sh", "zsh", "python", "pip", "the", "a", "this", "skills", "agent", "agents",
+             "same", "new", "official", "command", "your"}
+
+
+def have(cli: str) -> str:
+    return shutil.which(cli) or ""
+
+
+def frontmatter(text: str) -> tuple[dict[str, str], str]:
+    """Minimal YAML frontmatter reader: scalars (with indented continuation lines), quoted strings, folded/literal blocks."""
+    text = text.lstrip("\ufeff")   # a byte-order mark must not hide the frontmatter (and with it the manual-only flag)
+    if not text.startswith("---"):
+        return {}, text
+    end = text.find("\n---", 3)
+    if end < 0:
+        return {}, text
+    head, body = text[3:end].strip("\n"), text[end + 4:]
+    out: dict[str, str] = {}
+    lines = head.splitlines()
+    i = 0
+    while i < len(lines):
+        m = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", lines[i])
+        i += 1
+        if not m:
+            continue
+        key, val = m.group(1), m.group(2).strip()
+        parts = [] if val in (">", ">-", "|", "|-", ">+", "|+") else [val]
+        while i < len(lines) and (lines[i].startswith((" ", "\t")) or not lines[i].strip()):
+            parts.append(lines[i].strip())   # a block scalar's body, or a plain scalar continued on indented lines
+            i += 1
+        out[key] = " ".join(x for x in parts if x).strip().strip("'\"")
+    return out, body
+
+
+def shorten(text: str, n: int = 110) -> str:
+    text = re.sub(r"\s+", " ", text).strip()
+    return text if len(text) <= n else text[: n - 1].rstrip() + "…"
+
+
+def scan_skills(root: Path) -> dict[str, dict]:
+    skills: dict[str, dict] = {}
+    dirs = list(GLOBAL_DIRS) + [(label, root / rel) for label, rel in PROJECT_DIRS]
+    seen_dirs: set[Path] = set()
+    for label, d in dirs:
+        try:
+            real = d.resolve()
+            if not d.is_dir() or real in seen_dirs:
+                continue
+            entries = sorted(d.iterdir())
+        except (OSError, RuntimeError):   # unreadable dir, permission error, symlink loop
+            continue
+        seen_dirs.add(real)
+        for sk in entries:
+            md = sk / "SKILL.md"
+            try:
+                if not md.is_file():
+                    continue
+                text = md.read_text(encoding="utf-8", errors="replace")
+            except (OSError, RuntimeError):
+                continue
+            fm, body = frontmatter(text)
+            name = fm.get("name") or sk.name
+            entry = skills.setdefault(name, {"hosts": [], "desc": "", "manual": False, "clis": set(), "install": set(), "path": str(md)})
+            entry["hosts"].append(label)
+            if not entry["desc"]:
+                entry["desc"] = fm.get("description", "")
+                entry["path"] = str(md)
+            entry["manual"] = entry["manual"] or fm.get("disable-model-invocation", "").lower() == "true"
+            probe = entry["desc"] + "\n" + "\n".join(body.splitlines()[:60])
+            for pat in CLI_PATTERNS:
+                for c in pat.findall(probe):
+                    if c.lower() not in NOT_A_CLI:
+                        entry["clis"].add(c)
+            for verb, pkg in INSTALL.findall(body):
+                entry["install"].add((pkg, f"{verb} {pkg}"))
+    return skills
+
+
+def short_path(p: str) -> str:
+    return p.replace(str(HOME), "~", 1)
+
+
+def render(root: Path) -> str:
+    skills = scan_skills(root)
+    L: list[str] = []
+    L.append("# capabilities — what this machine can already do (generated by scripts/capabilities; --refresh to redo)")
+    L.append("")
+    L.append(f"generated {time.strftime('%Y-%m-%d %H:%M')} · repo {root.name} · {len(skills)} skills on disk · "
+             "MCP servers: not visible here — read your own tool list")
+    L.append("Use free + local first; PAID tools only as a named fallback the user approved (references/shared-prepare.md).")
+    L.append("")
+
+    gaps: list[str] = []
+    L.append("## Research and data CLIs")
+    for cli, job, cost, install in RESEARCH:
+        path = have(cli)
+        if path:
+            L.append(f"- {cli:<14} yes  · {job} · {cost}")
+        else:
+            L.append(f"- {cli:<14} MISSING · {job} · {cost} · install: {install}")
+            if not cost.startswith("PAID") and install.startswith(("npm", "brew")):
+                gaps.append(f"{cli} — {job} — `{install}`")
+    L.append("")
+
+    for name, e in skills.items():
+        for c in sorted(e["clis"]):
+            if not have(c):
+                # an install line only counts when its package names this CLI or this skill — never another tool's installer
+                hint = next((cmd for pkg, cmd in sorted(e["install"]) if c in pkg.lower() or name.lower() in pkg.lower()), "")
+                g = f"{c} — named by skill `{name}` but not on PATH — " + (f"`{hint}`" if hint else f"install: see {short_path(e['path'])}")
+                if not any(x.startswith(f"{c} —") for x in gaps):
+                    gaps.append(g)
+    L.append("## Gaps — propose, never install without the user's yes")
+    L += [f"- {g}" for g in gaps] or ["- none found"]
+    L.append("")
+
+    L.append("## Build · test · browser · media")
+    present = [f"{c} ({job})" for c, job in BUILD if have(c)]
+    absent = [c for c, _ in BUILD if not have(c)]
+    L.append("- present: " + (", ".join(present) or "none"))
+    if absent:
+        L.append("- absent: " + ", ".join(absent))
+    L.append("")
+
+    L.append("## Coding engines on PATH (auth is the user's — probe before a lane)")
+    L.append("- " + (", ".join(e for e in ENGINES if have(e)) or "none beyond this host"))
+    L.append("")
+
+    manual = sum(1 for e in skills.values() if e["manual"])
+    L.append(f"## Skills on disk ({len(skills)}; {manual} manual-only)")
+    L.append("`manual` = disable-model-invocation: hidden from your skill list and the Skill tool — read its SKILL.md")
+    L.append("directly and brief workers with the path. A skill's file is <dir>/<name>/SKILL.md; first host listed wins:")
+    used = {h for e in skills.values() for h in e["hosts"]}
+    dirs = [(lbl, d) for lbl, d in GLOBAL_DIRS] + [(lbl, root / rel) for lbl, rel in PROJECT_DIRS]
+    L.append("  " + " · ".join(f"{lbl} {short_path(str(d))}" for lbl, d in dirs if lbl in used))
+    for name in sorted(skills, key=str.lower):
+        e = skills[name]
+        flags = " · manual" if e["manual"] else ""
+        need = [c for c in sorted(e["clis"]) if not have(c)]
+        if need:
+            flags += " · needs " + ", ".join(need) + " (missing)"
+        odd = "" if Path(e["path"]).parent.name == name else f" · {short_path(e['path'])}"
+        hosts = ",".join(e["hosts"][:3]) + (f" +{len(e['hosts']) - 3}" if len(e["hosts"]) > 3 else "")
+        L.append(f"- {name} [{hosts}]{flags} — {shorten(e['desc'], 90)}{odd}")
+    L.append("")
+    L.append("Read this file INSTEAD of probing; grep it for the task's words (research, test, video, x.com, github …).")
+    return "\n".join(L) + "\n"
+
+
+def repo_root() -> Path:
+    """The main worktree's root — the same workspace the board resolves, even from a linked worktree."""
+    try:
+        got = subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True, timeout=10)
+        if got.returncode == 0 and got.stdout.strip():
+            common = Path(got.stdout.strip())
+            return (common if common.is_absolute() else Path.cwd() / common).resolve().parent
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return Path.cwd()
+
+
+def main(argv: list[str]) -> int:
+    refresh = "--refresh" in argv
+    root = None
+    for i, a in enumerate(argv):
+        if a == "--root" and i + 1 < len(argv):
+            root = Path(argv[i + 1]).resolve()
+        elif a.startswith("--root="):
+            root = Path(a.split("=", 1)[1]).resolve()
+    env_ws = os.environ.get("ORCHESTRATE_WS")
+    if root is None and env_ws:
+        root = Path(env_ws).resolve().parent
+    if root is None:
+        root = repo_root()
+    out = root / ".orchestrate" / "capabilities.md"
+    if out.exists() and not refresh:
+        print(out)
+        return 0
+    out.parent.mkdir(parents=True, exist_ok=True)
+    gi = out.parent / ".gitignore"
+    if not gi.exists():
+        gi.write_text("*\n")
+    out.write_text(render(root), encoding="utf-8")
+    print(out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

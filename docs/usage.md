@@ -13,7 +13,8 @@ The grammar below uses the slash form as host-neutral documentation shorthand.
 ```
 /orchestrate [plan-file | task description]
     [strategy=auto|staged|parallel|hierarchical|team|workflow|loop|advisor|adversarial|xcli]
-    [review=dual|spec|quality|panel:N|consensus:N|off]
+    [kind=build|research|fix|review|content|ops|other] [prep=auto|full|off]
+    [review=dual|spec|quality|panel:N|consensus:N|factcheck|off]
     [engine=claude|codex|grok|cursor|agy|opencode|hermes|kimi|pi|mixed]
     [models=orchestrator:opus,worker:sonnet,advisor:<strongest>,...] [posture=frontier|balanced|economy]
     [isolation=worktree|branch|off]
@@ -26,7 +27,9 @@ The grammar below uses the slash form as host-neutral documentation shorthand.
 |---|---|---|
 | `[plan-file \| task description]` | positional, first arg | Either a path to a plan/PRD/issue-list file, or a free-text task description. Determines what gets briefed to the first subagent and what triage reads. |
 | `strategy=` | one of 9 names, or `auto` | Forces the orchestration strategy. `auto` (or omitting it) runs the triage procedure. |
-| `review=` | `dual`, `spec`, `quality`, `panel:N`, `consensus:N`, `off` | Overrides the output-review gate a strategy would otherwise use (see [Dimensions → review](#review)). |
+| `kind=` | `build`, `research`, `fix`, `review`, `content`, `ops`, `other` | Forces the task kind triage would otherwise classify; the kind picks the default play (see [What triage measures](#what-triage-measures)). |
+| `prep=` | `auto` (default), `full`, `off` | Preparation before triage (see [Prepare](#prepare-before-triage)): `auto` interviews only when the request is unclear and scouts only an undecided toolchain; `full` always does both; `off` skips both. The tool inventory always runs. |
+| `review=` | `dual`, `spec`, `quality`, `panel:N`, `consensus:N`, `factcheck`, `off` | Overrides the output-review gate a strategy would otherwise use (see [Dimensions → review](#review)); `factcheck` gates every research lane (research runs default to `off` — the final gate fact-checks the report). |
 | `engine=` | `claude`, `codex`, `grok`, `cursor`, `agy`, `opencode`, `hermes`, `kimi`, `pi`, `mixed` | Which CLI executes dispatched work. `mixed` routes different roles to different engines (e.g. planner on Claude, counter on Codex). |
 | `models=` | comma-separated `tier:model` pairs | Overrides the tier→model map for this run (e.g. `models=orchestrator:opus,worker:sonnet`). Unlisted tiers keep their default from `shared-model-routing.md`. |
 | `isolation=` | `worktree`, `branch`, `off` | Physical write isolation for concurrent writers. |
@@ -55,6 +58,38 @@ Only the first positional argument is required. Everything else defaults from th
   triage signals genuinely conflict; the flight-plan gate is separate and fires regardless of how
   the strategy was chosen.
 
+## Prepare (before triage)
+
+Every run starts with preparation (`references/shared-prepare.md`) — the controller does not dispatch
+into an unclear request or a missing toolchain:
+
+1. **Equip** — `scripts/capabilities --refresh` (zero tokens) writes `.orchestrate/capabilities.md`:
+   research and data CLIs with their cost class (free, free with your account, paid) and install
+   hints, build/test/browser tooling, coding engines on your PATH, and every skill on disk for every
+   host. Manual-only skills (`disable-model-invocation: true`) never show up in a model's skill
+   list, so this file is how the controller finds them — it reads their `SKILL.md` and points
+   workers at the path.
+2. **Clarify** — when it cannot write down the goal, what done looks like, scope, constraints and
+   the stop condition without guessing a decision, the controller interviews you in **rounds**:
+   every open decision whose prerequisites are settled, numbered, each with a recommended answer
+   worded so "yes" accepts it. Facts it looks up itself (or sends an explorer for); decisions are
+   yours. It stops when the open questions run out **and** you confirm the shared understanding.
+   Each answer is journaled (`board decide D-n "…" --owner user`). Technique: Matt Pocock's
+   `grilling` skill.
+3. **Gaps** — a missing tool (a skill whose CLI is absent, a free tool that would beat the
+   fallback) becomes a question in the next round, with its exact install command. Nothing is
+   installed, and no paid service is used, without your yes; free and local tools come first.
+4. **Scout** — when the work needs tools the repo has not chosen (a new project or platform, no
+   test runner yet), a small research run compares candidates across X, GitHub, the web,
+   registries and forums, preferring a track record over novelty and the faster tool on a tie.
+   Its proposal comes back as questions, one per tool.
+5. **Set up** — approved tools become Task 0: installed, configured, smoke-tested, recorded as
+   the run's toolchain (`board set tools="…"`, printed on the flight plan), so every worker uses the
+   same tools.
+
+Headless runs cannot ask: would-be questions become recorded assumptions, counted on the flight
+plan's `kind · prep` line so you can check them.
+
 ## The flight plan (no silent launch)
 
 Before the first dispatch of any multi-agent run, the controller prints the resolved design and
@@ -63,7 +98,8 @@ asks first — so you see (and can tweak) the composition before it costs anythi
 ```
 ORCHESTRATION PLAN — approve before anything dispatches
 
-strategy=parallel — 4 independent tasks, no shared files (fake-edge test passed)
+strategy=parallel — build, 1 domain, 2 waves (widest 2), no shared files
+kind: build · prep auto · 3 decision(s) by the user
 
   controller  (this session: opus @ session-high)
   ├─ worker A  card-auth   sonnet @ high    wt-auth
@@ -74,8 +110,10 @@ strategy=parallel — 4 independent tasks, no shared files (fake-edge test passe
   gates   dual per worker · fan-in 2/2 · final gate (fresh context vs stated goal)
   rails   branch feat/x · worktrees · PR cap 1
   budget  ~7 agents · est 300–450k tokens
+  tools   tests: bun test · e2e: agent-browser
 
   tweak:  [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget
+          [8] lanes [9] posture [10] tools
 ```
 
 One node per agent that will exist, `model @ effort` on every line, gates as children, the
@@ -92,25 +130,35 @@ Triage (`references/triage.md`) is a cheap assessment the controller runs itself
 unless the codebase is unfamiliar enough to warrant dispatching a triage-assessor subagent on a
 mid-tier model.
 
-1. **Should you orchestrate at all?** Estimate total context the work needs (files + plan +
+You should never need a strategy name: the kind picks the play, the dependency graph picks the
+shape, and **concurrency is the default — sequence is a finding**.
+
+0. **Should you orchestrate at all?** Estimate total context the work needs (files + plan +
    expected diff size). Under ~50K tokens of *coupled* work → skip orchestration entirely and just
    do it (optionally with one reviewer subagent). A loop only earns its cost when all four of the
    Karpathy-test conditions hold: the task repeats/grinds, verification is automated, the token
    budget absorbs retries, and the agent has real tools to see failures.
-2. **Measure the shape** — six signals: does a plan already exist, task count/size, whether tasks
-   share files or state, whether there's an automatable stop condition, whether the work recurs,
-   whether it needs debate, the blast radius (prod/customers/external sends force human gates
-   regardless of strategy), and rough scale (≤5 / 6–20 / 20+ items).
-3. **Map shape → strategy** against a fixed table (coupled+small → `solo`; plan with
-   mostly-independent tasks → `staged`; independent+no-shared-files+speed → `parallel`; one huge
-   read-only question or domains needing real thinking → `hierarchical`; workers must argue →
-   `team`; 20+ homogeneous items or verify-each-finding → `workflow`; grind-until-green or recurring
-   → `loop`; budget-constrained with occasional strong-model judgment → `advisor`; high-stakes plan
-   → `adversarial`; a task suited to another CLI → `xcli`, usually layered on another strategy via
-   `engine=`).
-4. **Resolve and record**: state the pick in one line (`strategy=X because <signals>`), apply any
-   user overrides, write `.orchestrate/run.md`. Only ask the human if two strategies tie and the
-   cost gap is large.
+1. **Classify the kind**: `build` (code that must exist) · `research` (a question many sources
+   answer) · `fix` · `review` · `content` · `ops` (recurring or triggered). Research runs as parallel
+   source lanes with a synthesizer and a fact-checking final gate (`references/shared-research.md`);
+   fix, review, content and ops have their own defaults.
+2. **Measure the shape** (builds): the **dependency graph** — for each task, does it actually need
+   another task's output? Numbering is not a dependency — giving waves and their width; the
+   **domains** (backend · frontend · infra · data …); shared files; a machine-checkable stop
+   condition; the blast radius (prod/customers/external sends force human gates regardless).
+3. **Map shape → strategy**: coupled+small → `solo`; a build across ≥2 domains → `hierarchical`
+   (a lead per domain runs its own parallel waves, reviews and merges; an integrator merges the
+   domains); one domain with ≥2 independent tasks → `parallel` (waves on the graph — a task starts
+   the moment it is ready: at once on an interface, after the merge on another task's code); a true
+   chain → `staged`; research → `parallel` source
+   lanes; workers must argue → `team`; 20+ homogeneous items or verify-each-finding → `workflow`;
+   grind-until-green or recurring → `loop`; occasional strong-model judgment → `advisor`; high-stakes
+   plan → `adversarial` first; a task suited to another CLI → `xcli` via `engine=`. The gates never
+   change with the shape: criteria before code, spec then quality per task, machine checks, and a
+   final-deliverable gate.
+4. **Resolve and record**: state the pick in one line (`strategy=X because <kind, waves, domains>`),
+   apply any user overrides, record it (`board set strategy=… kind=… tools=…`). Only ask the human
+   if two strategies tie and the cost gap is large.
 
 Triage re-runs mid-flight on: scope expansion (stop and restart triage with the new requirements —
 never bolt new scope onto a running strategy), repeated `BLOCKED` from workers on the same theme
@@ -119,13 +167,16 @@ never bolt new scope onto a running strategy), repeated `BLOCKED` from workers o
 
 ## Dimensions
 
-Every strategy is a **preset over these ten dimensions** — nothing reads the strategy name
+Every strategy is a **preset over these dimensions** — nothing reads the strategy name
 directly; a custom combination of dimensions is just as valid as picking a named strategy.
 
 | Dimension | Values | Default |
 |---|---|---|
 | `topology` | `solo` · `staged` · `parallel` · `hierarchical` · `team` · `workflow` · `loop` | from strategy |
-| `planning` | `none` · `plan-first` · `interview` · `adversarial` | `plan-first` |
+| `kind` | `build` · `research` · `fix` · `review` · `content` · `ops` · `other` | classified by triage |
+| `prep` | `auto` · `full` · `off` | `auto` |
+| `tools` | the run's toolchain line, free first | written by Prepare |
+| `planning` | `none` · `plan-first` · `interview` · `adversarial` | `plan-first` (`interview` when Prepare finds the request unclear) |
 | `review` | `off` · `spec` · `quality` · `dual` · `panel:N` · `consensus:N` | `dual` |
 | `engine` | `claude` · `codex` · `grok` · `cursor` · `agy` · `opencode` · `hermes` · `kimi` · `pi` · `mixed` | `claude` |
 | `models` | tier map (`advisor`/`orchestrator`/`reasoner`/`worker`/`reviewer`/`peer`) | see [Model tiers](#model-tiers) |
@@ -153,8 +204,9 @@ verifiable stop condition is met.
 
 How much thinking happens before execution starts. `none` — skip planning (the task is small enough
 or already fully specified). `plan-first` (default) — a brief is written from the plan/task before
-any subagent is dispatched. `interview` — grill-style, one-at-a-time questions to the human until
-requirements stop moving, before a plan is drafted (adversarial's step 1). `adversarial` — the
+any subagent is dispatched. `interview` — Prepare's clarify rounds: the whole frontier of open
+decisions per round, each with a recommended answer, until nothing is left assumed and you confirm
+(also adversarial's step 1). `adversarial` — the
 strong-model plan is attacked by a different-lineage counter-model before any code exists, iterating
 to consensus (≤5 rounds; unresolved disagreements after that become pinned open questions for the
 human, not silent compromises).
@@ -250,6 +302,8 @@ the conversation**, between the controller and any subagent. It's self-ignoring 
 | `review-task<N>-<kind>-r<round>.md` | per review round | Reviewer findings files (collision-proof names) — every finding with severity + confidence lives here, so inline return caps can never truncate them. |
 | `raw/` | as workers run | Full noisy command/tool output, redirected to file *at execution time* so dumps never enter a transcript; chat carries exit status + minimal excerpt + path. |
 | `toolbox.md` | at workspace creation | The repo's probed orientation recipes (structure/outline/search, manifests, package manager, conventions files) — generated by `scripts/toolbox`, read by workers instead of re-probing. |
+| `capabilities.md` | at workspace creation, refreshed by Prepare | What the machine can do — research/data CLIs (free or paid, installed or missing, install hints), build and test tooling, engines, every skill on disk including manual-only ones. Generated by `scripts/capabilities`; kept across kickoffs. |
+| `research/` | during research or scout lanes | `lane-<N>.md` per source lane (queries, ranked candidates, graded and sourced findings, dissent, gaps) and the synthesizer's `report.md`. |
 | `journal.jsonl` + `board` | at kickoff, then per dispatch / return / gate / decision | **The run's spine** — one append-only line per fact the disk cannot show (resolved dimensions, dispatches, typed returns, gates, escalations, decisions, the flight-plan outcome) — and a runnable copy of `scripts/board`. See [The journal](#the-journal-flight-plan--board--resume). |
 | `progress.md` | after each gated unit passes | **The ledger** — see below. |
 | `loop-<name>.md` | at loop setup | The loop's contract: goal, boundaries, SOP, current understanding, append-only logs. |
@@ -282,10 +336,11 @@ findings file means review, a ledger line means done and always wins. One worksp
 run: `board init` archives the previous run's whole workspace to `.orchestrate/archive/<run-id>/`.
 
 ```
-board init PLAN --strategy staged --review dual --engine claude --host "Claude Code" \
+board init --goal "…" --prep auto  # Prepare's kickoff: archive previous run · run record (branch, base sha) — decisions now have a journal
+board init PLAN --resume --strategy staged --review dual --engine claude --host "Claude Code" \
            --models orchestrator=opus,worker=sonnet,reviewer=opus --effort high \
-           --isolation worktree --budget agents=13,tokens=150k-400k --goal "…"
-                                  # kickoff: archive previous run · run record (branch, base sha) · every '# Task N' queued · run.md Resolved block
+           --isolation worktree --budget agents=13,tokens=150k-400k --kind build --tools "tests: npm test"
+                                  # triage: keeps Prepare's record · every '# Task N' queued · run.md Resolved block
 board set effort=ultra            # re-resolve a dimension (journaled; the plan goes back to pending) — never edit the journal
 board plan --why "…"              # the flight plan, rendered from the record (tree + gates/rails/budget/board/tweak)
 board plan approved               # the gate outcome, appended to run.md
@@ -453,10 +508,17 @@ task — reach for that shape under budget pressure rather than downgrading the 
 6. **Safety rails are always on** — see below.
 7. **When not to orchestrate**: under ~50K tokens of coupled work, use `solo`. A strategy that
    costs more than it returns is a bug, not a feature.
-8. **Token economy**: prime with pointers, work silent, report dense — see below.
+8. **Token economy**: prime with pointers, log milestones, report dense — see below.
 9. **No silent launch**: before the first multi-agent dispatch, the flight plan prints the
    topology, models, gates, and budget, and gates on your approval — see
    [The flight plan](#the-flight-plan-no-silent-launch).
+10. **Reality over plan — redesign, never patch**: a failed plan assumption comes back as
+    `DESIGN_CONFLICT` and goes to a fresh architect (internal design) or to you (product behavior).
+11. **Prepare before you dispatch**: clarify every decision that would otherwise be guessed, use
+    what the machine has (free and local first), propose installs and paid tools — never run them
+    unasked — and scout only an undecided toolchain. See [Prepare](#prepare-before-triage).
+12. **Concurrency is the default; sequence is a finding**: independent tasks run at once —
+    dispatched as they become ready, reviewed as each lands, merged continuously.
 
 ## Token economy
 
@@ -474,8 +536,9 @@ v1.1.0 bakes a token-discipline layer into every strategy
   file tree, manifests, conventions, one neighboring module for patterns — via the graded
   ritual in `token-economy.md`; `scripts/toolbox` probes the repo's tooling once (zero tokens)
   into `.orchestrate/toolbox.md` so workers read recipes instead of re-probing.
-- **Role-scoped communication blocks**: tool-heavy workers get a silence-default working
-  contract (no narration, structured blockers, raw output redirected to `.orchestrate/raw/`);
+- **Role-scoped communication blocks**: tool-heavy workers get a working contract with a
+  milestone work log (~50 words an entry, high signal, kept in their own transcript), no routine
+  narration, structured blockers, and raw output redirected to `.orchestrate/raw/`;
   reviewers get a coverage-protected variant (report every finding to a findings file — never
   self-filter); terse inline roles get one line. Code, commands, and error strings are always
   quoted verbatim; safety language is never compressed.
@@ -501,6 +564,9 @@ Apply regardless of strategy, from `references/shared-safety-rails.md`:
   crashed. Transient worker failure resumes the same session rather than respawning blind.
   `BLOCKED` always means something changes (context, model tier, task split, or the human) before
   any re-dispatch. A rate-limited external CLI gets reported to the user, never retry-looped.
+- **Machine changes** — installing a tool, enabling a paid service or spending credits needs your
+  yes first, proposed with the exact command; never `sudo`, user-level installs preferred, logins
+  and keys stay yours.
 - **Human bandwidth** — an open-PR cap (default 1 unmerged PR per run/loop) protects the reviewer;
   ship-alone autonomy is earned per work-class by track record, with new classes starting
   drafts-only/PR-only; pre-flight ambiguities go to the human as one batched question, not a drip.

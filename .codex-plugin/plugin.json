@@ -1,7 +1,7 @@
 {
   "name": "orchestrate-skill",
-  "version": "1.30.1",
-  "description": "Select and run bounded multi-agent strategies with durable artifacts, explicit models, typed review gates, and safe recovery.",
+  "version": "1.31.0",
+  "description": "Prepare each run (interview, tool inventory, install proposals), then select and run bounded multi-agent strategies with durable artifacts, explicit models, typed review gates, and safe recovery.",
   "author": {
     "name": "Tam\u00e1s G\u00e1bor",
     "url": "https://github.com/gabros20"
@@ -14,13 +14,14 @@
     "multi-agent",
     "orchestration",
     "subagents",
-    "coding-agents"
+    "coding-agents",
+    "research"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Orchestrate",
     "shortDescription": "Multi-agent strategy selection, dispatch, and gates",
-    "longDescription": "Choose and execute staged, parallel, hierarchical, team, workflow, loop, advisor, adversarial, or external-CLI agent strategies with durable state and review gates.",
+    "longDescription": "Prepare the run \u2014 interview the user when the request is unclear, inventory installed skills and CLIs, propose missing tools \u2014 then choose and execute staged, parallel, hierarchical, team, workflow, loop, advisor, adversarial, or external-CLI agent strategies with durable state and review gates. Concurrency is the default; research runs as parallel source lanes.",
     "developerName": "Tam\u00e1s G\u00e1bor",
     "category": "Developer Tools",
     "capabilities": [
@@ -30,7 +31,8 @@
     "websiteURL": "https://orchestrate-skill.vercel.app",
     "defaultPrompt": [
       "Use $orchestrate to execute this implementation plan.",
-      "Use $orchestrate to fan these independent tasks out safely."
+      "Use $orchestrate to fan these independent tasks out safely.",
+      "Use $orchestrate to deep-research this question across GitHub, X, YouTube and the web."
     ],
     "brandColor": "#3d6bb6"
   }

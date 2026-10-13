@@ -1,6 +1,8 @@
 # Model selection for orchestrate — research synthesis (2026-09-30)
 
 > Fact-checked by a fresh-context final gate (Opus): round 1 failed with 25 findings, all applied.
+> **Refreshed 2026-10-13** for Claude Haiku 5.5 — [refresh-2026-10-13/SYNTHESIS.md](refresh-2026-10-13/SYNTHESIS.md)
+> (changes table first); the catalog reference carries the result.
 > Reddit evidence is search excerpts only; the Reddit-via-RSS follow-up lane stalled and was stopped.
 
 What the orchestrator needs to pick a **harness + model + effort per role** from data: capability,

@@ -35,8 +35,9 @@ session / receipt / cap map in `shared-engines.md`). Verify flags before trustin
 drift; run `<cli> --help` once per session before scripting against it.
 
 **Task text carries the WORKER communication block** (`shared-token-economy.md`) with
-`.orchestrate/raw/` paths made absolute for the CLI's cwd — external workers narrate by default
-and their stdout lands in YOUR context; the contract is the filter.
+`.orchestrate/raw/` paths made absolute for the CLI's cwd. Its work log goes to the lane's log
+file (`board launch` captures stdout) — never pipe a lane's stdout into YOUR context; the report
+is what you read.
 
 ## Lane hardening (observed on a live Codex lane; generalizes to every subprocess engine)
 

@@ -1,4 +1,4 @@
-# Token economy — prime with pointers, work silent, report dense
+# Token economy — prime with pointers, log milestones, report dense
 
 Purpose: Provide role-scoped communication blocks and briefing rules that remove waste without underpriming agents.
 
@@ -42,10 +42,16 @@ Keep block text byte-stable across a run (cache hygiene); per-task variables go 
 
 ```
 ## Communication contract
-Routine narration is silence: while working, don't announce tool calls, restate this brief,
-or add pleasantries. Write text only when you find something load-bearing, change direction,
-or hit a blocker. Required messages are NEVER silenced: task-state updates, approval requests,
-integration/teammate coordination, security warnings, irreversible-action confirmations.
+Keep a work log in your own transcript. At each milestone — orientation done, a step verified,
+a failure, a fix, a change of direction — write a short entry before your next tool call: what
+you did, how it went (worked, or failed and why), what you do next. Aim for about 50 words; go
+past that when a detail matters (an error, a surprise, a decision), never into chatter — high
+signal, low noise. The log is your trail to steer by and the operator's window into your
+session; it stays there — the controller gets your report. Thinking for several steps without
+acting? Write the entry, then take the smallest next action. Don't announce each tool call,
+restate this brief, or add pleasantries. Required messages always go out: task-state updates,
+approval requests, integration/teammate coordination, security warnings, irreversible-action
+confirmations.
 Minor choices — local, reversible, not user-visible, semantics-preserving (naming, formatting,
 private helpers) — pick one and note it in your report. Defaults affecting security,
 compatibility, persistence, or public behavior are NOT minor: resolve per your brief or
@@ -114,16 +120,16 @@ uncertainty explicitly.
 
 ### Team exemption
 
-Teammates keep the WORKER block **minus silence toward each other** — the team strategy exists
-because workers must talk. Silence applies to routine narration, never to coordination.
+Teammates keep the WORKER block **plus talking to each other** — the team strategy exists
+because workers must talk. The ban on routine narration never covers coordination.
 
 ## Dispatch coverage matrix (every surface, its block)
 
 | Surface | Block |
 |---|---|
-| prompts/implementer, sub-orchestrator, integrator, evolve | WORKER |
+| prompts/implementer, sub-orchestrator, integrator, evolve, researcher (lanes, scout, synthesis mode) | WORKER |
 | prompts/spec-reviewer, quality-reviewer (+ panel/consensus dispatches) | REVIEWER |
-| prompts/advisor, triage-assessor, verifier, planner-debate, architect | MINIMAL |
+| prompts/advisor, triage-assessor, verifier (incl. fact-check mode), planner-debate, architect | MINIMAL |
 | team teammates (spawn prompts) | WORKER + team exemption |
 | workflow-script `agent()` prompts | MINIMAL (schema-forced output is already structural) |
 | xcli workers (codex/grok task text) | WORKER core (fold in; no Claude-specific mechanics) |
@@ -148,15 +154,19 @@ A quality brief contains, in order:
    run-wide; `scripts/brief-check` in multi-brief mode fails two briefs claiming the same
    `write:` path (a double-assigned deliverable is a clobber waiting for a less careful worker).
    **Pin with `@ <sha>`** whenever more than one writer is active or the run uses worktrees — a
-   branch name is not a pin. **One snapshot per fan-out batch**: every worker in a batch pins the
-   same `@ <sha>` AND the same revision of the shared records it reads (`decisions.md`, the plan,
-   the inventory). Changing shared state mid-batch is a re-dispatch decision, never a silent
+   branch name is not a pin. **One snapshot per dispatch**: workers dispatched together pin the
+   same `@ <sha>` AND the same revision of the shared records they read (`decisions.md`, the plan,
+   the inventory); one dispatched later, on readiness, pins the tip its tree was cut from. Changing
+   shared state under a running worker is a re-dispatch decision, never a silent
    update — two workers each correct against a different version of the truth raise no error on
    their own. Inline content only when it is *semantically complete, stable, and cheaper than
    rediscovery* (an interface, invariants, a constraint table — verbatim); on high fan-out, inline
    the one canonical payload every worker needs rather than making N workers rediscover it.
    Every worker/reviewer brief also includes
-   `read: .orchestrate/toolbox.md — orientation recipes`. When `.orchestrate/field-guide.md`
+   `read: .orchestrate/toolbox.md — orientation recipes`. A brief whose task uses tools beyond the
+   repo's own carries the run's `tools=` line and the SKILL.md path of any manual-only skill it
+   should follow; only scout and setup briefs point at the whole `.orchestrate/capabilities.md`
+   (`shared-prepare.md` P2) — it runs to thousands of tokens. When `.orchestrate/field-guide.md`
    exists, briefs RELEVANT to it also include `read: .orchestrate/field-guide.md` — no file →
    no pointer → zero cost. Controller entry criteria (curation gate): a surprise not derivable
    from the repo or conventions files, not a decision (`decisions.md`) or orientation
@@ -255,9 +265,14 @@ before big runs.
 
 ## Honest numbers
 
-The blocks' own cost (measured, words×1.33): WORKER ≈ 624 tokens/dispatch, REVIEWER ≈ 221,
+The blocks' own cost (measured, words×1.33): WORKER ≈ 751 tokens/dispatch, REVIEWER ≈ 221,
 MINIMAL ≈ 19 — vs the hundreds-to-thousands of narration tokens per worker turn they remove,
 and the controller-context bloat every verbose return would re-cost on every later turn.
+The work log is a deliberate spend: ~50 output words per milestone, a few hundred tokens a task,
+in the worker's own context only. Full silence was tried (v1.1.0–v1.30) and reversed — workers
+with nothing but thinking between tool calls lost the thread, looped and stalled, and their
+sessions told the operator nothing. Only the report reaches the controller, so the log never
+re-costs there.
 Expect **10–25% session-level savings** from output discipline — not the 65–75% output-only
 headlines. The only trustworthy measure is an A/B on the provider's billing/usage page.
 Multipliers for right-sizing *whether* to orchestrate (universal rule 8): single tool-using agent

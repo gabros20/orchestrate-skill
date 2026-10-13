@@ -3,7 +3,7 @@
 Purpose: Delegate broad domains to sub-orchestrators that plan and supervise their own workers.
 
 Read when:
-- The task exceeds one controller context or contains several independently reasoned domains.
+- A build spans two or more domains that each need their own planning, workers and integration (triage's default for multi-domain builds), or one question needs a read-only fan-out too wide for one context.
 
 Skip when:
 - The work is a small flat set of directly assignable tasks.
@@ -18,39 +18,47 @@ Produces:
 
 - Depth reality (know the runtime before designing the tree)
 - Design rules
+- The domain lead's loop (the build play, one level down)
 - Flow
 - Mail in a tree (authority is lineage, not a name)
 
 Preset: `topology=hierarchical review=dual models=orchestrator:strong,worker:cheap`.
-Use when the work spans domains that each need real *thinking* plus their own worker fleet, or
-when total context far exceeds one window. Your context is the scarce resource: you hold only
-conclusions; sub-orchestrators hold their domain; workers hold one task.
-**The capacity trigger has moved**: frontier models now default to a 1M-token window with
-instruction-following, tool calling and reasoning consistent throughout it, so breadth alone no
-longer justifies this strategy — prefer `staged` on a strong long-context model unless the domains
-need independent *thinking*, not just room.
+Use when the work spans domains that each need real *thinking* plus their own worker fleet — the
+shape of most full builds (backend · frontend · infra · data). Your context is the scarce resource:
+you hold only conclusions; leads hold their domain; workers hold one task. **Independent domains are
+the trigger, not size**: a 1M-token window removes the capacity reason to split, never the speed
+reason — two domains a lead each can plan, build, review and merge at once finish in the time of the
+slower one (`triage.md`).
 
 Read with this file: `shared-model-routing.md`, `shared-contracts.md`.
 Prompt: `prompt-sub-orchestrator.md`.
 
 ## Depth reality (know the runtime before designing the tree)
 
-- Claude Code **subagents cannot spawn subagents**. Depth comes from these mechanisms only:
-  1. **Teammates as sub-orchestrators** (agent teams): a teammate is a full session that CAN spawn
+- **Claude Code subagents spawn subagents** — observed 2026-10-13 on Claude Code 2.1.296: a
+  subagent dispatched a nested subagent, and the nested one reported the Agent tool too (the hosts
+  matrix records depth 5; not probed past 2). So the native shape is the default: each lead is a
+  background subagent on the orchestrator tier that dispatches its own workers. Older builds said
+  otherwise — probe once per session (a one-line nested dispatch) before designing a tree on it.
+  The other mechanisms stay available:
+  1. **`board launch` lanes as leads**: a `claude -p` (or Codex, Grok…) lane is a full session with
+     its own dispatch tool; `--by` defaults to the lane's name, so its workers journal under it.
+  2. **Teammates as sub-orchestrators** (agent teams): a teammate is a full session that CAN spawn
      its own *foreground* subagents. Lead → teammates → subagents = 3 levels. Teammates can't
      nest teams or run background subagents.
-  2. **Workflow nesting**: a workflow script can call `workflow()` exactly ONE level deep.
-  3. **The main conversation as recursion stack** (RLM pattern): you sequentially play each
+  3. **Workflow nesting**: a workflow script can call `workflow()` exactly ONE level deep.
+  4. **The main conversation as recursion stack** (RLM pattern): you sequentially play each
      sub-orchestrator yourself — fan out workers for domain A, aggregate, then domain B. Cheapest;
-     no extra sessions; serializes the thinking layer.
+     no extra sessions; serializes the thinking layer — the fallback where nothing above exists.
 - Anthropic managed-agents (server-side) also caps delegation at depth 1 — flat rosters, max 20
   agents, 25 threads. Same lesson everywhere: **wide and shallow beats deep**.
 
 ## Design rules
 
-- Decompose into **3–7 independent partitions** per level; <3 means you didn't need the level,
-  >7 means the brief is too vague. Aggregation strategy declared up front: union · synthesis ·
-  reduce.
+- Decompose into **2–7 domains** per level for a build (backend + frontend is the common
+  two-lead case) and **3–7 partitions** for a read-only fan-out; one means you didn't need the
+  level, more than 7 means the brief is too vague. Aggregation strategy declared up front: union ·
+  synthesis · reduce.
 - Each sub-orchestrator brief: domain scope, its worker budget (count + model tier), the typed
   report it must return (verdict + findings + artifact paths, <1500 tokens), and what it must NOT
   do (no cross-domain edits, no scope invention). Briefs follow the priming anatomy + pass
@@ -76,15 +84,37 @@ Prompt: `prompt-sub-orchestrator.md`.
   reasoner + a codex peer) on the SAME question in parallel, never showing either the other's
   answer; synthesize the best of both yourself.
 
+## The domain lead's loop (the build play, one level down)
+
+A lead owns one domain end to end, on a domain branch (`agent/<domain>`), and runs exactly what a
+flat run would (`triage.md`, the build play): decide the domain's interfaces first (`board decide
+D-<task>.<n>`) · criteria before code, once (every task's acceptance checks as one set, by a
+non-implementer, before the first implementer starts) · its tasks in waves on the domain's
+dependency graph, each worker in its own worktree cut from the domain branch, dispatched
+on readiness — a hard dependency is ready once gated and merged into the domain branch
+(`strategy-parallel.md`) · spec then quality review as each task lands ·
+merge each gated branch into the domain branch, resolving conflicts itself (bouncing a merge back to
+the worker only when it needs that worker's intent) · the domain's machine checks green on the
+domain branch · then its typed return. The lead never implements; it plans, dispatches, reviews,
+merges. Cross-domain contracts are the controller's, decided before any lead starts.
+
 ## Flow
 
-1. Split domains → pick the depth mechanism (teams if domains need long-lived coordination;
-   recursion-stack if they're read-heavy analyses; workflow if homogeneous at scale).
+1. Split domains → pick the depth mechanism (native nested subagents on Claude Code; `board launch`
+   lanes elsewhere; teams if domains need long-lived coordination; recursion-stack if they're
+   read-heavy analyses; workflow if homogeneous at scale). Decide the cross-domain contracts
+   (shared types, API shapes, event names) in `decisions.md` before dispatching any lead. On the
+   board the top-level tasks are the domains (`## Task 2: Backend`), one per lead; the plan's tasks
+   become each lead's dotted subtasks (`board todo 2.1 …`, journaled by the lead) — regroup a flat
+   plan that way before `board init PLAN --resume`. Prepare's Task 0 stays a single worker every lead waits for.
 2. Dispatch sub-orchestrators with briefs; they run their own worker loops and return typed
    reports + artifacts on disk.
-3. Aggregate per the declared strategy; gaps → follow-up partition, not a redo of everything.
-   A run that changed the repo owes the final-deliverable gate before reporting done: fresh
-   context, accumulated change set vs the originally stated goal (`shared-review-gates.md`).
+3. Integrate: the integrator merges the domain branches into the run branch in dependency order,
+   runs the full suite after each merge, and resolves cross-domain collisions against the recorded
+   contracts (`prompt-integrator.md`). Read-only fan-outs aggregate instead (union · synthesis ·
+   reduce). Gaps → follow-up partition, not a redo of everything. A run that changed the repo owes
+   the final-deliverable gate before reporting done: fresh context, accumulated change set vs the
+   originally stated goal (`shared-review-gates.md`).
 4. Review gates apply at the level that produced code (worker output → its sub-orchestrator's
    review; cross-domain integration → yours).
 5. Ledger the tree: one line per sub-orchestrator completion with its artifact paths.

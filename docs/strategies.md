@@ -10,16 +10,27 @@ Each section: **use when** it's the right fit · **how it runs** (the step flow)
 worth knowing before you dispatch · **failure handling** · **composition overrides** that change
 its behavior.
 
-Whatever the strategy, a multi-agent run prints its **flight plan** — the topology tree, model +
-effort per agent, gates, and budget — and gates on your approval before the first dispatch
-([usage.md → The flight plan](usage.md#the-flight-plan-no-silent-launch)).
+Whatever the strategy, a run first **prepares** — clarifying an unclear request in rounds,
+inventorying the skills and CLIs on your machine, proposing missing tools, scouting an undecided
+toolchain ([usage.md → Prepare](usage.md#prepare-before-triage)) — then prints its **flight plan**:
+the topology tree, model + effort per agent, gates, budget and toolchain, gated on your approval
+before the first dispatch ([usage.md → The flight plan](usage.md#the-flight-plan-no-silent-launch)).
+
+**Defaults when you name no strategy** — the kind picks the play, the dependency graph the shape,
+and concurrency is the default: a **build** runs `hierarchical` across domains, `parallel` waves
+inside one domain, `staged` only for a true chain; **research** runs `parallel` source lanes with a
+synthesizer and a fact-checking final gate; **fix** goes solo, `team` debug or `loop` by what is
+known; **review** runs `parallel` lenses; **content** runs research lanes, then production lanes;
+**ops** runs a `loop` on a trigger
+([usage.md → What triage measures](usage.md#what-triage-measures)).
 
 ## staged
 
-*(the default)* — `topology=staged planning=plan-first review=dual isolation=off trigger=once`
+*(the chain case)* — `topology=staged planning=plan-first review=dual isolation=off trigger=once`
 
-**Use when** you have a plan with mostly-independent tasks and sequential execution is fine —
-this is the strategy triage falls back to.
+**Use when** the plan's tasks form a true chain — each needs the previous one's output — or the run
+should have exactly one writer. Two tasks with no dependency between them belong to `parallel`;
+the gates are the same either way.
 
 **How it runs**: setup once per run (create `.orchestrate/`, read the whole plan in one pass to
 batch any contradictions/ambiguities into a single upfront question, resume from `progress.md` if
@@ -50,9 +61,19 @@ when tasks touch overlapping areas and serialized merges are preferable to a sha
 
 `topology=parallel review=dual isolation=worktree workers=3..5`
 
-**Use when** tasks are genuinely independent and don't share files or mutable state, and speed
-matters. Run the gate first: multiple independent problems that share files → that's `staged`
-(or repartition until they don't); no shared files → `parallel`.
+**Use when** a plan has two or more tasks with no dependency between them — triage's default for a
+one-domain build — or a research question runs as source lanes. Run the gate first: independent
+problems that share files → repartition until they don't (or add an integrator-owned seam file);
+then `parallel`.
+
+**Waves on the graph**: a plan with dependencies is still a parallel plan. Wave 1 is every task with
+no unmet dependency; each later task starts the moment it is ready — never at a wave barrier — up
+to the worker cap. A task that needs only an agreed interface is ready at once and builds against
+the contract; one that needs another task's code is ready when that task is gated and merged, and
+its worktree is cut from the integration branch after the merge. Reviews run as each task lands
+and merges as each passes its gates, so the slowest task never holds the fastest one's review.
+Every task's acceptance checks are written once, before the first implementer starts, by an agent
+that implements none of them.
 
 **How it runs**: partition the work along one axis (layer, component, concern, or — strongest for
 writers — exclusive file ownership) and write a task card per worker in `.orchestrate/card-<k>.md`.
@@ -84,25 +105,34 @@ genuinely independent). `review=panel:N`/`consensus:N` swap the per-worker revie
 
 `topology=hierarchical review=dual models=orchestrator:strong,worker:cheap`
 
-**Use when** work spans domains that each need real thinking plus their own worker fleet, or total
-context far exceeds one window. Your context is the scarce resource — you hold conclusions;
-sub-orchestrators hold their domain; workers hold one task.
+**Use when** a build spans domains that each need real thinking plus their own worker fleet —
+backend, frontend, infra, data: the shape of most full builds, and triage's default for them. Your
+context is the scarce resource — you hold conclusions; leads hold their domain; workers hold one
+task. Independent domains are the trigger, not size: a 1M-token window removes the capacity reason
+to split, never the speed reason.
 
-**How it runs**: split into 3–7 independent partitions (fewer means you didn't need the level, more
-means the brief was too vague), pick a depth mechanism, dispatch sub-orchestrators with a domain
-scope, a worker budget (count + model tier), a required typed report (verdict + findings + artifact
-paths, under 1500 tokens), and an explicit "must NOT do" list (no cross-domain edits, no scope
-invention). Each sub-orchestrator samples structure cheaply before committing its own worker
-fan-out. Aggregate per a declared strategy (union / synthesis / reduce) stated up front; gaps get a
-follow-up partition, never a redo of everything.
+**The domain lead's loop**: each lead works on a domain branch and runs exactly what a flat run
+would — decide the domain's interfaces first, write every task's acceptance checks once (by a
+non-implementer, before code), run its tasks in parallel waves with each worker in its own worktree, spec
+then quality review as each lands, merging each gated branch into the domain branch and resolving
+conflicts itself, and the domain's checks green before it returns. The controller decides the
+cross-domain contracts before any lead starts, and an integrator merges the domain branches.
 
-**Key mechanics — the depth reality**: Claude Code subagents cannot spawn subagents, so depth comes
-from exactly three mechanisms: (1) **teammates as sub-orchestrators** — a teammate is a full session
-that can spawn its own foreground subagents, giving lead → teammates → subagents (3 levels;
-teammates can't nest teams or run background subagents); (2) **workflow nesting** — a workflow
-script can call `workflow()` exactly one level deep; (3) **the main conversation as recursion
-stack** — you sequentially play each sub-orchestrator yourself, fanning out workers for domain A,
-aggregating, then domain B (cheapest option, no extra sessions). Anthropic's managed agents cap
+**How it runs**: split into 2–7 domains for a build, or 3–7 partitions for a read-only fan-out (one
+means you didn't need the level, more means the brief was too vague), pick a depth mechanism,
+dispatch sub-orchestrators with a domain scope, a worker budget (count + model tier), a required
+typed report (verdict + findings + artifact paths, under 1500 tokens), and an explicit "must NOT do"
+list (no cross-domain edits, no scope invention). Each sub-orchestrator samples structure cheaply
+before committing its own worker fan-out. Aggregate per a declared strategy (union / synthesis /
+reduce) stated up front; gaps get a follow-up partition, never a redo of everything.
+
+**Key mechanics — the depth reality**: Claude Code subagents can spawn subagents (observed
+2026-10-13 on Claude Code 2.1.296 — probe once per session before building a tree on it), so a lead
+is simply a background subagent that dispatches its own workers. Other mechanisms remain: `board
+launch` lanes as leads (a `claude -p` or Codex lane is a full session with its own dispatch tool);
+**teammates as sub-orchestrators** (lead → teammates → foreground subagents, 3 levels); **workflow
+nesting** (`workflow()` exactly one level deep); and **the main conversation as recursion stack** —
+you play each sub-orchestrator yourself in turn (cheapest, but serializes the thinking layer). Anthropic's managed agents cap
 delegation at depth 1 too (flat rosters, max 20 agents, 25 threads) — the lesson is universal: wide
 and shallow beats deep. For judgment calls, use blind parallel counsel: two different-lineage agents
 (e.g. an opus reasoner plus a codex peer) on the same question in parallel, neither seeing the
@@ -277,9 +307,10 @@ model — skip the review step and it just executes your existing mistakes faste
 migrations, security-sensitive designs, anything expensive to reverse. The plan gets attacked before
 any code exists; a plan-veto gate made adversarial.
 
-**How it runs — the four-step chain**: (1) **interview**, grill-style — relentless one-at-a-time
-questions to the human until requirements stop moving (what's being built, what good looks like,
-constraints, non-goals; ambiguity caught here is ~100× cheaper than in review); (2) **adversarial
+**How it runs — the four-step chain**: (1) **interview** — Prepare's clarify rounds: the whole
+frontier of open decisions per round, each with a recommended answer, until nothing is left assumed
+and the human confirms (what's being built, what good looks like, constraints, non-goals; ambiguity
+caught here is ~100× cheaper than in review); (2) **adversarial
 planning** — the planner (strong model) drafts, a counter-model of a genuinely different lineage
 (e.g. Codex via [`xcli`](#xcli), or a separately-prompted skeptic subagent) attacks it for wrong
 assumptions, missing cases, simpler alternatives, and hidden risks, the planner revises, iterating to

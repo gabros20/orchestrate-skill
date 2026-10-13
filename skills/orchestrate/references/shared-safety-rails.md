@@ -21,6 +21,10 @@ Produces:
   user's go-ahead unless durably authorized. Approval in one context doesn't extend to the next.
 - Workers get the NARROWEST permission mode that works; headless runs pre-allowlist the exact
   commands instead of `bypassPermissions`. Never `--dangerously-*` flags on external CLIs.
+- **Machine changes are the user's call.** Installing a tool (npm/brew/pip/cargo, global or not),
+  enabling a paid service, or spending credits needs the user's yes first — proposed with the exact
+  command and why, batched in a clarify round (`shared-prepare.md` P3). Never `sudo`; prefer
+  user-level installs; logins and API keys stay with the user. Verify an install before relying on it.
 - **The controller is a hazard to its own writers**: while any writer is active in a shared tree,
   controller commits are pathspec-scoped — never `git add -A`/`-u` (observed: an unscoped add
   swept a concurrent agent's half-written files into an unrelated commit). Prefer worktree

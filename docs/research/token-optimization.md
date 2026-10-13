@@ -11,6 +11,10 @@ degrading reasoning, code, or output quality? Specifically: when should subagent
 
 ---
 
+> **Revised in v1.31.0.** The "quiet while working" half of point 3 below was reversed: workers now
+> keep a short milestone work log in their own transcript. Silent workers stalled in thinking
+> loops, and the argument in point 3 only ever covered the *report* that reaches the controller.
+
 ## TL;DR — the economics that decide everything
 
 1. **Output-style compression (caveman) only touches output tokens.** The caveman repo's own

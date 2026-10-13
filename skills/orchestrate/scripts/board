@@ -12,7 +12,8 @@ changed since its dispatch — one watermark, delivered at the worker's own chec
 
 CONTROLLER — the loop
   init PLAN --strategy S [--review --engine --host --models r=t,.. --effort --isolation --trigger
-       --workers --budget --confirm --alias --lanes --goal ".."] [--resume | --fresh]
+       --workers --budget --confirm --alias --lanes --posture --goal ".."] [--resume | --fresh]
+       [--kind build|research|fix|review|content|ops|other --prep auto|full|off --tools ".."]   (Prepare: shared-prepare.md)
   set key=value ..                 re-resolve a dimension (the plan goes back to pending)
   plan [--why ".." --format text|md] · plan approved|changed|skipped [--msg]
   dispatch N --model M [--agent <role>-<task>: derived when omitted] [--role --engine --effort --worktree --owns --by LEAD
@@ -70,12 +71,13 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "1.30.1"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
+VERSION = "1.31.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
 SCHEMA = 2           # the journal's shape; bumps ONLY for a breaking change, with an in-place upgrader (migrate_v1 is one)
 # What a run started on an older release must know. Newest first, one line per release: "none" = additive, nothing to
 # do · "action" = do it, then `board version --ack V --msg ".."` (a check finding, so finish refuses, until acked).
 # Automatic journal rewrites never live here — they run on open (journal_path), like the v1→v2 upgrade.
 MIGRATIONS = (
+    ("1.31.0", "none", "Prepare (clarify · equip · scout · set up) and kind/prep/tools dims; WORKER block keeps a work log; catalog refresh 2026-10-13: haiku = Haiku 5.5 @medium, Sol workers @medium, Sol @xhigh grinder — runs before 1.31 read as prep off"),
     ("1.30.1", "none", "repo tooling only: the model-catalog-refresh project skill; the runtime is unchanged"),
     ("1.30.0", "none", "posture dimension (default balanced) and catalog defaults per role; runs before 1.30 read as balanced"),
     ("1.29.0", "none", "new return status DESIGN_CONFLICT (a plan assumption failed) and the architect role (arch-N); boards before 1.29 read it as a return"),
@@ -89,19 +91,20 @@ LABELS = {c: c.upper().replace("_", " ") for c in COLUMNS}
 STALE_AFTER = 10 * 60  # seconds without an ARTIFACT delta before an open stint is flagged
 JOURNAL = "journal.jsonl"
 LEGACY_JOURNAL = "board.jsonl"
-KEEP_ON_ARCHIVE = {"board", ".gitignore", ".journal.lock", "toolbox.md", "archive"}
+KEEP_ON_ARCHIVE = {"board", ".gitignore", ".journal.lock", "toolbox.md", "capabilities.md", "archive"}
 DIMS = ("strategy", "review", "engine", "host", "models", "effort", "isolation", "trigger",
-        "workers", "budget", "confirm", "alias", "goal", "lanes", "posture")
+        "workers", "budget", "confirm", "alias", "goal", "lanes", "posture", "kind", "prep", "tools")
+KINDS = ("build", "research", "fix", "review", "content", "ops", "other")   # task kind, resolved by triage (references/triage.md)
 POSTURES = ("frontier", "balanced", "economy")
-# Default model per role, posture and host — references/shared-model-catalog.md (as of 2026-09-30).
+# Default model per role, posture and host — references/shared-model-catalog.md (as of 2026-10-13).
 # (cross-harness, Claude-only): the Claude-only pick when the run's engine is claude (native subagents take aliases).
-CATALOG_AS_OF = "2026-09-30"
+CATALOG_AS_OF = "2026-10-13"
 CATALOG = {
     "orchestrator": {"frontier": ("claude opus-5-5 @xhigh", "opus @xhigh"), "balanced": ("claude opus-5-5 @high", "opus @high"),
                      "economy": ("codex gpt-6.1-sol @high", "opus @medium")},
     "architect": {"frontier": ("claude opus-5-5 @max (+ codex gpt-6-astra @xhigh)", "opus @max"),
                   "balanced": ("claude opus-5-5 @xhigh", "opus @xhigh"), "economy": ("codex gpt-6.1-sol @xhigh", "opus @high")},
-    "worker": {"frontier": ("claude opus-5-5 @high", "opus @high"), "balanced": ("codex gpt-6.1-sol @high", "opus @medium"),
+    "worker": {"frontier": ("claude opus-5-5 @high", "opus @high"), "balanced": ("codex gpt-6.1-sol @medium", "opus @medium"),
                "economy": ("codex gpt-6-luna @max", "opus @low")},
     "reviewer": {"frontier": ("claude fable-5-1 @high | codex gpt-6-astra @high", "fable @high"),
                  "balanced": ("other lineage @high (codex gpt-6.1-sol | claude opus-5-5)", "opus @high"),
@@ -138,15 +141,16 @@ DONE_SHOW = 3  # done cards shown in contracted mode before "+N more"
 # `board init --lanes …` (a run dim) or defaulted to COLUMNS; the state model underneath never changes.
 LANE_OF_ROLE = (("implement", "implement"), ("worker", "implement"), ("executor", "implement"), ("fix", "implement"),
                 ("verif", "verify"), ("integrat", "integrate"), ("advis", "advise"), ("review", "review"),
-                ("judge", "review"))
-LANE_BASE = {"implement": "in_progress", "verify": "in_progress", "integrate": "in_progress", "advise": "in_progress"}
+                ("judge", "review"), ("research", "research"), ("scout", "research"), ("synth", "synthesize"))
+LANE_BASE = {"implement": "in_progress", "verify": "in_progress", "integrate": "in_progress", "advise": "in_progress",
+             "research": "in_progress", "synthesize": "in_progress"}
 # Agent names are `<role>-<task>[-tag…]`: impl-3 · lead-1 · impl-1.1 · spec-3 · quality-3 · verify-3 · integ-1 · fix-3-r2.
 # The role says what the sender IS (a small model reads `[peer impl-1.2]` and knows), the task id says WHERE in the
 # tree it sits (impl-1.1 is under lead-1), the run makes it unique. Omit --agent and the board derives it.
 AGENT_RE = re.compile(r"^[a-z][a-z0-9]*-\d+(?:\.\d+)*(?:-[a-z0-9]+)*$")
 ROLE_SHORT = (("sub-orch", "lead"), ("lead", "lead"), ("orchestr", "lead"), ("integrat", "integ"), ("fix", "fix"), ("spec", "spec"),
               ("qual", "quality"), ("verif", "verify"), ("judge", "judge"), ("lens", "lens"), ("panel", "lens"), ("review", "review"),
-              ("advis", "advisor"), ("peer", "peer"), ("counter", "peer"), ("architect", "arch"), ("plan", "planner"), ("research", "research"),
+              ("advis", "advisor"), ("peer", "peer"), ("counter", "peer"), ("architect", "arch"), ("plan", "planner"), ("research", "research"), ("scout", "research"), ("synth", "synth"),
               ("implement", "impl"), ("worker", "impl"), ("executor", "impl"))
 # Per-engine resume-by-id lines (printed by `board resume` for every open stint that journaled a session).
 RESUME_CMD = {
@@ -757,7 +761,8 @@ class State:
         """Rails the record implies without anyone journaling them — stated, never silent."""
         d = self.run.dims
         out = []
-        if str(d.get("isolation") or "") in ("off", "none") and str(d.get("strategy") or "") in ("parallel", "team", "hierarchical", "workflow"):
+        if str(d.get("isolation") or "") in ("off", "none") and str(d.get("strategy") or "") in ("parallel", "team", "hierarchical", "workflow") \
+                and str(d.get("kind") or "") != "research":
             out.append("shared tree (isolation=off): commit by path — git add <your files>, never -A")
         return out
 
@@ -895,8 +900,11 @@ def check_agent(name: str, st: "State", task: str, role: str) -> str:
 def role_tier(role: str) -> str:
     """Dispatch role -> model tier (the `models=` vocabulary)."""
     r = role.lower()
-    if r in ("implementer", "integrator", "executor", "worker", "fix", "fixer") or "worker" in r or "implement" in r:
+    if r in ("implementer", "integrator", "executor", "worker", "fix", "fixer") or "worker" in r or "implement" in r \
+            or "research" in r or "scout" in r:
         return "worker"
+    if "synth" in r:
+        return "orchestrator"
     if "review" in r or "verif" in r or "judge" in r:
         return "reviewer"
     if "advis" in r:
@@ -1034,9 +1042,14 @@ def load(ws: Path, journal_only: bool = False) -> State:
         kind = ev.get("ev", "")
         run.id = run.id or str(ev.get("run", ""))
         if kind == "run":
-            run.dims = {k: ev[k] for k in DIMS if k in ev}
+            new = {k: ev[k] for k in DIMS if k in ev}
+            if run.dims and new != run.dims:   # init --resume re-resolved the run: an earlier approval (Prepare's scout) does not cover it
+                run.plan, run.plan_msg = "pending", "re-resolved by init --resume"
+                run.plan_trail.append(f"{hhmm(ts)} re-resolved by init --resume")
+            run.dims = new
             run.kickoff = run.kickoff or ts
-            run.branch, run.base = str(ev.get("branch", "")), str(ev.get("base", ""))
+            run.branch = run.branch or str(ev.get("branch", ""))   # a run keeps the branch and base it started on
+            run.base = run.base or str(ev.get("base", ""))
             continue
         if kind == "set":
             for k, v in (ev.get("dims") or {}).items():
@@ -1284,6 +1297,10 @@ def resolved_block(st: State) -> str:
              f"goal: {d.get('goal') or '-'}", kv("strategy", "review", "engine", "host"),
              f"models: {models} · effort: {effort}", kv("isolation", "trigger", "workers", "confirm", "alias"),
              f"budget: {budget}"]
+    if d.get("kind") or d.get("prep"):
+        lines.append(kv("kind", "prep"))
+    if d.get("tools"):
+        lines.append(f"tools: {d['tools']}")
     if d.get("lanes"):
         lines.append(f"lanes: {d['lanes']}")
     if run.plan and run.plan != "pending":
@@ -2192,7 +2209,10 @@ def render_plan(st: State, why: str = "", wrap: int = 100) -> str:
     run, d = st.run, st.run.dims
     if not d:
         return "board: no `run` record yet — `board init PLAN --strategy ...` first"
-    strategy = str(d.get("strategy") or "staged")
+    if not d.get("strategy"):
+        return ("board: no strategy resolved yet — Prepare, then triage: `board set strategy=… kind=…` or "
+                "`board init PLAN --resume --strategy …` (references/triage.md)")
+    strategy = str(d["strategy"])
     models = run.models
     posture = str(d.get("posture") or "balanced")
     engine = str(d.get("engine") or "claude")
@@ -2207,8 +2227,14 @@ def render_plan(st: State, why: str = "", wrap: int = 100) -> str:
         e = eff_map.get(role) or eff_default
         return f" @ {e}" if e else ""
 
-    iso = str(d.get("isolation") or ("worktree" if strategy == "parallel" else "shared tree"))
-    tasks = st.ordered()
+    kind = str(d.get("kind") or "")
+    research = kind == "research"
+    iso = str(d.get("isolation") or ("worktree" if strategy == "parallel" and not research else "shared tree"))
+    tasks = [t for t in st.ordered() if t.state != "done"]   # what will still run: finished work (Prepare's scout lanes) is not on the bill
+    if strategy == "hierarchical":
+        tasks = [t for t in tasks if "." not in t.id]   # top-level tasks are the domains; a lead's dotted subtasks are its own fan-out
+    if research:   # the synthesis and fact-check tasks are drawn as the synthesizer and the final gate, never as more lanes
+        tasks = [t for t in tasks if not re.match(r"\s*(synth|fact.?check|final gate)", t.title or "", re.I)]
     n = len(tasks)
     gates = gate_names(str(d.get("review") or "dual"))
     agents = 0
@@ -2222,6 +2248,11 @@ def render_plan(st: State, why: str = "", wrap: int = 100) -> str:
     lines.append(f"goal: {d.get('goal') or '(not recorded)'}")
     lines.append(f"posture: {posture} · model catalog {CATALOG_AS_OF}, {'Claude-only' if engine == 'claude' else 'cross-harness'} column "
                  f"· change: board set posture=frontier|balanced|economy")
+    if kind or d.get("prep"):
+        users = sum(1 for x in run.decisions if x.get("owner") == "user")
+        assumed = sum(1 for x in run.decisions if "assum" in str(x.get("why", "")).lower() and x.get("owner") != "user")
+        lines.append(f"kind: {kind or '-'} · prep {d.get('prep') or 'auto'} · {users} decision(s) by the user"
+                     + (f" · {assumed} assumed — check them" if assumed else ""))
     lines.append("")
     lines.append(f"controller · orchestrator {tier('orchestrator')}{at('orchestrator')} · {st.meta.get('host', 'host?')}")
     worker_line = f"{tier('worker')}{at('worker')}" + (f" · engine {engine}" if engine != "claude" else "")
@@ -2253,19 +2284,27 @@ def render_plan(st: State, why: str = "", wrap: int = 100) -> str:
     elif strategy == "parallel":
         cap = int(d.get("workers") or 0) or n
         for t in tasks[:cap]:
-            where_ = f"worktree wt-{t.id}" if iso not in ("off", "none", "shared tree") else "shared tree (isolation off)"
-            lines.append(f"├─ worker · card {t.id} {t.title} · {worker_line} · {where_}")
+            if research:
+                where_ = f"read-only · writes research/lane-{t.id}.md"
+            else:
+                where_ = f"worktree wt-{t.id}" if iso not in ("off", "none", "shared tree") else "shared tree (isolation off)"
+            lines.append(f"├─ {'researcher · lane' if research else 'worker · card'} {t.id} {t.title} · {worker_line} · {where_}")
             agents += 1
         count("worker", n)
         if n > cap:
             lines.append(f"├─ … {n - cap} more cards queued behind workers={cap}")
         for g in gates:
-            lines.append(f"│  └─ {g} reviewer per card · {tier('reviewer')}{at('reviewer')}")
+            lines.append(f"│  └─ {g} reviewer per {'lane' if research else 'card'} · {tier('reviewer')}{at('reviewer')}")
         agents += len(gates) * n
         count("reviewer", len(gates) * n)
-        lines.append(f"├─ integrator · {tier('orchestrator')} · merge gates decide readiness")
-        agents += 1
-        count("worker")
+        if research:
+            lines.append(f"├─ synthesizer · {tier('orchestrator')} · fresh context, reads the lane files, writes research/report.md")
+            agents += 1
+            count("orchestrator")
+        else:
+            lines.append(f"├─ integrator · {tier('orchestrator')} · merge gates decide readiness")
+            agents += 1
+            count("worker")
     elif strategy == "loop":
         cycles = run.budget.get("cycles") or "?"
         lines.append(f"├─ ×≤{cycles} cycles · trigger {d.get('trigger') or 'goal'}:")
@@ -2276,11 +2315,23 @@ def render_plan(st: State, why: str = "", wrap: int = 100) -> str:
         count("worker", int(cycles) if str(cycles).isdigit() else 1)
         count("reviewer", int(cycles) if str(cycles).isdigit() else 1)
     elif strategy == "hierarchical":
+        domains = 0
         for t in tasks:
-            lines.append(f"├─ sub-orchestrator · {t.title or t.id} · {tier('orchestrator')}{at('orchestrator')}")
-            lines.append(f"│  ├─ workers ×? · {worker_line}")
+            if t.id == "0":   # Prepare's Task 0: one setup worker, every lead waits for it
+                lines.append(f"├─ worker · task 0 {t.title or 'environment'} · {worker_line} · runs first, every lead waits for it")
+                agents += 1
+                count("worker")
+                continue
+            domains += 1
+            lines.append(f"├─ {'lane lead' if research else 'sub-orchestrator'} · {t.title or t.id} · {tier('orchestrator')}{at('orchestrator')}")
+            lines.append(f"│  ├─ {'researchers' if research else 'workers'} ×? · {worker_line}"
+                         + ("" if research else " · parallel waves, worktrees, gates per task, domain integration"))
             agents += 2
         gate_lines("│  ")
+        if not research and domains > 1:
+            lines.append(f"├─ integrator · {tier('orchestrator')} · merges the domain branches in dependency order")
+            agents += 1
+            count("worker")
     elif strategy == "team":
         lines.append(f"├─ lead · {tier('orchestrator')}")
         for t in tasks:
@@ -2306,14 +2357,23 @@ def render_plan(st: State, why: str = "", wrap: int = 100) -> str:
     for role in extra_roles:  # roles the strategy shape does not know (e.g. researcher subagents)
         lines.append(f"├─ {role} · {models[role]}{at(role)} · nested/delegated — counted by the lane, not this tree")
     final = models.get("reasoner") or models.get("orchestrator") or default_model("architect", "frontier", engine)   # the one gate worth max
-    lines.append(f"└─ final-deliverable gate · {final} · fresh context, judges the goal verbatim")
+    if research:
+        lines.append(f"└─ final-deliverable gate · {final} · fresh context: answers the goal verbatim, refutes the load-bearing claims")
+    else:
+        lines.append(f"└─ final-deliverable gate · {final} · fresh context, judges the goal verbatim")
     agents += 1
     count("reviewer")
     lines.append("")
     gate_txt = " → ".join(gates) if gates else "off"
-    lines.append(f"gates   {gate_txt} per unit · final gate once · fan-in: {n} dispatches → {n} returns expected")
+    if research:
+        lines.append(f"gates   lanes: {gate_txt} · the final gate is the fact-check · fan-in: {n} lanes → {n} lane files before synthesis")
+    else:
+        lines.append(f"gates   {gate_txt} per unit · final gate once · fan-in: {n} dispatches → {n} returns expected")
     rails = [f"branch {st.meta.get('branch', '?')}", f"isolation {iso}", f"confirm {d.get('confirm') or 'on'}"] + run.rails + st.derived_rails()
     lines.append("rails   " + " · ".join(rails))
+    done_n = sum(1 for t in st.ordered() if t.state == "done")
+    if done_n:
+        lines.append(f"done    {done_n} task(s) already done — not in this plan and not re-billed")
     if engine not in ("claude", "mixed") and engine in LAUNCH_CMD:
         eff = eff_map.get("worker") or eff_default or "high"
         lines.append("lane    " + LAUNCH_CMD[engine].format(model=tier("worker"), effort=eff) + "  (spec file per lane · empty-diff check · session id journaled)")
@@ -2328,9 +2388,12 @@ def render_plan(st: State, why: str = "", wrap: int = 100) -> str:
     if strategy in ("parallel", "team", "hierarchical", "workflow"):
         lines.append("mail    checkpoint delivery (board inbox at start / after tests / before commit / before report) · "
                      "board peers shows who else is working and what they own · asks rendezvous via board wait")
+    if d.get("tools"):
+        lines.append(f"tools   {d['tools']}")
     lines.append("board   open a pane and run  board  (or .orchestrate/board)")
     lines.append(f"replan  a DESIGN_CONFLICT goes to the architect · {tier('architect')} · fresh context (shared-replan.md)")
-    lines.append("tweak   [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget [8] lanes [9] posture  —  `board set key=value` re-resolves")
+    lines.append("tweak   [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget [8] lanes [9] posture [10] tools  —  "
+                 "`board set key=value` re-resolves")
     if not wrap:
         return "\n".join(lines)
     import textwrap
@@ -3771,13 +3834,20 @@ def archive_previous_run(ws: Path, run_id: str) -> Path | None:
     return dest if moved else None
 
 
-def check_posture(val: object) -> None:
-    if val not in (None, "") and val not in POSTURES:
-        sys.exit(f"board: posture takes {'|'.join(POSTURES)} — {val!r} refused (shared-model-catalog.md)")
+PREPS = ("auto", "full", "off")
+
+
+def check_enums(key: str, val: object) -> None:
+    """posture · kind · prep take a closed vocabulary; a typo is refused, never recorded."""
+    allowed = {"posture": POSTURES, "kind": KINDS, "prep": PREPS}.get(key)
+    if allowed and val not in (None, "") and val not in allowed:
+        ref = {"posture": "shared-model-catalog.md", "kind": "triage.md", "prep": "shared-prepare.md"}[key]
+        sys.exit(f"board: {key} takes {'|'.join(allowed)} — {val!r} refused ({ref})")
 
 
 def cmd_init(ws: Path, args: argparse.Namespace) -> None:
-    check_posture(getattr(args, "posture", None))
+    for key in ("posture", "kind", "prep"):
+        check_enums(key, getattr(args, key, None))
     dims: dict[str, object] = {}
     for key in DIMS:
         val = getattr(args, key, None)
@@ -3801,6 +3871,8 @@ def cmd_init(ws: Path, args: argparse.Namespace) -> None:
                  f"       start over:  board init PLAN --fresh …                          (archives it to .orchestrate/archive/<run-id>/ first)")
     if (prev.events or shape == "pre-journal") and not args.resume:
         archived = archive_previous_run(ws, prev.run.id or f"legacy-{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    if args.resume and prev.run.dims and dims:   # continuing a run keeps what it recorded (Prepare's goal, prep, tools)
+        dims = {**prev.run.dims, **dims}
     if dims or not args.resume:
         run_id = prev.run.id if args.resume and prev.run.id else new_run_id()
         append_event(ws, ev="run", run_id=run_id, branch=git("rev-parse", "--abbrev-ref", "HEAD"), base=git("rev-parse", "HEAD"),
@@ -4320,8 +4392,7 @@ def main(argv: list[str]) -> int:
             if k not in DIMS or not v:
                 sys.exit(f"board: set expects key=value with key in {', '.join(DIMS)}")
             dims[k] = parse_kv(v) if k in ("models", "budget") or (k == "effort" and re.search(r"[=:]", v)) else v
-            if k == "posture":
-                check_posture(v)
+            check_enums(k, v)
         append_event(ws, ev="set", dims=dims)
         write_resolved(ws)
         print(f"board: re-resolved {', '.join(dims)} — plan is pending again: `board plan` → gate → `board plan approved`")
@@ -4396,7 +4467,11 @@ def main(argv: list[str]) -> int:
                 actor=args.agent or "worker", task=args.task, ev="note", msg=args.msg, agent=args.agent)
         deliver(ws, clean(args.agent or ""))
     elif cmd == "decide":
-        prior = any(x["id"] == args.id and x.get("src") == "journal" for x in load(ws).run.decisions)
+        cur = next((x for x in load(ws).run.decisions if x["id"] == args.id and x.get("src") == "journal"), None)
+        if cur and cur.get("owner") == "user" and args.owner != "user":
+            sys.exit(f"board: {args.id} is the user's decision ({cur.get('msg', '')}) — only the user revises it (--owner user, after asking); "
+                     f"record yours under its own id (a lead: D-<task>.<n>)")
+        prior = cur is not None
         append_event(ws, ev="decide", id=args.id, msg=args.msg, why=args.why, owner=args.owner, task=args.task)
         ws.mkdir(parents=True, exist_ok=True)
         with (ws / "decisions.md").open("a", encoding="utf-8") as fh:
@@ -5321,6 +5396,65 @@ def selftest() -> int:
         out = run("init", str(wsd / "plan-inside.md"), "--fresh", "--strategy", "staged", "--goal", "plan kept inside .orchestrate", "--posture", "frontier")
         assert "2 task(s) queued" in out and load(wsd).run.dims.get("posture") == "frontier", out
         run("init", str(dcr / "plan.md"), "--fresh", "--strategy", "staged", "--goal", "x", "--posture", "cheap", expect_fail=True)
+        # --- prepare: kind / prep / tools; research lanes render as researchers; capabilities survive a kickoff --------
+        pr = Path(tmp) / "prep"
+        pr.mkdir()
+        os.chdir(pr)
+        subprocess.run(["git", "init", "-q", "-b", "main"], check=True)
+        subprocess.run([*gitc, "commit", "-q", "--allow-empty", "-m", "base"], check=True)
+        Path("plan.md").write_text("# R\n## Task 1: X lane\n## Task 2: GitHub lane\n## Task 3: Web lane\n## Task 4: synthesis\n")
+        wsp = pr / ".orchestrate"
+        wsp.mkdir()
+        (wsp / "capabilities.md").write_text("# capabilities\n")
+        run("init", "plan.md", "--strategy", "parallel", "--kind", "lookup", "--goal", "g", expect_fail=True)
+        run("init", "plan.md", "--strategy", "parallel", "--prep", "sometimes", "--goal", "g", expect_fail=True)
+        run("init", "plan.md", "--strategy", "parallel", "--kind", "research", "--prep", "full", "--review", "factcheck",
+            "--isolation", "off", "--tools", "research: xrelay·ghrelay·web", "--goal", "the fastest desktop test tooling")
+        run("decide", "D-1", "macOS first", "--why", "one platform keeps v1 testable", "--owner", "user")
+        run("decide", "D-2", "no paid tools", "--why", "assumed: headless run, nobody to ask")
+        pl = run("plan")
+        assert "researcher · lane 1 X lane" in pl and "read-only · writes research/lane-1.md" in pl and "factcheck reviewer per lane" in pl, pl
+        assert "synthesizer" in pl and "refutes the load-bearing claims" in pl and "integrator" not in pl and "commit by path" not in pl, pl
+        assert "gates   lanes: factcheck · the final gate is the fact-check" in pl and "lane 4" not in pl and "3 lanes → 3 lane files" in pl, pl
+        assert "kind: research · prep full · 1 decision(s) by the user · 1 assumed" in pl and "tools   research: xrelay·ghrelay·web" in pl, pl
+        assert "[10] tools" in pl and "10 tools" in run("plan", "--format", "md"), pl
+        runmd = (wsp / "run.md").read_text()
+        assert "kind: research · prep: full" in runmd and "tools: research: xrelay·ghrelay·web" in runmd, runmd
+        assert role_tier("researcher") == "worker" and role_tier("synthesizer") == "orchestrator" and role_short("researcher") == "research" and role_short("synthesizer") == "synth"
+        assert default_model("researcher", "balanced", "claude") == default_model("worker", "balanced", "claude")
+        run("set", "kind=build", "strategy=hierarchical", "tools=tests: bun test")
+        pl = run("plan")
+        assert "sub-orchestrator · X lane" in pl and "parallel waves" in pl and "integrator · " in pl and "tools   tests: bun test" in pl, pl
+        run("set", "kind=chores", expect_fail=True)
+        run("init", "--fresh", "--goal", "build the app the user described", "--prep", "auto")   # Prepare: journal before any decision
+        run("todo", "0.1", "scout: X lane")
+        run("dispatch", "0.1", "--role", "researcher", "--model", "sonnet")
+        run("return", "0.1", "--agent", "research-0.1", "--status", "DONE")
+        run("gate", "0.1", "--kind", "factcheck", "--verdict", "ok")
+        run("done", "0.1")
+        run("plan", "approved", "--msg", "scout")
+        assert "no strategy resolved yet" in run("plan"), "before triage there is no plan to render — never a silent staged"
+        base0 = load(wsp).run.base
+        subprocess.run([*gitc, "commit", "-q", "--allow-empty", "-m", "moved"], check=True)
+        run("decide", "D-1", "macOS first", "--why", "clarify round 1", "--owner", "user")
+        out = run("init", "plan.md", "--resume", "--strategy", "parallel", "--kind", "build", "--tools", "tests: bun test")
+        st = load(wsp)
+        assert "4 task(s) queued" in out and st.run.dims.get("goal") == "build the app the user described" and st.run.dims.get("prep") == "auto", (out, st.run.dims)
+        assert st.run.dims.get("strategy") == "parallel" and st.run.dims.get("kind") == "build" and any(d["id"] == "D-1" for d in st.run.decisions)
+        assert "scout" not in run("plan") and not any("0.1" in f for f in check(load(wsp))), "a finished, gated scout lane is neither billed nor flagged"
+        assert st.run.plan == "pending" and "re-resolved by init --resume" in st.run.plan_msg, "the scout's approval never covers the run's own plan"
+        assert st.run.base == base0, "a resumed run keeps the base it started on"
+        assert "done    1 task(s) already done" in run("plan")
+        run("decide", "D-1", "REST over gRPC", "--why", "a lead's call", expect_fail=True)
+        run("decide", "D-1", "macOS and Windows", "--why", "the user changed their mind", "--owner", "user")
+        run("decide", "D-2.1", "REST over gRPC", "--why", "a lead's call", "--task", "2")
+        run("todo", "0", "environment")
+        run("todo", "1.1", "a lead's subtask")
+        run("set", "strategy=hierarchical")
+        pl = run("plan")
+        assert "worker · task 0 environment" in pl and "runs first" in pl and "a lead's subtask" not in pl and pl.count("sub-orchestrator ·") == 4, pl
+        run("init", "plan.md", "--fresh", "--strategy", "staged", "--goal", "again")
+        assert (wsp / "capabilities.md").exists(), "the inventory is machine state: a kickoff keeps it like toolbox.md"
         # --- reap: what a lane leaves running is found, attributed, kept or stopped — never a stranger -------------
         assert _etime("05:06") == 306 and _etime("1-02:03:04") == 93784 and _etime("02:03:04") == 7384
         if proc_table() is not None and proc_cwds({os.getpid()}) is not None:

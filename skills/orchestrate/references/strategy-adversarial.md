@@ -23,9 +23,10 @@ Prompt: `prompt-planner-debate.md`.
 
 ## The four-step chain
 
-1. **Interview** (grill-style): relentless one-at-a-time questions to the human until requirements
-   stop moving — what's being built, what good looks like, constraints, non-goals. Plan mode on
-   steroids; ambiguity caught here is 100x cheaper than in review.
+1. **Interview** — Prepare's clarify rounds (`shared-prepare.md` P1): the whole frontier of open
+   decisions per round, a recommended answer on each, facts looked up rather than asked, until the
+   frontier is empty and the user confirms — what's being built, what good looks like,
+   constraints, non-goals. Ambiguity caught here is 100x cheaper than in review.
 2. **Adversarial planning**: the planner (strong model) drafts the plan; a counter-model of
    DIFFERENT lineage (e.g. Codex via `strategy-xcli.md`, or a separately-prompted skeptic
    subagent) attacks it — wrong assumptions, missing cases, simpler alternatives, hidden risks.

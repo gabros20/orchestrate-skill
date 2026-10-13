@@ -3,6 +3,7 @@
     "id": "auto-triage",
     "prompt": "Orchestrate this plan; choose the strategy for me.",
     "expected_references": [
+      "references/shared-prepare.md",
       "references/triage.md",
       "references/shared-hosts.md",
       "references/shared-safety-rails.md"
@@ -159,6 +160,49 @@
     "forbidden_references": [
       "references/strategy-loop.md",
       "references/prompt-planner-debate.md"
+    ]
+  },
+  {
+    "id": "prepare-unclear-build",
+    "prompt": "Orchestrate building a desktop notes app for me; I haven't picked the stack or the test tooling yet.",
+    "expected_references": [
+      "references/shared-prepare.md",
+      "references/shared-research.md",
+      "references/triage.md",
+      "references/shared-flight-plan.md"
+    ],
+    "forbidden_references": [
+      "references/strategy-loop.md",
+      "references/strategy-team.md"
+    ]
+  },
+  {
+    "id": "research-lanes",
+    "prompt": "Deep-research the best end-to-end testing tools for desktop apps across X, GitHub, YouTube and the web.",
+    "expected_references": [
+      "references/shared-prepare.md",
+      "references/shared-research.md",
+      "references/prompt-researcher.md",
+      "references/strategy-parallel.md"
+    ],
+    "forbidden_references": [
+      "references/strategy-staged.md",
+      "references/prompt-implementer.md",
+      "references/prompt-integrator.md"
+    ]
+  },
+  {
+    "id": "multi-domain-build",
+    "prompt": "Run this full-stack plan — backend API, web frontend, infrastructure — with agents, as fast as the gates allow.",
+    "expected_references": [
+      "references/triage.md",
+      "references/strategy-hierarchical.md",
+      "references/prompt-sub-orchestrator.md",
+      "references/strategy-parallel.md"
+    ],
+    "forbidden_references": [
+      "references/strategy-staged.md",
+      "references/strategy-loop.md"
     ]
   }
 ]

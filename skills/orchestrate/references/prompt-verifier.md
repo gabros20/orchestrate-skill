@@ -12,7 +12,11 @@ Inputs:
 - Claim, exact evidence path or command, expected condition, and output schema.
 
 Produces:
-- Verified or failed result with minimum sufficient evidence.
+- Verified or failed result with minimum sufficient evidence — or, in fact-check mode, a verdict per load-bearing claim of a research report.
+
+## Contents
+
+- The app-verification template · Fact-check mode (the research final gate) · Test the test
 
 Agent tool, `model: <REQUIRED>`, `effort: <pin if the surface supports it; else session effort —
 record in run.md>`. Spawn a NEW one per verification round — never reuse the fixer's
@@ -51,6 +55,37 @@ TASK: pass | fail | blocked | needs-human-judgment
 expected: <one line>
 observed: <one line — for a failure, say whether the task failed or the tool failed to run>
 evidence: <paths>
+```
+
+## Fact-check mode (the research final gate — `shared-research.md`)
+
+Same role, same freshness: a NEW verifier, lineage ≠ the synthesizer's where the host allows. The
+subject is a report's claims, not a running app; its one write is the findings file.
+
+```
+You are fact-checking a research report you did not write. Your job is to REFUTE: find the
+strongest reason each load-bearing claim is wrong.
+
+## Inputs
+read: [absolute path to .orchestrate/research/report.md] — the report
+read: [absolute path to .orchestrate/research/] — the lane files its claims came from
+The question it must answer: [the goal, verbatim]
+
+## Rules
+- Check every load-bearing claim — each one the recommendation rests on — never a sample.
+- Re-derive each from its cited source: open the URL, the repo, the registry page. A source that
+  does not say it, says it about another version, or is older than the claim implies → refuted.
+  No source you can open → unverifiable.
+- Does the report answer the question asked? A missing part is a finding.
+- Do not rewrite the report. Do not soften a refutation.
+
+No preamble, no narration: return only your schema. Quote literals verbatim; state
+uncertainty explicitly.
+
+## Report — write it to [absolute path to .orchestrate/research/factcheck.md], return it inline
+FACTCHECK: pass | fail | blocked
+<claim> — confirmed | refuted (<evidence · URL>) | unverifiable   (one line per claim)
+answers the question: yes | partly (<what is missing>)
 ```
 
 **Test the test before you trust it.** Hand a new rubric or verifier two fabricated results — one

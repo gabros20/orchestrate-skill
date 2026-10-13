@@ -10,5 +10,6 @@ mkdir -p "$ws"
 here="$(cd "$(dirname "$0")" && pwd)"
 # Zero-install board: a copy the user can run from any pane as .orchestrate/board (refreshed when the skill updates).
 if [ ! -f "$ws/board" ] || [ "$here/board" -nt "$ws/board" ]; then cp "$here/board" "$ws/board" && chmod +x "$ws/board"; fi
-"$(cd "$(dirname "$0")" && pwd)/toolbox" >/dev/null 2>&1 || true   # orientation recipes (idempotent)
+"$here/toolbox" >/dev/null 2>&1 || true        # orientation recipes (idempotent)
+"$here/capabilities" >/dev/null 2>&1 || true   # what the machine can do: skills, CLIs, gaps (idempotent; Prepare refreshes it)
 printf '%s\n' "$ws"

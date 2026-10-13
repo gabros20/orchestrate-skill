@@ -20,6 +20,10 @@ availability, rate/usage-limit notes. Also: vendor-stated positioning ("best for
 Flag every change against {CATALOG} (new id, price, context, effort default, status/retirement).
 Table 1: one row per model with all numeric fields. Table 2: modalities + computer use matrix.
 Table 3: positioning quotes. Budget: be thorough; ~60 fetches is fine.
+Fetching: most vendor docs serve raw markdown with `.md` appended (platform.claude.com, code.claude.com,
+platform.kimi.ai, docs.z.ai); JS-only pages (docs.x.ai, mimo.mi.com) need headless Chrome
+`--virtual-time-budget=20000 --dump-dom` under a kill watchdog. OpenRouter's /api/v1/models shows the
+cheapest provider's price (wrong for GLM, K3, DeepSeek) — the vendor page decides.
 ```
 
 ## Lane 2: Live CLI catalogs
@@ -29,12 +33,14 @@ slug: cli-catalogs
 Read .orchestrate/research-contract.md first. Grade everything [L] (local probe) unless cited.
 Probe what each INSTALLED harness actually exposes on this machine — cheap listing commands only, NO model
 turns (no prompts sent), never read auth files:
-- claude --version; claude --help (model/effort/aliases lines); docs page code.claude.com/docs/en/model-config for alias targets.
+- claude --version; claude --help (model/effort/aliases lines); docs page code.claude.com/docs/en/model-config for alias targets;
+  the installed binary's model registry gives Claude Code's default effort per model (2.1.296: medium for the 5.5 models, high for Fable 5.1).
 - codex --version; python3 over ~/.codex/models_cache.json (slug, display_name, description, default/supported reasoning levels, context_window, service tiers, upgrade map) — this file is NOT an auth file.
 - grok --version; grok models.
 - cursor-agent (or agent) --version and its model-listing command (find it via --help).
 - agy --version and its model listing (find via --help).
-- opencode --version; opencode models (may list providers' models).
+- opencode --version; opencode models --refresh, then opencode models (the first call after idle serves a stale cache —
+  Haiku 5.5 appeared only on the second call).
 - hermes --version and model listing; kimi --version and model config (kimi --help); pi --version; pi --list-models.
 For each: exact command, exact output excerpt (trim to the model rows), which models are default, effort
 enums, context shown, any price shown, version, date. If a CLI is missing, say so.
@@ -49,10 +55,21 @@ slug: benchmarks
 Read .orchestrate/research-contract.md first. Grade [B]; note for each benchmark: who runs it, refresh
 cadence, contamination/gaming resistance, what capability it isolates, date of the numbers you took.
 Cover (current leaderboards, newest models in scope; screenshot JS pages):
-- Artificial Analysis: Intelligence Index, Coding Index, Agentic Index, cost to run the index, output speed, latency, context — per model.
+- Artificial Analysis: Intelligence Index, Coding Index, Agentic Index, cost to run the index, output speed, latency, context — per model;
+  and the Coding Agent Index (harness + model + effort, cost per task) — the agent-loop cost truth.
+- Price tiers: when a model bills by prompt length (Haiku 5.5: the whole request ×5 above 100K), AA's Index cost
+  uses the cheap tier only — recompute cost per step from mean tokens and steps, and say which tier a cost assumes.
 - LMArena: Text, WebDev, Vision (and Copilot/coding arena if present) — Elo + CI + votes.
-- Terminal-Bench 2.x (tbench.ai) — per model AND per harness/agent where listed (Claude Code, Codex CLI, …).
-- SWE-bench Pro (Scale, public + commercial), SWE-rebench (fresh monthly tasks), SWE-bench Verified only as a footnote (saturated/contaminated).
+- Terminal-Bench (tbench.ai, current version) — per model AND per harness/agent where listed (Claude Code, Codex CLI, …);
+  record the share of fallback-served attempts where a board shows it (AA "with fallback", Vals).
+- SWE-bench Pro (Scale, public + commercial — read Scale's own page, relays omit scores), SWE-rebench (fresh monthly tasks),
+  SWE-bench Verified only as a footnote (saturated/contaminated).
+- Single-author open benchmarks (Bug Hunt Bench: github.com/phuryn/bug-hunt-bench README; VulcanBench:
+  github.com/morganlinton/VulcanBench docs/results/*-efforts.csv): grade [B, community-run], corroboration only; record
+  runs per row, the judge per arm and the pricing date.
+- Fetching: AA (incl. /agents/coding-agents), tbench.ai, Scale, Vals and Epoch are server-rendered HTML or embedded flight
+  JSON (`self.__next_f`) — curl + python beats screenshots and gives unrounded numbers; vendor launch-post SVG charts carry
+  exact values in aria-labels; LMArena needs headless Chrome with a normal --user-agent (the default one is challenged).
 - METR time-horizon (50%/80%) — long-horizon autonomy.
 - OSWorld-Verified (computer use), ScreenSpot-Pro, and a vision benchmark (MMMU-Pro or similar); multi-image if any.
 - Long context: Fiction.LiveBench, OpenAI MRCR v2, or equivalent — effective context vs advertised.
@@ -70,7 +87,9 @@ slug: x-reports
 Read .orchestrate/research-contract.md first. Grade [P]. Tool: the xrelay CLI (read-only commands ONLY:
 search, user, thread, batch, dedupe — NEVER post/like/reply/follow). Read ~/.claude/skills/x-relay/SKILL.md
 first and follow its funnel. NEVER run parallel xrelay calls; serialize with 3s gaps (batch --delay 3000);
-on RATE_LIMITED back off by retryAfterMs.
+on RATE_LIMITED back off by retryAfterMs. Search allows about 50 calls per 15 minutes: budget the stages, and keep
+every stage's queries in the archive, not only the last batch's. Cluster near-identical posts before counting
+agreement — one "official tip" template ran on 14+ accounts with invented flags (2026-10-13).
 Find real-use comparisons from practitioners (not marketing accounts) since {SINCE} on every model in the
 contract's seed list and anything newer you find (especially the models that triggered this run).
 system design quality, long-horizon autonomy, instruction following, over-engineering, laziness,
@@ -95,7 +114,8 @@ answered 403 on 2026-09-30, RSS answered 200:
   thread  https://www.reddit.com/r/<sub>/comments/<id>/.rss
 curl with -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140 Safari/537.36",
 2s between requests, on 429 wait 60s ONCE then move on; parse with python3 xml.etree. RSS has no scores:
-rank by comment count and independent agreement. Write partial results to {OUT} after every 3 subs —
+rank by comment count and independent agreement. A bot-written consensus comment (r/ClaudeAI mod bot,
+r/codex summary bot) may stand in for votes — label it as such. Write partial results to {OUT} after every 3 subs —
 a lane that writes nothing for 20 minutes is treated as stuck and stopped.
 Hacker News: https://hn.algolia.com/api/v1/search?query=<q>&tags=story, then item comments.
 Same angles as the X lane: which model for architecture vs implementation vs review, long-horizon

@@ -3,13 +3,21 @@
 > One entry point, nine subagent-orchestration strategies, for any AI coding agent that reads a SKILL.md. Installs as an agent skill.
 
 orchestrate turns "run this plan with subagents" into a controlled process instead of an improvised
-one. Point it at a plan file or a task description and it picks (or you force) a strategy — staged
+one. Every run starts with Prepare: `scripts/capabilities` inventories the machine's research CLIs
+(free or paid, installed or missing), build/test tooling, engines and every skill on disk — including
+manual-only skills a model never sees in its list; an unclear request gets an interview in rounds
+(numbered questions, a recommended answer each — Matt Pocock's grilling technique); missing tools are
+proposed with their install command, never installed unasked; an undecided toolchain gets a scout
+(X, GitHub, web, registries; track record over novelty, the faster tool on a tie). Point it at a plan
+file, a loose idea or a research question and it picks (or you force) a strategy — staged
 sequential cycles, parallel worktree fan-out, hierarchical sub-orchestrator fleets, agent teams,
 deterministic workflows, goal/Ralph loops, advisor/executor cost splits, adversarial planning, or
 external CLIs (Codex/Grok/Cursor/Antigravity/opencode/Hermes/Kimi/Pi) as workers — then coordinates,
 dispatches, and gates the subagent work through it. `/orchestrate` auto-triages when no strategy is
-forced: it measures task shape (plan present, task count, file-overlap independence, context size,
-verifiable stop condition) and states why it picked what it picked. Before the first multi-agent
+forced: it classifies the kind (build, research, fix, review, content, ops), reads the plan's
+dependency graph — concurrency is the default, sequence is a finding: builds go hierarchical across
+domains, parallel waves inside one, staged only for a true chain; research runs as parallel source
+lanes with a fact-checking final gate — and states why it picked what it picked. Before the first multi-agent
 dispatch it prints a flight plan — the topology tree with model + reasoning effort per agent,
 gates, and an honest budget range — and gates on the user's approval (confirm=off skips the gate,
 never the print). Every run has a spine: `.orchestrate/journal.jsonl`, an append-only hash-chained record
@@ -24,7 +32,8 @@ and never starts the engine if an input cannot land). `board reap` finds what a 
 Every journal event records the board release that wrote it; `board version` shows a run's start release and each
 release since as a migration line (`none` or `action`). Lane receipts record the model that served them; Claude
 lanes run with workflows off. `posture=frontier|balanced|economy` picks a concrete harness · model · effort per role
-from a dated model catalog (independent benchmarks, prices, context, effort curves; `docs/research/model-selection/`). A worker whose plan assumption fails returns DESIGN_CONFLICT instead of a workaround;
+from a dated model catalog (independent benchmarks, prices, context, effort curves; `docs/research/model-selection/`;
+refreshed 2026-10-13 for Claude Haiku 5.5 — the economy Claude-only cheap worker at medium, prompts kept under its 100K price tier; Sol workers at medium). A worker whose plan assumption fails returns DESIGN_CONFLICT instead of a workaround;
 the controller routes it to a fresh strongest-tier architect (internal design) or the user (product behavior). Claude Code is the reference
 host; the skill is plain Agent Skills format (agentskills.io) with a host-adapter layer
 (references/shared-hosts.md), so it runs on Codex, Cursor, Antigravity, opencode, Grok Build,
@@ -50,6 +59,7 @@ primitive is missing.
 
 ## Optional
 
+- [docs/designs/v1.31.0-prepare.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.31.0-prepare.md): prepare before dispatch (clarify rounds, tool inventory, install consent, scout), concurrency by default, research as source lanes.
 - [docs/designs/v1.29.0-replan.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.29.0-replan.md): reality over plan — DESIGN_CONFLICT, the architect pass, bounds.
 - [docs/designs/v1.27.0-versioning.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.27.0-versioning.md): release stamps, migration lines, the compatibility contract.
 - [docs/designs/v1.26.0-reap.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.26.0-reap.md): finding and stopping what a run leaves running.

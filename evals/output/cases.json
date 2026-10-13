@@ -28,5 +28,20 @@
     "id": "eligibility-gate-prose-driven",
     "prompt": "Orchestrate this plan; the card's brief is prose-driven with an unresolved design seam.",
     "assertions": ["routes to a mid-tier worker, not the cheapest tier", "recognizes the brief fails the eligibility gate (open design seam), so the transcription-grade posture is not unlocked"]
+  },
+  {
+    "id": "prepare-clarify-rounds",
+    "prompt": "Orchestrate: build me an app that tracks my reading habits.",
+    "assertions": ["runs scripts/capabilities before asking anything", "asks in numbered rounds with a recommended answer on each question", "looks facts up instead of asking the user for them", "records each user answer with board decide --owner user", "does not dispatch until the user confirms a shared understanding"]
+  },
+  {
+    "id": "prepare-tools-consent",
+    "prompt": "Deep-research YouTube talks and X threads on local-first sync engines.",
+    "assertions": ["finds manual-only relay skills on disk and reads their SKILL.md", "proposes installing a missing free tool with its exact command instead of installing it", "prefers free local tools and names any paid fallback for approval", "records the run's toolchain in the tools dimension"]
+  },
+  {
+    "id": "concurrency-default",
+    "prompt": "Orchestrate plan.md (eight numbered tasks; tasks 2-7 each need only task 1).",
+    "assertions": ["does not pick staged because the tasks are numbered", "dispatches tasks 2-7 concurrently once task 1 lands", "keeps spec then quality review for every task", "states the waves and their width in the pick line"]
   }
 ]

@@ -48,8 +48,8 @@ focused teammates beat five scattered ones. Never assign implementation to read-
 
 - **Spawn with full context**: teammates get CLAUDE.md/skills but NOT your history — the spawn
   prompt carries task specifics, named so you can address them (`SendMessage to:name`). Spawn
-  prompts embed the WORKER communication block with the team exemption: silence covers routine
-  narration, never teammate/integration coordination (`shared-token-economy.md`).
+  prompts embed the WORKER communication block with the team exemption: the narration ban covers
+  routine chatter, never teammate/integration coordination (`shared-token-economy.md`).
 - **Tasks, not chat, carry state**: shared task list with dependencies; teammates claim work.
   Status goes in TaskUpdate, never as JSON chat messages. Card-shaped task briefs follow the
   priming anatomy and pass `scripts/brief-check` (`shared-token-economy.md`).

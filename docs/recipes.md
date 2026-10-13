@@ -79,6 +79,26 @@ just a few moments that need real judgment.
 
 Copy-paste commands for specific situations that don't map to a saved alias.
 
+**Start from a loose idea — let it interview you and set up the tools**
+```
+/orchestrate "a desktop app that syncs my notes across devices"
+```
+No plan, no flags. Prepare inventories your machine (`.orchestrate/capabilities.md`), asks its
+questions in rounds — each with a recommended answer you can accept with "yes" — proposes any
+missing tool with its install command, scouts the toolchain if none is chosen, sets it up as Task
+0, then triage picks the shape (usually hierarchical across the app's domains). `prep=full` forces
+the interview and the scout; `prep=off` skips both.
+
+**Deep research across every source that matters**
+```
+/orchestrate "deep-research the fastest proven e2e test tooling for Tauri desktop apps"
+```
+Runs as parallel source lanes — X through `xrelay`, GitHub through `ghrelay`/`gh`, YouTube through
+`ytrelay`, HN/Reddit/registries over curl, docs and engineering blogs through web search — with
+keyword-rich queries in two rounds, claims traced to the source that owns them, a synthesized
+report and a fact-checking final gate ([shared-research.md](../skills/orchestrate/references/shared-research.md)).
+A missing tool is proposed, never installed unasked; paid tools are a named fallback only.
+
 **Watch the run, and put the tests on the board**
 ```
 board                                    # in a second pane, inside the repo (any host)

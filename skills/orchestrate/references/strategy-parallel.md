@@ -1,9 +1,9 @@
-# parallel — worktree-isolated fan-out with an integrator
+# parallel — waves on the dependency graph, worktree-isolated, one integrator
 
-Purpose: Fan independent tasks out to isolated workers and integrate their results safely.
+Purpose: Run a plan's independent tasks concurrently — dispatched on readiness, gated as each lands, integrated continuously.
 
 Read when:
-- Tasks share no files or can be partitioned into non-overlapping ownership.
+- A build plan has two or more tasks with no edge between them (triage's default for one domain), or a research question runs as source lanes (`shared-research.md`).
 
 Skip when:
 - Workers need shared mutable state or unresolved contracts between their tasks.
@@ -17,6 +17,7 @@ Produces:
 ## Contents
 
 - Gate: is parallel actually right?
+- Waves on the graph — dispatch on readiness
 - Task cards (narrow contracts) — ownership, peers, mail, dependency waits
 - Flow
 - Limits & failure handling
@@ -33,15 +34,35 @@ Prompts: `prompt-implementer.md` (per worker), `prompt-integrator.md`.
 Decision tree (run it, don't skip it):
 ```
 multiple independent problems?
-  no  → one agent sees everything (solo/staged)
+  no  → one agent sees everything (solo), or a true chain (staged)
   yes → do they share files or mutable state?
-          yes → sequential (staged) — or repartition until they don't
+          yes → repartition until they don't, or add an integrator-owned seam file
           no  → parallel
 ```
 The cheap first cut is the **fake-edge test**: does this step actually need the previous step's
 output? No edge → no wait → it can run concurrently; the file-overlap check answers the other
 half. Then partition along ONE axis — by layer, by component, by concern, or **by file ownership**
 (strongest for writers: each worker owns an exclusive file set, written into its brief).
+
+## Waves on the graph — dispatch on readiness
+
+A plan with dependencies is still a parallel plan: its graph has waves. Wave 1 is every task with
+no unmet edge; every later task starts the moment it is **ready** — never at a wave barrier — up to
+the worker cap (`workers=`, 3–5). Ready depends on the edge:
+- a **soft** edge (the task needs only the agreed interface) is ready at once — the worker builds
+  against the contract and waits late (`board wait --task N`) only before its verification run;
+- a **hard** edge (the task needs the other task's code) is ready when that task is gated and
+  merged into the integration branch. Cut the dependent's worktree from that branch's tip at
+  dispatch (`git worktree add <path> -b agent/<task> <integration-branch>`) and pin that sha —
+  native `isolation: worktree` cuts from origin/HEAD unless `worktree.baseRef: "head"` is set.
+
+`board wait --task N` and `board launch … --after N` fire on N's *return* — right for soft edges
+and read-only inputs; a hard edge waits for `board done N` and the merge. Reviews run as each task
+lands, merges as each passes its gates — the slowest task never holds the fastest one's review or
+merge. Criteria before code: every task's acceptance checks are written once, as one set, before
+the first implementation dispatch, by an agent that implements none of them (the implementer
+prompt with a criteria-only brief). Research lanes are the degenerate case: one wave, read-only, no
+worktrees, no integrator — a synthesizer instead (`shared-research.md`).
 
 ## Task cards (narrow contracts)
 
@@ -105,9 +126,10 @@ commit by path, never `git add -A`.
 ## Limits & failure handling
 
 - 3–5 workers is the sweet spot; scale only when work is genuinely independent.
-- **One snapshot per batch**: every worker in a batch pins the same `@ <sha>` and the same
-  revision of the shared records (`decisions.md`, plan, inventory). A mid-batch change to shared
-  state is a re-dispatch decision, never a silent update (`shared-token-economy.md`).
+- **One snapshot per dispatch**: every worker pins the `@ <sha>` its tree was cut from and the
+  revision of the shared records it read (`decisions.md`, plan, inventory); workers dispatched
+  together share one. A change to shared state under a running worker is a re-dispatch decision,
+  never a silent update (`shared-token-economy.md`).
 - **Fan-in guard**: every merge or synthesis step counts returns against dispatches and refuses to
   synthesize on a partial set — `shared-monitoring.md` rule 3 catches one silent worker, this
   catches the aggregate, where a single dead worker slips into a report that looks complete. On

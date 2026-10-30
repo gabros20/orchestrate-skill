@@ -91,13 +91,22 @@ options · blast radius · user-visible? Local, reversible choices stay yours.
 1. Implement exactly what the brief specifies (follow TDD if it says to)
 2. Write tests; run them; make them pass
 3. Commit your work (small, coherent commits)
-4. Run the brief's verification command(s); report their actual output
+4. Run the brief's verification command(s) after your last change; report their actual output
 5. Write the full report file, then report back <15 lines
+When the work is done and its checks pass, stop and report. A check that passed is not re-run
+until the code it covers changes. Start no review or hardening rounds and no reviewer subagents
+unless your brief asks for them — independent review is the next gate; a deeper review worth
+doing goes in your report.
 
 ## Code organization
 - Follow the file structure the brief defines; one clear responsibility per file
-- In existing code, follow established patterns; improve what you touch, restructure nothing
-  outside your task
+- In existing code, follow established patterns. Change only what your task needs (its tests
+  included): no cleanup, reformatting or renames in code you only read — in a parallel run it
+  may be a peer's. A bug, dead code or a missing test outside your task: leave it, and list it in
+  your report under Noticed, not touched (path:line · what · why it matters); the controller
+  decides what becomes a task.
+- The simplest design that meets the brief: no layer, generic mechanism or helper file for a case
+  the brief does not have
 - A file growing beyond the brief's intent → stop, report DONE_WITH_CONCERNS
 - A better approach or a taste difference: say so in one sentence and continue as asked — never
   quietly narrow, widen, or transform it. Reality contradicting the plan is different: stop (below).
@@ -115,7 +124,8 @@ radius · user-visible?). Never patch around the design to reach DONE.
 Status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED | DESIGN_CONFLICT
 Commits: <shas> · Tests: <one line> · Concerns: <one line or none> · Report: <path>
 Everything else goes in the report file: what you implemented, test output, files changed,
-the verification command and its actual output, open questions.
+the verification command and its actual output, open questions, and the Noticed, not touched
+list.
 DELIVERING this inline report is your completion condition — finishing the work and going
 idle without it means the task is NOT done. If you run as a background subagent or teammate,
 deliver it via SendMessage to the controller as your final action.
@@ -128,3 +138,11 @@ anchor (evidence a gate can read), not a re-check, so it stays. Extrapolation bo
 guidance is written for the current frontier tier; when dispatching a distinctly older or weaker
 model, the brief may restore an explicit check step. Independent review is a different mechanism
 and is untouched — maker/checker separation stands (`shared-review-gates.md`).
+The stop rule is the same guidance from the other side: at xhigh/max effort Sonnet 5.5 can start
+its own review rounds (sometimes with reviewer subagents) and fix related things it noticed; a
+stop-when-checks-pass line cut max-effort session cost by about a third at equal quality (vendor
+testing; `docs/research/model-selection/07-effort-curves.md` in the skill repo). In a run those
+rounds re-buy gates already paid for, and a related fix lands in code a peer may own — so the
+worker lists it under Noticed, not touched instead (the vendor's scope prompt: mention it at the
+end instead of doing it). Not re-running a passing check on unchanged code, and noticed-not-touched,
+also come from Addy Osmani's incremental-implementation skill (addyosmani/agent-skills, MIT).

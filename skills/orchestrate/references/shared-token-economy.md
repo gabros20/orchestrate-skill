@@ -17,8 +17,6 @@ Produces:
 ## Contents
 
 - The communication blocks (role-scoped — paste the ROLE's block into its dispatch, verbatim)
-- Communication contract
-- Communication contract
 - Dispatch coverage matrix (every surface, its block)
 - Priming anatomy — "prime, don't dump" (brief quality standard)
 - Orientation — filling a fresh context is work, not waste

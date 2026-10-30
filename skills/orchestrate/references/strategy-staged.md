@@ -84,12 +84,15 @@ brief → dispatch implementer → (questions? answer, re-dispatch) → implemen
    most Minor") — that's you sparing yourself a review loop. Judge selection follows judge hygiene
    (`shared-review-gates.md`): cross-family lineage where the host allows, pinned and logged in
    the findings file.
-6. **Fix waves**: Critical/Important → ONE fix subagent carrying the full implementer contract
-   (re-run covering tests, name files, report command+output) → re-review. Minor → ledger, batched
-   for the final review. Implementer rationale never downgrades a severity. ⚠️ "cannot verify from
-   diff" items are YOURS to resolve — you hold cross-task context. Cap fix→re-review at 2–3
-   rounds per gate: hitting the cap is a model-tier escalation (`shared-model-routing.md` rule 4),
-   never a fourth identical round.
+6. **Fix waves** (the findings loop, `shared-review-gates.md`): Critical/Important → ONE fix
+   subagent carrying the full implementer contract (re-run covering tests, name files, report
+   command+output); the fix answers its findings and nothing more → re-review. Minor → ledger,
+   batched for the final review. Implementer rationale never downgrades a severity; a finding you
+   dismiss needs evidence, and once dismissed it is settled — a later round raising it again does
+   not fail the gate. ⚠️ "cannot verify from diff" items are YOURS to resolve — you hold
+   cross-task context. Cap fix→re-review at 2–3 rounds with an unsettled Critical/Important per
+   gate: hitting the cap is a model-tier escalation (`shared-model-routing.md` rule 4), never a
+   fourth identical round; churn (a fix that created the new finding) goes to replan.
 7. **Ledger**: append `Task N: complete (commits <base7>..<head7>, review clean)`.
 
 ## Finish

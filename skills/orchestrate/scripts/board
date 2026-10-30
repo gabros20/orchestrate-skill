@@ -24,7 +24,7 @@ CONTROLLER — the loop
   exec N --name X -- <cmd> · result N --name X --exit RC [--log]     a check THROUGH the journal
   nudge N --agent A · escalate N --agent A --to MODEL --why ".." · blocked N --msg ".."
   decide ID "msg" [--why ".." --owner --task] · rail "msg" · todo N [title]     (re-deciding an id supersedes it)
-  done N [--msg]                   writes the ledger line; refused over a failed gate or check
+  done N [--msg]                   writes the ledger line; refused over a failed gate or check, or a gate waiting on votes
   check [--finish] [--replay] [--json] · finish --gate pass|fail --evidence PATH [--force --reason]
   wait --task N [--task M] [--timeout 0]   block until their work is on disk (exit 3: one cannot land)
 
@@ -71,12 +71,13 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "1.31.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
+VERSION = "1.32.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
 SCHEMA = 2           # the journal's shape; bumps ONLY for a breaking change, with an in-place upgrader (migrate_v1 is one)
 # What a run started on an older release must know. Newest first, one line per release: "none" = additive, nothing to
 # do · "action" = do it, then `board version --ack V --msg ".."` (a check finding, so finish refuses, until acked).
 # Automatic journal rewrites never live here — they run on open (journal_path), like the v1→v2 upgrade.
 MIGRATIONS = (
+    ("1.32.0", "none", "review rounds converge (settled findings, churn → replan); a panel gate waits for every lens and done refuses a vote-pending gate (evaluated at command time — old journals are not re-flagged); proof first, noticed-not-touched, implementer stops when checks pass"),
     ("1.31.0", "none", "Prepare (clarify · equip · scout · set up) and kind/prep/tools dims; WORKER block keeps a work log; catalog refresh 2026-10-13: haiku = Haiku 5.5 @medium, Sol workers @medium, Sol @xhigh grinder — runs before 1.31 read as prep off"),
     ("1.30.1", "none", "repo tooling only: the model-catalog-refresh project skill; the runtime is unchanged"),
     ("1.30.0", "none", "posture dimension (default balanced) and catalog defaults per role; runs before 1.30 read as balanced"),
@@ -856,14 +857,15 @@ def parse_kv(value: str | None) -> dict[str, str]:
 
 
 def quorum(review: str, votes: list[tuple[str, str]]) -> str:
-    """Derived gate text from votes: panel:N = majority of ok, consensus:N (and anything else) = any-deny."""
+    """Derived gate text from votes: panel:N = majority of ok once all N lenses voted (a lens that
+    never votes is a hole, not a vote), consensus:N (and anything else) = any-deny."""
     m = re.match(r"(panel|consensus):(\d+)", review or "")
     n = int(m.group(2)) if m else max(len(votes), 1)
     majority = bool(m) and m.group(1) == "panel"
     ok = sum(1 for _, v in votes if v in ("ok", "warn"))
     deny = [a for a, v in votes if v == "fail"]
     if majority:
-        if ok * 2 > n:
+        if ok * 2 > n and len(votes) >= n:
             return f"ok {ok}/{n}"
         if len(deny) * 2 >= n:
             return f"fail {ok}/{n} (deny: {', '.join(deny)})"
@@ -4450,6 +4452,10 @@ def main(argv: list[str]) -> int:
         failed = [k for k, v in (t.gates if t else {}).items() if v.startswith("fail")]
         if failed:
             sys.exit(f"board: task {args.task} has a failed gate ({', '.join(failed)}) — fix wave + re-review first")
+        voting = [f"{k} {v}" for k, v in (t.gates if t else {}).items() if re.match(r"\.\. \d+/\d+", v)]
+        if voting:
+            sys.exit(f"board: task {args.task} has a gate still waiting on votes ({', '.join(voting)}) — a lens that never voted "
+                     f"is a hole: retry it once, then close the gate yourself (board gate {args.task} --kind K --verdict … --msg \"<lens> not run: …\")")
         if t and t.failed_checks:
             sys.exit(f"board: task {args.task} has a failed check ({', '.join(t.failed_checks)}) — fix, re-run it first")
         line = f"Task {args.task}: complete" + (f" ({clean(args.msg)})" if args.msg else "")
@@ -4819,6 +4825,12 @@ def selftest() -> int:
         run("vote", "4", "--kind", "approve", "--agent", "lens3-4", "--verdict", "warn")
         st = load(ws)
         assert st.tasks["4"].gates["approve"].startswith("ok 2/3"), st.tasks["4"].gates
+        run("vote", "4", "--kind", "arch", "--agent", "lens1-4", "--verdict", "ok")
+        run("vote", "4", "--kind", "arch", "--agent", "lens2-4", "--verdict", "ok")
+        assert load(ws).tasks["4"].gates["arch"].startswith(".. 2/3"), load(ws).tasks["4"].gates   # a lens that never voted is a hole, not a vote
+        run("done", "4", expect_fail=True)                                   # done waits for the missing lens
+        run("vote", "4", "--kind", "arch", "--agent", "lens3-4", "--verdict", "ok")
+        assert load(ws).tasks["4"].gates["arch"].startswith("ok 3/3"), load(ws).tasks["4"].gates
         run("set", "review=consensus:3")   # rules in force at vote time govern that vote — a later set never flips a gate
         run("plan", "approved")
         assert load(ws).tasks["4"].gates["approve"].startswith("ok 2/3")

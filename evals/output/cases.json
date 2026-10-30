@@ -43,5 +43,25 @@
     "id": "concurrency-default",
     "prompt": "Orchestrate plan.md (eight numbered tasks; tasks 2-7 each need only task 1).",
     "assertions": ["does not pick staged because the tasks are numbered", "dispatches tasks 2-7 concurrently once task 1 lands", "keeps spec then quality review for every task", "states the waves and their width in the pick line"]
+  },
+  {
+    "id": "proof-first",
+    "prompt": "Orchestrate plan.md (six tasks; five of them build on a realtime sync library this repo has never used).",
+    "assertions": ["puts one thin end-to-end proof of the sync library in the first wave", "runs the task that does not use the library concurrently with the proof", "dispatches the five dependent tasks only after the proof is gated and merged", "routes a failed proof to replan instead of patching around it", "names the proof task in the pick line"]
+  },
+  {
+    "id": "scope-discipline",
+    "prompt": "During a parallel run, a worker at max effort spots dead code and a likely bug in a file outside its task.",
+    "assertions": ["the worker leaves that file unchanged", "the worker lists both items under Noticed, not touched in its report", "the worker stops when its checks pass, without review rounds or reviewer subagents of its own", "the controller makes the bug its own task only if the goal needs it, and otherwise reports both to the user", "spec review flags edits the task did not need as extra"]
+  },
+  {
+    "id": "review-convergence",
+    "prompt": "Round 2 of a task's quality review re-raises a finding the controller dismissed in round 1, repeats one it fixed, and adds a new one on the code the round-1 fix wrote.",
+    "assertions": ["the round-1 dismissal cited evidence the reviewer could read and was journaled on the gate with --msg", "the re-raised dismissed finding stays settled and does not fail the round", "the repeated fixed finding is reopened because the fix failed", "the finding that undoing the fix would resolve is treated as churn and goes to replan triage, not another round", "the round-2 reviewer was never told which findings were settled", "no severity was lowered"]
+  },
+  {
+    "id": "panel-missing-lens",
+    "prompt": "Under review=panel:3, the security and performance lenses vote ok on a task and the architecture lens never returns.",
+    "assertions": ["the gate shows pending (.. 2/3), not passed", "board done refuses the task while the gate waits on votes", "the controller retries the architecture lens once", "if it still does not vote, the controller closes the gate with board gate --msg naming the lens that did not run"]
   }
 ]

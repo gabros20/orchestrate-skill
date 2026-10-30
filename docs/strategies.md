@@ -70,10 +70,13 @@ then `parallel`.
 no unmet dependency; each later task starts the moment it is ready — never at a wave barrier — up
 to the worker cap. A task that needs only an agreed interface is ready at once and builds against
 the contract; one that needs another task's code is ready when that task is gated and merged, and
-its worktree is cut from the integration branch after the merge. Reviews run as each task lands
-and merges as each passes its gates, so the slowest task never holds the fastest one's review.
-Every task's acceptance checks are written once, before the first implementer starts, by an agent
-that implements none of them.
+its worktree is cut from the integration branch after the merge. When several tasks rest on an
+assumption nobody has run in this stack, the first implementation wave carries one thin task that
+proves it end to end, and the tasks resting on it wait for its merge — a broken assumption costs
+one task, not a wave.
+Reviews run as each task lands and merges as each passes its gates, so the slowest task never
+holds the fastest one's review. Every task's acceptance checks are written once, before the first
+implementer starts, by an agent that implements none of them.
 
 **How it runs**: partition the work along one axis (layer, component, concern, or — strongest for
 writers — exclusive file ownership) and write a task card per worker in `.orchestrate/card-<k>.md`.

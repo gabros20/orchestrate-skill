@@ -1,6 +1,6 @@
 {
   "name": "orchestrate-skill",
-  "version": "1.31.0",
+  "version": "1.32.0",
   "description": "Prepare each run (interview, tool inventory, install proposals), then select and run bounded multi-agent strategies with durable artifacts, explicit models, typed review gates, and safe recovery.",
   "author": {
     "name": "Tam\u00e1s G\u00e1bor",

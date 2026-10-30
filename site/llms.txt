@@ -17,7 +17,7 @@ dispatches, and gates the subagent work through it. `/orchestrate` auto-triages 
 forced: it classifies the kind (build, research, fix, review, content, ops), reads the plan's
 dependency graph — concurrency is the default, sequence is a finding: builds go hierarchical across
 domains, parallel waves inside one, staged only for a true chain; research runs as parallel source
-lanes with a fact-checking final gate — and states why it picked what it picked. Before the first multi-agent
+lanes with a fact-checking final gate — and states why it picked what it picked. A plan resting on an assumption nobody has run in the stack starts with one thin proof task; review rounds converge (dismissals cite evidence, settled findings stay closed, churn goes to replan); workers change only what their task needs and report what they noticed elsewhere. Before the first multi-agent
 dispatch it prints a flight plan — the topology tree with model + reasoning effort per agent,
 gates, and an honest budget range — and gates on the user's approval (confirm=off skips the gate,
 never the print). Every run has a spine: `.orchestrate/journal.jsonl`, an append-only hash-chained record
@@ -25,7 +25,7 @@ written only by the controller; `board` renders it as a live terminal kanban (an
 python3) with a priced flight plan, test checks on cards, an attention strip and a resume receipt.
 Workers journal one-line learnings (`board learn`) that reach their team at the next board call, together with any decision recorded since their dispatch; `board memory` renders a run as one project-context record for the next run.
 Agents talk through the same journal (`board send` / `inbox` / `wait` — information and questions,
-capped, delivered on the recipient's next board call), panels vote, and an external-CLI lane is one
+capped, delivered on the recipient's next board call), panels vote (a lens that never votes leaves the gate pending), and an external-CLI lane is one
 command (`board launch … --after N`: the wrapper sleeps in the shell until its inputs are on disk
 and never starts the engine if an input cannot land). `board reap` finds what a lane left running
 (servers, watchers) by working directory and stint window, and stops it on request; the finish gate refuses leftovers.
@@ -59,6 +59,7 @@ primitive is missing.
 
 ## Optional
 
+- [docs/designs/v1.32.0-review-convergence.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.32.0-review-convergence.md): review rounds that converge (settled findings, churn → replan, evidence-backed dismissal), panels that wait for every lens, proof first, workers in scope.
 - [docs/designs/v1.31.0-prepare.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.31.0-prepare.md): prepare before dispatch (clarify rounds, tool inventory, install consent, scout), concurrency by default, research as source lanes.
 - [docs/designs/v1.29.0-replan.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.29.0-replan.md): reality over plan — DESIGN_CONFLICT, the architect pass, bounds.
 - [docs/designs/v1.27.0-versioning.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.27.0-versioning.md): release stamps, migration lines, the compatibility contract.

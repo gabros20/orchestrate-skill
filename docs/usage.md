@@ -144,8 +144,10 @@ shape, and **concurrency is the default — sequence is a finding**.
    fix, review, content and ops have their own defaults.
 2. **Measure the shape** (builds): the **dependency graph** — for each task, does it actually need
    another task's output? Numbering is not a dependency — giving waves and their width; the
-   **domains** (backend · frontend · infra · data …); shared files; a machine-checkable stop
-   condition; the blast radius (prod/customers/external sends force human gates regardless).
+   **domains** (backend · frontend · infra · data …); an **unproven assumption** several tasks rest
+   on (a library, protocol, performance budget or platform API nobody has run in this stack);
+   shared files; a machine-checkable stop condition; the blast radius (prod/customers/external
+   sends force human gates regardless).
 3. **Map shape → strategy**: coupled+small → `solo`; a build across ≥2 domains → `hierarchical`
    (a lead per domain runs its own parallel waves, reviews and merges; an integrator merges the
    domains); one domain with ≥2 independent tasks → `parallel` (waves on the graph — a task starts
@@ -155,10 +157,12 @@ shape, and **concurrency is the default — sequence is a finding**.
    grind-until-green or recurring → `loop`; occasional strong-model judgment → `advisor`; high-stakes
    plan → `adversarial` first; a task suited to another CLI → `xcli` via `engine=`. The gates never
    change with the shape: criteria before code, spec then quality per task, machine checks, and a
-   final-deliverable gate.
-4. **Resolve and record**: state the pick in one line (`strategy=X because <kind, waves, domains>`),
-   apply any user overrides, record it (`board set strategy=… kind=… tools=…`). Only ask the human
-   if two strategies tie and the cost gap is large.
+   final-deliverable gate. An unproven assumption adds a **proof task**: one thin end-to-end task in
+   the first implementation wave, beside everything that does not rest on it; the tasks that do
+   start once it is gated and merged, so a broken assumption costs one task instead of a wave.
+4. **Resolve and record**: state the pick in one line (`strategy=X because <kind, waves, domains,
+   proof task>`), apply any user overrides, record it (`board set strategy=… kind=… tools=…`). Only
+   ask the human if two strategies tie and the cost gap is large.
 
 Triage re-runs mid-flight on: scope expansion (stop and restart triage with the new requirements —
 never bolt new scope onto a running strategy), repeated `BLOCKED` from workers on the same theme
@@ -219,8 +223,15 @@ extra"). `quality` — checks code quality only ("is it well-built"). `dual` (de
 first, then quality review, in that fixed order (quality-reviewing non-compliant code wastes
 tokens). `panel:N` — N reviewers, each assigned one lens (security / performance / architecture /
 testing / a11y, etc.); findings are deduped (same file:line + issue → merge; conflicting severity →
-take the higher). `consensus:N` — N independent verifiers vote real/refuted on each finding;
+take the higher). A panel passes only once every lens has voted: a lens that never returns leaves
+the gate pending and `board done` refuses, until it is retried or the controller closes the gate
+naming the gap. `consensus:N` — N independent verifiers vote real/refuted on each finding;
 majority rules; verifiers must be prompted to actively refute, or the vote is decorative.
+
+Fix rounds end on convergence, not on an empty review: the controller dismisses a finding only
+with evidence the reviewer could have read, a dismissed finding stays settled when a later fresh
+reviewer raises it again, a fixed finding that comes back is reopened, and a fix that creates the
+next finding (churn) goes to replan instead of another round.
 
 ### `engine`
 

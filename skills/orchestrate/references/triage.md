@@ -59,6 +59,7 @@ Unsure between two kinds → it is usually two runs: research first, then build 
 | Plan exists? | plan file / PRD / issue list present → planning=none (already planned); none → Prepare's clarify writes one |
 | Task count + size | count `# Task N` headings or enumerable units |
 | **Dependency graph** | per task: which tasks must land first (the fake-edge test below) — gives the waves and their width |
+| **Unproven assumption** | do several tasks rest on something nobody has run in this stack — a library's real behavior, a protocol, a performance budget, a platform API, the seam every task crosses? → proof first (Step 3) |
 | **Domains** | distinct areas that each need their own planning and integration (backend · frontend · infra · data · mobile …) |
 | Shared files | do tasks' file lists overlap? overlap → repartition or an integrator-owned seam file |
 | Verifiable stop? | tests/build/metric that can fail the work without a human |
@@ -102,6 +103,15 @@ hard dependency is ready once gated and merged), reviewed as each lands, merged 
 the integrator → final-deliverable gate. Hierarchical adds a lead per
 domain who runs that loop inside the domain; the controller integrates the domains.
 
+**Proof first** — when several tasks rest on an unproven assumption (Step 2), the plan gets one
+thin task that runs it end to end through every layer it touches, and nothing more. It goes in the
+first implementation wave beside every task that does not rest on the assumption; the tasks that
+do take a hard edge to it. The edge is real — they need its evidence — so this is a finding, not a
+retreat to `staged`. A proof that fails goes to replan (`shared-replan.md`), caught for the price
+of one task instead of a wave. Proven ground needs no proof task: the stack's existing patterns, an
+interface the repo already serves. (Risk-first slicing, from Addy Osmani's
+incremental-implementation skill — addyosmani/agent-skills, MIT.)
+
 Scale-gating (task count refines within a strategy): 1–2 files w/ complete spec → cheapest worker
 tier; 3–5 → standard flow; 6+ → require a written plan first (planning=plan-first).
 
@@ -116,7 +126,8 @@ fabricated study, so any citation needs a primary source.
 
 ## Step 4 — resolve and record
 
-1. State the pick in one line: `strategy=X because <signals>` (kind, waves and width, domains).
+1. State the pick in one line: `strategy=X because <signals>` (kind, waves and width, domains,
+   the proof task if there is one).
    Apply user dimension overrides. `board set strategy=X kind=K tools="…"`.
 2. Only if two strategies fit equally and the cost difference is large → ask the user
    (AskUserQuestion on Claude Code; host equivalent per `shared-hosts.md`) with the trade-off —

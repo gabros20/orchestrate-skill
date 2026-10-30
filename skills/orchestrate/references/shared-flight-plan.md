@@ -19,6 +19,10 @@ Produces:
 - When the gate fires · The format · Shape per strategy · Rendering per surface · Honest budget line
 
 No silent launch: the user sees the design BEFORE the fleet exists, in the shape they could tweak.
+**The user cannot see tool output.** Agents treat it as already shown (observed in 5 of 5 real runs:
+`board plan | tail -25`, then `plan approved --msg "plan printed"`). So the whole block goes into
+your reply — never piped through head/tail, never summarized — and `board dispatch` / `launch`
+refuse while the plan is pending. The plan ends with a `board: ↑ …` relay line saying exactly this.
 The flight plan is `run.md` RENDERED, never a second source — `board plan --why "<triage pick>"`
 renders it from the `run` record `board init` wrote (the same record the board's header shows),
 and the outcome is recorded with `board plan approved|changed|skipped [--msg why]`, which
@@ -27,11 +31,13 @@ node, a deliberate cost posture) beneath the printed tree — never retype the t
 
 ## When the gate fires
 
-- **Interactive, about to dispatch >1 agent or any writer** → print the plan, then gate with the
-  host's ASK_USER binding (`shared-hosts.md`) — one question: approve, or name a change.
-- **`confirm=off`** (dimension or alias) → print the plan, launch immediately. The gate is
-  skippable; the print is not — the user can still interrupt.
-- **Headless (`-p`)** → print the plan into the output and proceed: a gate that cannot render
+- **Interactive, about to dispatch >1 agent or any writer** → show the plan, then gate with the
+  host's ASK_USER binding (`shared-hosts.md`) — one question: approve, or name a change. On Claude
+  Code, `board plan --ask` prints the AskUserQuestion payload whose Approve option previews the
+  whole plan, so the question cannot arrive without it.
+- **`confirm=off`** (dimension or alias) → show the plan, record `board plan skipped --msg "confirm=off"`,
+  launch. The question is skippable; the showing is not — the user can still interrupt.
+- **Headless (`-p`)** → put the plan in the output and proceed: a gate that cannot render
   must not hang the run (several hosts auto-answer or suppress questions headless).
 - Re-triage mid-run (scope expansion) → the NEW plan goes through the gate again; a changed
   design is a new launch.
@@ -39,12 +45,12 @@ node, a deliberate cost posture) beneath the printed tree — never retype the t
   models and budget are announced as their own question inside a clarify round, and the yes is its
   approval (`board plan approved --msg "scout"`). The run's own flight plan follows after triage.
 
-## The format — topology tree + tweak keys (three blocks, plain Unicode)
+## The format — topology tree + change keys (three blocks, plain Unicode, ≤ ~22 lines)
 
 1. **Header**: `strategy=<x>` + the triage pick's one-line why, and the originally stated goal
-   verbatim (the same line the final-deliverable gate will judge against); then the posture line,
-   and a `kind · prep · decisions` line — how many decisions the user made in clarify and how many
-   were assumed (headless), so assumptions are checked before the fleet exists.
+   verbatim (the same line the final-deliverable gate will judge against); then one posture line
+   with kind, prep, and how many decisions the user made in clarify and how many were assumed
+   (headless), so assumptions are checked before the fleet exists.
 2. **Topology tree**: one node per agent that will exist; `├─`/`└─` nesting shows who spawns
    whom. Each node line carries: role · assignment (card/task/domain) · `model @ effort` ·
    isolation (worktree name, shared tree, or subprocess engine). Review gates appear as child
@@ -58,19 +64,17 @@ node, a deliberate cost posture) beneath the printed tree — never retype the t
    runs in `.orchestrate/archive/` (`tokens est 180k–420k (p50–p90 of 12 receipts, 3 past runs)`);
    with no receipts the line says so and you state a range, never a precision you don't have ·
    `lanes` — only when declared (`--lanes …`), the board's projected lanes ·
-   `mail` — on parallel / team / hierarchical / workflow runs: checkpoint delivery, `board peers`
-   for ownership, asks rendezvous via `board wait` — the latency is stated, never implied ·
    `tools` — the run's toolchain from Prepare (`board set tools=…`): which tool serves which need,
    free first, any approved paid fallback named ·
-   `board` — `open a pane and run  board  (or .orchestrate/board)` — the live kanban the user
-   watches; printed every run so nothing has to be remembered ·
-   `tweak` — the numbered keys.
+   `replan` — the architect a `DESIGN_CONFLICT` would get ·
+   `change` — the numbered keys. `--full` adds the `mail` (checkpoint delivery) and `board` (open
+   the live kanban) lines; a run with nothing left prints "nothing left to run" and no price.
 
-Tweak keys number the standard dimensions — `[1] strategy [2] models [3] effort [4] engine
+Change keys number the standard dimensions — `[1] strategy [2] models [3] effort [4] engine
 [5] review [6] isolation [7] budget [8] lanes [9] posture [10] tools` — plus strategy-specific extras
 as `[11]+`.
 The header prints the **posture** (frontier · balanced · economy) and which catalog column unpinned
-roles took; the tree ends with the architect a `DESIGN_CONFLICT` would get (`shared-model-catalog.md`). A "change N …"
+roles took (`shared-model-catalog.md`). A "change N …"
 answer re-resolves that dimension, reprints ONLY the changed lines, and re-asks; approval
 dispatches. This block layout is a format contract (like the report line shapes), kept stable so
 users can read any run's plan the same way.
@@ -97,33 +101,12 @@ users can read any run's plan the same way.
 
 ## Rendering per surface
 
-The plan is the same record; the surface decides the form. Pick by what the host renders:
-
-- **Terminal** (Claude Code CLI, Codex CLI, Grok, Kimi, opencode TUIs): `board plan` → relay it
-  verbatim inside a ```` ```text ```` fence (monospace keeps the tree aligned; footer values wrap at
-  100 columns under their own column), then one line: "Approve, or change N …".
-- **App** (Codex desktop app, Claude desktop / web, Cursor and IDE panels, Antigravity): `board plan
-  --format md` → paste as-is: heading, a roles table (identical workers merged as ×N), the topology
-  in a fence, footer bullets, and a bold **Approve?** line listing the numbered changes. Never paste
-  the text form outside a fence in an app — a proportional font breaks the tree.
-- Unsure which surface → `--format md`; raw markdown still reads in a terminal.
-
-Terminal (excerpt):
-```text
-posture: balanced · model catalog 2026-10-13, cross-harness column · change: board set posture=…
-controller · orchestrator claude opus-5-5 @high · host
-├─ worker · card 1 API · codex gpt-6.1-sol @medium · worktree wt-1
-budget  ~11 agents · cap 8 · tokens: no receipts yet — state a range, never a precision you
-        don't have
-```
-
-App (excerpt of `--format md`):
-```markdown
-| Role | Model · effort | Where · notes |
-|---|---|---|
-| worker ×3 | codex gpt-6.1-sol @medium | card 1 API · worktree wt-1, card 2 UI · worktree wt-2, … |
-**Approve?** Reply `approve`, or change one — 1 strategy · 2 models · … · 9 posture.
-```
+Same record, three forms — pick by what the host renders, then paste ALL of it:
+- **Terminal** (Claude Code CLI, Codex, Grok, Kimi, opencode): `board plan` inside a ```` ```text ````
+  fence (monospace keeps the tree aligned), then "Approve, or change N …".
+- **App** (desktop/web, IDE panels, Antigravity): `board plan --format md` as-is — a roles table, the
+  tree in a fence, footer bullets, a bold **Approve?** line. Never the text form outside a fence.
+- **Claude Code question**: `board plan --ask` → pass its JSON to AskUserQuestion unchanged.
 
 ## Honest budget line
 

@@ -41,8 +41,8 @@ your failure.
 - Rank attacks by expected damage. Concede explicitly what the plan gets right (one line).
 - If, after genuine effort, you cannot materially attack it: say CONSENSUS and why.
 
-No preamble, no narration: return only your schema. Quote literals verbatim; state
-uncertainty explicitly.
+No preamble or narration (one visible line before a long command: what, why); return only your
+schema. Quote literals verbatim; state uncertainty explicitly.
 
 ## Return
 ATTACKS: ranked list, each: claim · evidence · suggested fix

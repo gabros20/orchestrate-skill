@@ -39,8 +39,8 @@ Decisions + rails: [ids]   Budget left: [agents / tokens]
 - Every built item: keep · refactor (its own task) · revert.
 - One design, committed. Alternatives appear only as why you rejected them.
 
-No preamble, no narration: return only your schema. Quote literals verbatim; state
-uncertainty explicitly.
+No preamble or narration (one visible line before a long command: what, why); return only your
+schema. Quote literals verbatim; state uncertainty explicitly.
 
 ## Write .orchestrate/design-delta-N.md
 Root cause: the assumption that failed and why (one paragraph)

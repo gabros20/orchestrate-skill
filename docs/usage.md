@@ -92,36 +92,39 @@ plan's `kind · prep` line so you can check them.
 
 ## The flight plan (no silent launch)
 
-Before the first dispatch of any multi-agent run, the controller prints the resolved design and
-asks first — so you see (and can tweak) the composition before it costs anything:
+Before the first dispatch of any multi-agent run, the controller shows you the resolved design and
+asks first — so you see (and can change) the composition before it costs anything:
 
 ```
-ORCHESTRATION PLAN — approve before anything dispatches
-
 strategy=parallel — build, 1 domain, 2 waves (widest 2), no shared files
-kind: build · prep auto · 3 decision(s) by the user
+goal    Ship the auth API and its client
+posture balanced (catalog 2026-10-13, cross-harness) · kind build · prep auto · 3 decision(s) by the user
 
-  controller  (this session: opus @ session-high)
-  ├─ worker A  card-auth   sonnet @ high    wt-auth
-  ├─ worker B  card-api    sonnet @ high    wt-api
-  │    each → review: spec ✓ then quality ✓  (codex terra @ high — cross-family)
-  └─ integrator             sonnet @ high    merge A→B, suite after each
+controller · orchestrator claude opus-5-5 @high
+├─ worker · card 1 auth · codex gpt-6.1-sol @medium · worktree wt-1
+├─ worker · card 2 api · codex gpt-6.1-sol @medium · worktree wt-2
+│  └─ spec reviewer per card · claude opus-5-5 @high
+│  └─ quality reviewer per card · claude opus-5-5 @high
+├─ integrator · claude opus-5-5 @high · merge gates decide readiness
+└─ final-deliverable gate · claude opus-5-5 @max · fresh context, judges the goal verbatim
 
-  gates   dual per worker · fan-in 2/2 · final gate (fresh context vs stated goal)
-  rails   branch feat/x · worktrees · PR cap 1
-  budget  ~7 agents · est 300–450k tokens
-  tools   tests: bun test · e2e: agent-browser
-
-  tweak:  [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget
-          [8] lanes [9] posture [10] tools
+gates   spec → quality per unit · final gate once · fan-in: 2 dispatches → 2 returns expected
+rails   branch feat/x · isolation worktree · confirm on
+budget  ~7 agents · tokens est 300k–450k (p50–p90 of 9 receipts, 3 past runs)
+tools   tests: bun test · e2e: agent-browser
+replan  a DESIGN_CONFLICT goes to the architect · opus @xhigh · fresh context
+change  [1] strategy [2] models [3] effort [4] engine [5] review [6] isolation [7] budget
+        [8] lanes [9] posture [10] tools
 ```
 
-One node per agent that will exist, `model @ effort` on every line, gates as children, the
-final-deliverable gate last. Answer "change 3 to max" to re-resolve a dimension (only the changed
-lines reprint), or approve to launch. The plan is `run.md` rendered — never a second source — and
-the outcome is recorded there. `confirm=off` skips the gate (the plan still prints); headless
-(`-p`) runs print the plan into their output and proceed, because a gate that cannot render must
-not hang the run; solo and single-reviewer runs are exempt. Full spec:
+One node per agent that will exist, `model @ effort` once on every line, gates as children, the
+final-deliverable gate last. Answer "change 3 to max" to re-resolve a dimension, or approve to
+launch. **You see the plan because the controller pastes it into its reply**: tool output is
+invisible to you, so the plan ends with a line telling the agent to paste the whole block (on
+Claude Code, `board plan --ask` puts it in the approval dialog's preview), and `board dispatch`
+refuses while the plan is pending. The plan is `run.md` rendered — never a second source — and the
+outcome is recorded there. `confirm=off` skips the question, never the showing; headless (`-p`)
+runs put the plan in their output and proceed; solo and single-reviewer runs are exempt. Full spec:
 `references/shared-flight-plan.md`.
 
 ### What triage measures
@@ -353,8 +356,10 @@ board init PLAN --resume --strategy staged --review dual --engine claude --host 
            --isolation worktree --budget agents=13,tokens=150k-400k --kind build --tools "tests: npm test"
                                   # triage: keeps Prepare's record · every '# Task N' queued · run.md Resolved block
 board set effort=ultra            # re-resolve a dimension (journaled; the plan goes back to pending) — never edit the journal
-board plan --why "…"              # the flight plan, rendered from the record (tree + gates/rails/budget/board/tweak)
-board plan approved               # the gate outcome, appended to run.md
+board plan --why "…"              # the flight plan, rendered from the record — paste ALL of it in your reply (--ask: the AskUserQuestion payload)
+board plan approved               # the gate outcome, appended to run.md — dispatch refuses until there is one
+board next                        # the controller's checkpoint: run state, what needs you (with its command), the next step
+board hold "pause, don't kill them"   # the user's pause as run state (HELD); board hold --off lifts it
 board dispatch 3 --model sonnet                          # names the agent impl-3 (<role>-<task>; --role sub-orchestrator → lead-3; a repeat → impl-3-r2); explicit --agent must fit the schema
 board dispatch 3 --agent impl-3 --model sonnet [--role --engine codex --effort high --worktree wt-3 \
                  --session <id> --log raw/lane-3.jsonl --cmd-file raw/lane-3.sh]   # the id is what resume resumes by
@@ -394,7 +399,7 @@ never a status, never liveness — liveness is artifact deltas only) and `board 
 --agent impl-3 -- npm test` (their own test run: `tests ..` while it runs, `tests ok 12s` /
 `tests fail` after, log under `raw/`, attributed to the worker in the journal). Following the
 invariants (a worker saying "done" is a proposal; the gate is the transition), only the controller
-writes the transition lines above; a journal lock serializes parallel writers. Titles, notes and decisions are sanitised before they reach the terminal. `board --help` groups every command by role — the controller loop, lanes, worker observations, views.
+writes the transition lines above; a journal lock serializes parallel writers. Titles, notes and decisions are sanitised before they reach the terminal. `board help` indexes every command by role in ~900 characters; `board help controller|lead|worker|views` prints one section, `board COMMAND --help` one command's flags; a wrong flag costs one line, never a usage dump.
 
 ### What the pane shows
 
@@ -424,9 +429,10 @@ marks under review, the commit range when done.
 |---|---|
 | `board` | live kanban in a pane **you** open — it follows **the most recently active run on this machine**, whichever repo it is in (every journal write leaves a pointer under `~/.orchestrate/runs/`); a finished run hands over to a live one by itself, `n` cycles between known runs, `board watch --here` pins the pane to the repo it was opened in, `board runs` lists them all. Header: goal · run dims · models with drift (`worker sonnet (observed haiku !)`) · budget `agents 7/13 · tokens 235k/150k-400k` · plan outcome · rails · decisions · an **attention** strip (`x` blocked/failed · `!` stale · `?` pending, mail for the controller, a worker's question with the reply command ready) · a `mail` line (`sent · unread · for controller · questions · learn N · new for controller` — the reader of the pane is you, the counts name whose turn it is) · journal integrity. Cards carry `m2` when their agent has unread mail; votes show as the gate's quorum (`approve 2/3 ok`). Columns: empty ones collapse to one line, done collapses to the newest 3, in progress (`> agent · model · elapsed`, `! stale` after 10 min without an artifact delta), review (`spec ok r1 · quality fail r1`), blocked (`x` + owner/next action); every open card also carries its check badges (`tests ok 12s · lint fail`) and the header a `checks 3/4 ok` line. **Lanes are a projection**: `board init --lanes todo,implement,verify,review,integrate,done,blocked` (or `board set lanes=…`) renders a verifier's stint under VERIFY and an integrator's under INTEGRATE — the five canonical states underneath never change, and a new run starts with the defaults. Keys: `j/k` focus a card · `enter` open the focused card's lineage · `e` expand all · `a` attention-only · arrows scroll · `r` **reload** (re-executes the script from disk, view state kept; a reinstalled script reloads itself automatically — the footer says `reloaded HH:MM:SS`) · `q` quit. Every re-render on a workspace change shows a spinning `⠋ updated HH:MM:SS` in the footer for a moment; the reload itself animates a braille-dots spinner (ASCII `|/-\` under `BOARD_ASCII=1`). Truecolor / 256 / 16-colour profiles by terminal capability, `NO_COLOR`, `BOARD_ASCII=1` for ASCII borders. |
 | `board show [-x] [--attention] [--json]` | the same, one-shot. **Every card is three columns — task · who · signal** — with widths computed per lane: the task (id and title; a subtask indents under its parent when both are in the lane), the agent responsible right now (the newest open stint, else the last returned one — its name already says role and place: `impl-1.1` under `lead-1`), and one signal per state with a glyph only when you must act: `~ after 1` (queued lane, shown in TODO), `> 4m12s` / `> 1/2 landed · 6m` (a lead counts its subtasks), `! stale 12m`, `? asked controller #14`, `! exited rc=0 · report on disk`, `x never started · dependency 4 failed`, `? returned · dispatch the review`, `spec ok r1 · quality fail r1`, `a1b2c3d..e4f5a6b` (done: the commits), `x <reason>` (blocked). Model, engine, effort, lead and ownership never repeat on the line — they are in the header or the expanded view (`e`) — except a deviation from the run's defaults, shown as a suffix (`impl-3 ·opus`). Done collapses whole families and never hides a parent whose subtasks show. — cheap for the controller to glance at; `--json` for tooling |
-| `board plan [--format text\|md]` | text (default) for terminals — relay it in a `text` fence; `md` for apps that render markdown: roles table, fenced topology, approval line. The flight plan in the format contract, deterministic per strategy (nested roles listed, not counted); a `lane` line with the subprocess engine's launch pre-configured from the record; a `budget` token band `p50–p90` priced from the receipts of archived runs |
-| `board agents [--json]` | roster: agent · role · task · attempt · model requested→observed (an alias shows what served it: `sonnet = claude-sonnet-5-5`; a pinned id served by another model is drift) · engine · effort · window · duration · status · tokens · session · nudged/escalated · worktree |
-| `board attention` | what to act on, most urgent first, each with the next action |
+| `board plan [--format text\|md --ask --full]` | ≤ ~22 lines, ending in a relay line (the user cannot see tool output — paste it whole); `--ask` prints the AskUserQuestion payload whose Approve option previews the plan; `--full` adds the mail and board-pane lines. text (default) for terminals — in a `text` fence; `md` for apps that render markdown: roles table, fenced topology, approval line. The flight plan in the format contract, deterministic per strategy (nested roles listed, not counted); a `lane` line with the subprocess engine's launch pre-configured from the record; a `budget` token band `p50–p90` priced from the receipts of archived runs |
+| `board agents [--json]` | roster, sorted by task (all-empty columns hidden; a stint its task's ledger line outlived shows `closed, no return`): agent · role · task · attempt · model requested→observed (an alias shows what served it: `sonnet = claude-sonnet-5-5`; a pinned id served by another model is drift) · engine · effort · window · duration · status · tokens · session · nudged/escalated · worktree |
+| `board next` | the controller's one checkpoint call, ≤ 15 lines: run state (and HELD), what needs action most urgently with its command, what `board check` found, what is queued, the next step. Reads, never acks |
+| `board attention` | what to act on, most urgent first, each with the next action; a worker's mail is one line (`board mail --task N` for the body), and a question counts only while its asker is still at work |
 | `board task N` | one card's lineage |
 | `board log [--json]` | human timeline with sequence numbers (`--json` for raw envelopes) |
 | `board check [--finish] [--replay] [--json]` | reconciliation, exit 1 on findings: journal chain breaks, dispatched-never-returned, stale in-progress, silent reviewers, report without review, ledger lines naming commits or artifacts that don't exist, done over a failed gate or check, done with no review gate ever opened, quality gate before spec, xcli DONE without commits or without a usage receipt, a third attempt with no escalation, tasks skipped while later ones are done, model drift, budget overrun, unapproved launch, `finish` with open tasks or invalidated by later work / a moved HEAD / a changed goal. `--finish` is the strict pre-finish gate; a brief or card on disk for a task the plan never queued; `--replay` re-derives every card from the journal alone and reports any fact that reached the disk without its journal line (`inconclusive` where the pointers are gone). A note (never a finding) when the `board` on PATH differs from the running script: engines run commands through a login shell, so a stale installed copy wins over the wrapper's PATH — `install.sh` refreshes it. |

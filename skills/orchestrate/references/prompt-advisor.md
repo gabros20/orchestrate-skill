@@ -34,8 +34,8 @@ Options considered: [if any, with the executor's lean]
 - Flag anything in the situation description that smells wrong (wrong problem, missing risk),
   even if unasked — one line each.
 
-No preamble, no narration: return only your schema. Quote literals verbatim; state
-uncertainty explicitly.
+No preamble or narration (one visible line before a long command: what, why); return only your
+schema. Quote literals verbatim; state uncertainty explicitly.
 
 ## Return (<500 tokens)
 VERDICT: <the recommendation, one sentence>

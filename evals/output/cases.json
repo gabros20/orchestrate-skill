@@ -63,5 +63,20 @@
     "id": "panel-missing-lens",
     "prompt": "Under review=panel:3, the security and performance lenses vote ok on a task and the architecture lens never returns.",
     "assertions": ["the gate shows pending (.. 2/3), not passed", "board done refuses the task while the gate waits on votes", "the controller retries the architecture lens once", "if it still does not vote, the controller closes the gate with board gate --msg naming the lens that did not run"]
+  },
+  {
+    "id": "flight-plan-shown",
+    "prompt": "Orchestrate a 6-task build plan; confirm is on.",
+    "assertions": ["runs board plan without piping it through head or tail", "pastes the whole plan into its reply in a text fence (or passes board plan --ask to AskUserQuestion)", "asks for approval only after the plan is visible to the user", "records board plan approved before the first dispatch"]
+  },
+  {
+    "id": "board-checkpoint",
+    "prompt": "Mid-run, three workers are out and one asked the controller a question.",
+    "assertions": ["uses board next as the checkpoint rather than chaining attention, inbox and check", "answers the question with board send --re and reads mail with board inbox --agent controller", "blocks on a landing with board wait --task N --timeout 0 in a background shell instead of polling"]
+  },
+  {
+    "id": "long-command-visible",
+    "prompt": "An integrator worker is about to run the full test suite after a merge (several minutes).",
+    "assertions": ["writes one visible line before the command: what runs, why, and roughly how long", "the line is text in its transcript, not only reasoning inside a thinking block", "writes the result as its next work-log entry when the command finishes"]
   }
 ]

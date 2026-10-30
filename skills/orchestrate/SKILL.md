@@ -144,13 +144,15 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    on overload resume or nudge the existing agent rather than spawn a duplicate.
 7. **Prime with pointers, log milestones, report dense.** Workers keep a short work log in their
    own transcript; required safety and coordination messages always go out; routine narration and
-   raw output dumps never do.
+   raw output dumps never do. Before any command that may run long — tests, builds, scripts, waits —
+   every agent, the controller included, first writes one visible line: what runs, why, how long.
 8. **Do not orchestrate small coupled work.** If one agent can complete the task efficiently within
    one coherent context, use solo execution and optionally one reviewer.
-9. **No silent launch.** Before the first multi-agent dispatch, print the flight plan — the
-   topology, models, gates, and budget the user is about to pay for — and gate on their approval
-   ([flight plan](references/shared-flight-plan.md)). `confirm=off` skips the gate, never the
-   print; headless runs print and proceed.
+9. **No silent launch.** Before the first multi-agent dispatch, show the user the flight plan — the
+   topology, models, gates, and budget they are about to pay for — and gate on their approval
+   ([flight plan](references/shared-flight-plan.md)). Tool output is invisible to the user: paste the
+   whole `board plan` output in your reply, never through head/tail. `confirm=off` skips the
+   question, never the showing; `board dispatch` refuses while the plan is pending.
 10. **Reality over plan — redesign, never patch.** A failed plan assumption comes back up the
    hierarchy as `DESIGN_CONFLICT`, never as a workaround; route it to a fresh strongest-tier
    architect (internal design) or the user (product behavior) ([replan](references/shared-replan.md)).
@@ -181,24 +183,20 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    the board's lanes when the shape has more stages than the five defaults (`--lanes`).
 3. Create task briefs with [task-brief](scripts/task-brief) and validate them with
    [brief-check](scripts/brief-check).
-4. Render the flight plan from the resolved record (`board plan --why "…"`; in a text fence on terminals, `--format md` in apps) and gate on the
-   user's approval ([flight plan](references/shared-flight-plan.md)); apply any tweaks by
-   re-resolving that dimension and re-asking; record the outcome (`board plan approved`).
-5. Dispatch ready work the moment it is ready (rule 12), and journal it: every dispatch and return (`board dispatch N
-   --model M` names the agent `<role>-<task>` for you — `impl-3`, `lead-1`, `impl-1.1` — and
-   `board return N --agent …` closes it; a subprocess lane is one command, `board launch N --agent --engine --model
-   [--after M] -- brief.md`, which sleeps in the shell until task M's work is on disk, journals
-   its exit and receipt, and never starts its engine if that work cannot land), every gate
-   (`board review` / `board gate` / `board vote`), every machine check (`board exec N --name
-   tests -- <cmd>`), every recovery (`board nudge` / `board escalate`). Agents talk through the
-   journal, never mid-turn: `board send` / `inbox` / `wait` — information and questions only,
-   capped, loop-proof; `board learn N "…"` is a worker's one-line discovery, handed to its team
-   at their next board call together with any decision you recorded since their dispatch;
-   dispatch parallel workers with `--owns` so `board peers` tells each one
-   who else is working. Monitor without duplicating agents: `board attention`, `board inbox
-   --agent controller`, `board check`, and one blocking `board wait --task N --timeout 0` in a
-   background shell per landing you wait on (exit 3 = it cannot land). Integrate through the
-   selected strategy's owner.
+4. Render the flight plan (`board plan --why "…"`) and show all of it to the user — a text fence in
+   terminals, `--format md` in apps, or `board plan --ask` as the AskUserQuestion payload on Claude
+   Code — then gate on approval ([flight plan](references/shared-flight-plan.md)); apply tweaks by
+   re-resolving that dimension and re-showing; record the outcome (`board plan approved`).
+5. Dispatch ready work the moment it is ready (rule 12), always through the role's prompt template
+   (it carries the communication block a hand-written prompt drops), and journal every transition:
+   dispatch and return, gate and vote, machine check (`board exec N --name tests -- <cmd>`), recovery (`board
+   nudge` / `board escalate`); a subprocess lane is one command (`board launch … [--after M]`).
+   Dispatch parallel workers with `--owns`. Agents talk through the journal, never mid-turn
+   (`board send` / `board inbox` / `board wait`; `board learn` is a worker's one-line discovery). At every
+   checkpoint run `board next` — run state, what needs you most urgently with its command, the next
+   step; block on a landing with `board wait --task N --timeout 0` in a background shell (exit 3 =
+   it cannot land). Syntax: `board help controller` (a lead: `board help lead`). Integrate through
+   the selected strategy's owner.
 6. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
    and send failures back to the correct worker or owner.
 7. Close each gated unit with `board done N` (it writes the ledger line; refused over a failed
@@ -211,7 +209,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 Run [toolbox](scripts/toolbox) (repo recipes) and [capabilities](scripts/capabilities) (machine tools)
 once; reuse their files.
 The journal (`.orchestrate/journal.jsonl`) is the run's spine and the board a view over it, never
-a second record; `board --help` is grouped by role — the controller records transitions, workers
+a second record; `board help` indexes it by role — the controller records transitions, workers
 only observe (`board note` / `exec --agent <you>` / `learn` / mail; a read-only lane prints the
 line to carry in its return instead of failing), the user watches from a pane of their own (`board`).
 

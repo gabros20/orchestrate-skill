@@ -47,8 +47,8 @@ read it — the rubric IS the criteria]
 - Distinguish tool failure from task failure — "the test failed" and "the test failed to run" are
   different problems with different recoveries; say which in `observed`.
 
-No preamble, no narration: return only your schema. Quote literals verbatim; state
-uncertainty explicitly.
+No preamble or narration (one visible line before a long command: what, why); return only your
+schema. Quote literals verbatim; state uncertainty explicitly.
 
 ## Report (strictly this shape)
 TASK: pass | fail | blocked | needs-human-judgment
@@ -79,8 +79,8 @@ The question it must answer: [the goal, verbatim]
 - Does the report answer the question asked? A missing part is a finding.
 - Do not rewrite the report. Do not soften a refutation.
 
-No preamble, no narration: return only your schema. Quote literals verbatim; state
-uncertainty explicitly.
+No preamble or narration (one visible line before a long command: what, why); return only your
+schema. Quote literals verbatim; state uncertainty explicitly.
 
 ## Report — write it to [absolute path to .orchestrate/research/factcheck.md], return it inline
 FACTCHECK: pass | fail | blocked

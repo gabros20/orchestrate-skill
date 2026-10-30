@@ -153,9 +153,10 @@ live-verified against v0.28.0; end-to-end smoke run pending.
 
 ## Safety and quality model
 
-- **No silent launch**: before the first multi-agent dispatch, the flight plan prints the
-  topology, models, effort, gates, and budget, and gates on the user's approval
-  (`confirm=off` skips the gate, never the print).
+- **No silent launch**: before the first multi-agent dispatch, the agent shows you the flight plan
+  — topology, models, effort, gates, budget — pasted whole into its reply (tool output is invisible
+  to you), and gates on your approval; `board dispatch` refuses until the plan has an outcome
+  (`confirm=off` skips the question, never the showing).
 - **Controller does not silently implement** failed worker tasks.
 - **Artifacts on disk are the interface** under `.orchestrate/`.
 - **Every dispatch pins a model and a reasoning effort** rather than inheriting an accidental
@@ -212,7 +213,8 @@ controller's "act on this" list; lanes are todo · in progress · review · done
 
 ```bash
 board                                   # live board in your pane · e expand · a attention-only · r reload · q
-board plan                              # the flight plan, priced from past receipts
+board plan                              # the flight plan, priced from past receipts — the agent pastes it whole
+board next                              # the controller's checkpoint: what needs action, with its command
 board exec 3 --name tests -- npm test   # a check through the journal: exit + duration on the card
 board check --replay                    # reconciliation: chain, gates, receipts, journal vs disk
 board resume                            # the handoff's state layer, with a receipt and resume-by-id lines

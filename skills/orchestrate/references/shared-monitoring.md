@@ -28,44 +28,30 @@ Match the surface to the mechanism; don't poll what notifies you.
 ## The board (any host)
 
 `scripts/board` renders the journal + `.orchestrate/` as a live kanban in a pane the USER opens
-(`board`; zero-install copy at `.orchestrate/board`). It re-renders on artifact deltas and keeps
-two clocks per card: **artifact time** (deliverable mtimes — the only liveness signal, rule 3b)
-and **heartbeat time** (`board note`, events — never liveness). `! stale` fires after 10 min
-without an artifact delta on ANY open stint, reviewers included; a chatty worker cannot hide a
-missing deliverable. It observes; it never transitions. Keep it honest by journaling every
-dispatch AND return (`board dispatch N --agent <real id> --model M`, `board return N --agent
---status`) — a dispatch with no return is exactly the silence rule 3 is about. Recovery actions
-are journaled too (`board nudge`, `board escalate N --to MODEL --why`), so the roster shows who was
-nudged or escalated. **Tests and scripts are visible too**: run them THROUGH the journal —
-`board exec N --name tests -- npm test` captures the log under `raw/`, journals exit + duration,
-and the card shows `tests ok 12s` / `lint fail` (a `checks` line in the header counts them; a
-failed check is an `x` in attention and blocks `board done`). Lanes are a projection: `board init
---lanes todo,implement,verify,review,integrate,done,blocked` shows a verifier's stint under
-VERIFY and an integrator's under INTEGRATE — the state model underneath never changes.
-**Learnings** ride the same journal: `learn N · k new for controller` in the header, `board learn` lists
-them, `board inbox --agent controller` hands them over for curation; workers receive their team's
-learnings and any decision or rail recorded since their dispatch at their next board call — the
-digest, one watermark, never mid-turn. **Mail** rides the same journal: a worker's `--ask` is a `?` in attention with the reply command
-ready, `mail N unread · M for controller` sits in the header, and `board inbox --agent controller` is
-part of every liveness check (an unanswered ask is a worker parked in `board wait`). **The
-controller's own watch is the journal, and the reliable primitive is a blocking wait that
-exits**: `board wait --task N --timeout 0` in a background shell returns once per landing (0 =
-its work is on disk, 3 = it cannot land: BLOCKED/REFUSED or a dead lane) — one clean
-notification, CLI-agnostic, no stream to lose. A streaming tail (`board follow --for controller`:
-one line per event that needs you, ends on `finish`; or a harness monitor) is a convenience on
-top, never the only signal — observed: a harness stream delivered lane exits 10–17 min late,
-twice. `board wait --agent controller` blocks until the next mail. Lanes started with
-`board launch` journal their `exit` — a lane that exited with no return is `!`/`x` in attention
-before the stale clock would have noticed; exit 125 means its dependency cannot land and its
-engine never started (return it BLOCKED, fix the dependency, relaunch). Controller
-side: `board attention` lists what to act on, most urgent first (`x` blocked / failed
-gate / failed check, `!` stale, silent reviewer or a third attempt with no escalation, `?`
-pending gate / concerns / mail for the controller, a lane's leftover processes — `board reap`); run `board check` at every liveness check and before any recovery
-action — it lists journal-chain breaks, dispatched-never-returned, reviewer silence,
-report-without-review, done over a failed gate or check, done with no gate ever opened, quality
-before spec, xcli DONE without commits or without a usage receipt, model drift and budget
-overrun, and exits 1 while any remain; `board check --replay` re-derives every card from the
-journal alone and reports any fact that reached the disk without its journal line.
+(`board`; zero-install copy at `.orchestrate/board`). It observes; it never transitions. Two clocks
+per card: **artifact time** (deliverable mtimes — the only liveness signal, rule 3b) and **heartbeat
+time** (`board note`, events — never liveness); `! stale` fires after 10 min without an artifact
+delta on ANY open stint, reviewers included, so a chatty worker cannot hide a missing deliverable.
+It is honest only if you journal every dispatch AND return (`board dispatch N --agent <real id>
+--model M`, `board return N --agent --status`) and every recovery (`board nudge`, `board escalate`);
+machine checks run THROUGH it (`board exec N --name tests -- npm test`: log under `raw/`, `tests ok
+12s` on the card, a failed check blocks `board done`). Lanes are a projection (`board init --lanes
+todo,implement,verify,review,integrate,done,blocked`); the state model underneath never changes.
+
+**Your checkpoint is `board next`** — at every liveness check and before any recovery: run state,
+what needs you most urgently (`x` blocked/failed, `!` stale or a lane that exited without a return,
+`?` a pending gate, concerns, a question from a worker still at work), what `board check` found, what
+is queued, and the next command. It reads; it never acks — `board inbox --agent controller` hands
+over the mail and learnings it summarizes. **The reliable wait is a blocking command that exits**:
+`board wait --task N --timeout 0` in a background shell returns once per landing (0 = on disk, 3 =
+it cannot land) — CLI-agnostic, no stream to lose; `board wait --agent controller` blocks for mail.
+A streaming tail (`board follow --for controller`, or a harness monitor) is a convenience on top,
+never the only signal — observed: a harness stream delivered lane exits 10–17 min late, twice. A
+`board launch` lane journals its `exit`: one that exited with no return is in attention before the
+stale clock would notice; exit 125 = its dependency cannot land and its engine never started (return
+it BLOCKED, fix the dependency, relaunch). Leftover processes: `board reap`. `board check --replay`
+re-derives every card from the journal alone and reports any fact that reached the disk without its
+journal line.
 
 ## In-session (Claude Code)
 

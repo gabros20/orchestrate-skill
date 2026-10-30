@@ -11,6 +11,49 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.33.0] — 2026-10-30
+
+### Fixed
+
+- **The flight plan reaches the user** (`scripts/board`, `SKILL.md` rule 9 and step 4,
+  `shared-flight-plan.md`): in 5 of 5 real runs the agent never showed it — it piped `board plan`
+  through `tail`, then recorded "plan printed". Now `board dispatch` / `launch` refuse while a
+  resolved run's plan is pending; the plan is ≤ ~22 lines and ends with a relay line (the user cannot
+  see tool output — paste it whole); `board plan --ask` prints the AskUserQuestion payload whose
+  Approve option previews the plan; `--full` keeps the long form. `confirm=off` records `skipped`.
+- **The board stops saying stale things** (`scripts/board`): journal transitions own a card's state
+  (a brief touched after its dispatch no longer pulls the task back to TODO); a task's ledger line
+  closes the stint it outlived (`closed, no return`, never "stale 477h"); a question counts only while
+  its asker is at work; one finish predicate — the header (`RUN COMPLETE (OPEN WORK)`) and `check`
+  agree; a finished run's plan says "nothing left to run"; effort prints once (`opus @high`).
+
+### Added
+
+- `board next` — the controller's checkpoint in one call (≤ 15 lines; reads, never acks).
+- `board help [controller|lead|worker|views]` — a ~900-character index by role (was ~7k), sections
+  from the docstring as the one source; a LEADS section; a parse error is one line, not a usage dump.
+- `board hold "reason"` / `--off` — the user's pause as run state (HELD on the board; dispatch warns).
+- `board send --ask --wait` — ask and block in one call.
+
+### Changed
+
+- **The live header is bounded** (~8 lines): the top action spelled out on the attention line, one
+  run line, one record line, the latest rail plus "+N earlier"; finished runs say what was left open.
+  `e` / `show -x` shows the full header.
+- Durations in days (`19d22h`), dates on times not from today, backticks stripped from titles,
+  `board agents` sorted by task with normalized roles and empty columns hidden, attention mail
+  clipped to one line, removed workspaces dropped from `board runs`.
+- **Instructions keep semantics; the CLI keeps syntax**: `SKILL.md` step 5, the journal section of
+  `shared-contracts.md` and the board section of `shared-monitoring.md` were rewritten around
+  `board next` / `board help` (−400 and −330 tokens); the WORKER block uses `send --ask --wait`.
+- **A visible line before every long command** (WORKER block, MINIMAL line, `SKILL.md` rule 7): before
+  tests, a build, an install, a script or a wait, every agent — the controller included — writes one
+  line as visible text, not thinking: what runs, why, how long. Observed: a subagent ran a long
+  foreground command for 16 minutes with nothing on screen (5.5-generation models put text between
+  tool calls into thinking blocks, empty in the UI). The WORKER block ends at ≈758 tokens (the mail
+  tightening paid for most of it), MINIMAL ≈31. `SKILL.md` step 5: dispatch through the role's
+  prompt template — a hand-written prompt drops the communication block.
+
 ## [1.32.0] — 2026-10-30
 
 ### Added

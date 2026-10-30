@@ -38,8 +38,8 @@ You are assessing a task to recommend an orchestration strategy. Measure; don't 
 - Recurrence: one-shot, grind-until-done, or recurring-on-trigger?
 - Debate-worthiness: multiple valid architectures? unclear root cause? high blast radius?
 
-No preamble, no narration: return only your schema. Quote literals verbatim; state
-uncertainty explicitly.
+No preamble or narration (one visible line before a long command: what, why); return only your
+schema. Quote literals verbatim; state uncertainty explicitly.
 
 ## Return (this schema, nothing else)
 kind: build | research | fix | review | content | ops

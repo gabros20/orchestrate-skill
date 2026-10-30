@@ -157,84 +157,72 @@ at the step it already performs. Every line is an envelope — `schema`, `run` (
 detects a line edited in place, inserted, removed or reordered, and a resume receipt can name the
 exact cursor it was generated at. **Never edit the journal; re-resolve with `board set`.**
 
-Vocabulary (all through `scripts/board`): `board init PLAN --strategy … --goal` (kickoff: archives
-the previous run's workspace to `archive/<run-id>/`, writes the `run` record with branch + base
-sha, queues every task, generates `run.md`'s Resolved block; Prepare inits with `--goal --prep`
-only and triage records the rest with `board init PLAN --resume --strategy …`, which keeps what was
-recorded, keeps the run's branch and base, and puts an approved plan back to pending when it
-re-resolves anything) · `board set key=value` (re-resolve a
-dimension; the plan goes back to pending; `lanes=todo,implement,verify,review,integrate,done,blocked`
-declares the board's lanes — a projection of state × role, `todo/done/blocked` required) · `board
-plan approved|changed|skipped` · `board dispatch N --model M [--agent --role --engine
---effort --worktree --owns --by <lead> --session ID --log raw/lane-N.jsonl --cmd-file]` (`--model` is REQUIRED — rule
-3; every implementer dispatch is a new *attempt*, which resets the review cycle; the session id
-is what `board resume` resumes by). **Agent names are `<role>-<task>[-tag]`** — `impl-3`, `lead-1`,
-`impl-1.1` (under `lead-1`), `spec-3`, `quality-3`, `verify-3`, `integ-1`, `fix-3-r2`: the role says
-what the sender IS when a worker reads `[peer impl-1.2]`, the task id says WHERE it sits in the tree,
-the run makes it unique (`research-2` for a research lane, `synth-5` for its synthesizer). Omit `--agent` and the board derives it from `--role` and the task
-(`-rN` when the name would repeat — a re-dispatch is attempt N); an explicit name is refused unless
-it fits; `controller` is reserved; a trailing tag tells twins apart (`spec-3-codex`). Spawn native
-subagents under the same name (`name:`) so the journal and the host agree · `board return N --agent A --status
-DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED [--commits --report --observed-model
---tokens --session]` (the typed return; rule 13's observation; usage receipts) · `board review N
---kind spec|quality --round K` (gate opened) · `board gate N --kind K --verdict ok|fail|warn
-[--findings FILE]` (gate closed explicitly — outranks the findings-file parse, which takes the FIRST
-verdict mark in text order) · `board launch N --agent A --engine E --model M -- spec.md` (the lane as one command: dispatch +
-wrapper + session; `exit` and `receipt` events land when it ends — observations, never
-transitions; `board receipt` fetches or states a receipt by hand) · `board exec N --name tests --
-<cmd>` (a machine check run THROUGH the journal: log under `raw/`, exit + duration journaled;
-`board result N --name --exit` for one that ran elsewhere) · `board nudge` / `board escalate N --to MODEL --why` · `board decide ID
-"…"` (mirrors into `decisions.md`) · `board rail "…"` · `board done N [--msg]` (writes the ledger
-line itself — refused while the current attempt has a failed gate, a failed check, or a gate waiting on votes) · `board finish --gate pass|fail
---evidence PATH` (`pass` is refused while `check --finish` is dirty unless `--force --reason`; binds
-HEAD, the goal hash and the journal cursor, so later work, a moved HEAD or a changed goal render it
-STALE). Workers get two optional observation lines — `board note N "<msg>"` (a heartbeat, never a
-status and never liveness — liveness is artifact deltas only, `shared-monitoring.md` 3b) and
-`board exec N --name tests --agent <you> -- <cmd>` (their own verification run; an exit code is an
-observation, not a transition) — and **mail**: `board send --from <you> --to <agent|controller|all>
-"…" [--ask] [--re SEQ]` / `board inbox --agent <you>` / `board wait --agent <you> [--task N]` (mail, or a dependency's
-work on disk — exit 3 when it cannot land) / `board peers --agent <you>` (open peers and what they own; returned peers and what
-they delivered). Mail is journaled (`mail`, and an `ack` when read) and delivered at the recipient's
-next board call — every worker-side command (`note`, `exec`, `send`, `peers`, `vote`) hands
-over unread mail, so delivery rides on calls the worker makes anyway; never mid-turn, on any host.
-`board follow [--for controller]` is the controller's filtered tail of the same journal. Controller mail is an INSTRUCTION; peer mail is
-INFORMATION; in a tree, `--by <lead>` on a dispatch makes the lead's mail an instruction too and
-routes the worker's `--to controller` asks to that lead while it is open (`strategy-hierarchical.md`). Loop-proof by construction: `MAIL_CAP` sends per stint, `THREAD_CAP` replies deep,
-no duplicates, no mail to a returned agent; `board check` flags chatter, unread-past-stale and
-unanswered asks. Votes: `board vote N --kind K --agent A --verdict ok|fail|warn` — the gate is
-derived by quorum (`panel:N` majority once every lens voted, `consensus:N` any-deny) under the rules in force when the
-vote was cast; an explicit `board gate` outranks. Parallel writers are serialized by a journal lock;
-a lane in a read-only sandbox cannot write it, so worker-side commands print the line to carry in
-the inline return instead of failing. **Learnings**: `board learn N "<one line>" --agent <you>
-[--kind gotcha|failed|invariant|constraint|convention|fact|question] [--path P]` is a worker's
-third observation line — what the next worker would re-pay — capped (3 per stint, 300 chars),
-deduped run-wide, team-scoped (the sender's dispatcher's team, its lead, its own workers; the
-controller sees all). Every worker-side call hands over one **digest** under one watermark: unread
-mail, learnings since its last check, and the decisions (`board decide ID "…" --why "…"`; re-deciding
-an id supersedes it) and rails recorded AFTER its dispatch — the brief snapshot predates them, so
-the worker reconciles or returns NEEDS_CONTEXT; nothing arrives mid-turn. **Project memory**:
-`board memory [--observation|--handoff --scope a,b --out PATH]` renders the run as ONE
-project-context record (decisions with their why, failed attempts, learnings, commits,
-verification, the frontier — paths, never bodies); the board prints the `ctx append` / `ctx
-handoff` line when the repo keeps `.agent/PROJECT_CONTEXT.jsonl` and never runs it. `board
---help` is grouped by role.
+**Who writes what.** Only the controller records transitions — a worker saying "done" is a
+proposal. Workers have three observation lines — `board note` (a heartbeat, never liveness:
+`shared-monitoring.md` 3b), `board exec N --name tests --agent <you> -- <cmd>` (their own check: an
+exit code is an observation, not a transition), `board learn` (one line the next worker would re-pay:
+3 per stint, 300 chars, deduped run-wide, team-scoped) — and mail. Every command's syntax is in
+`board help controller|lead|worker|views`; the script's docstring is the one source.
 
-Views, all derived from the journal plus the files above (briefs → todo, reports and findings →
-review, ledger → done — final, always wins): the kanban the user watches from their own pane
-(`board`; `e` all cards, `enter` one card, `a` attention only), `board plan` (the flight plan),
-`board agents` (roster with attempts, drift, usage), `board log`, `board attention` (what to act on,
-most urgent first), `board task N`, `board check [--finish] [--replay] [--json]` (chain integrity,
-dispatched-never-returned, reviewer silence, ledger lines naming missing commits/artifacts, done
-over a failed gate or check, done with no gate opened, quality before spec, xcli DONE without
-commits or receipt, a third attempt without escalation, drift, budget overrun, unapproved launch,
-finish validity; `--replay` derives every card from the journal alone and diffs the disk view),
-`board learn` (the run's learnings), `board postmortem` (per-tier evidence for the evolve pass,
-recommend-only), and
-`board resume` (the handoff's
-state layer with a receipt: head, journal cursor, probed pointers, resume-by-id line per open
-lane, cost per accepted task, `NOT_PROVEN` on every claim no artifact backs). **The journal never outranks the
-ledger**, and it obeys the invariants: a worker saying "done" is a proposal, so **only the
-controller records transitions**. The user opens and closes the pane; the skill only keeps the record.
+**Kickoff.** `board init PLAN --strategy … --goal` archives the previous run to `archive/<run-id>/`
+(one workspace, one run), writes the `run` record with branch + base sha, queues every task and
+generates `run.md`'s Resolved block. Prepare inits with `--goal --prep` only; triage records the
+rest with `board init PLAN --resume --strategy …`, which keeps what was recorded and puts an approved
+plan back to pending when it re-resolves anything. `board set key=value` re-resolves a dimension
+(`lanes=todo,implement,verify,review,integrate,done,blocked` declares the board's lanes — a
+projection of state × role; `todo/done/blocked` required).
+
+**Dispatch and return.** Every dispatch pins `--model` (rule 3) and is refused while the flight
+plan is pending; every implementer dispatch is a new *attempt*, which resets the review cycle; the
+session id is what `board resume` resumes by. **Agent names are `<role>-<task>[-tag]`** — `impl-3`,
+`lead-1`, `impl-1.1` (under `lead-1`), `spec-3`, `quality-3`, `verify-3`, `integ-1`, `fix-3-r2`,
+`research-2`, `synth-5`: the role says what a sender IS, the task id where it sits in the tree.
+Omit `--agent` and the board derives it (`-rN` on a repeat); `controller` is reserved; a trailing tag
+tells twins apart (`spec-3-codex`); spawn native subagents under the same name. `board return N
+--agent A --status …` is the typed return (`--observed-model` is rule 13's observation, `--tokens`
+the receipt). A task that reaches the ledger closes any stint that never returned — it shows as
+"closed, no return", never stale. `board launch` is dispatch + wrapper + session in one command;
+its `exit` and `receipt` events are observations, never transitions.
+
+**Gates and done.** `board gate N --kind K --verdict ok|fail|warn [--findings FILE]` closes a gate
+explicitly and outranks the findings-file parse (which takes the FIRST verdict mark in text order).
+`board vote` derives the gate by quorum — `panel:N` majority once every lens voted, `consensus:N`
+any-deny — under the rules in force when the vote was cast; an explicit `board gate` outranks.
+`board exec` runs a machine check through the journal (log under `raw/`, exit + duration on the
+card); `board result` records one that ran elsewhere. `board done N` writes the ledger line itself —
+refused while the current attempt has a failed gate, a failed check, or a gate waiting on votes.
+`board finish --gate pass|fail --evidence PATH` binds HEAD, the goal hash and the journal cursor:
+later work, a moved HEAD, a changed goal or an open task means it no longer stands; `pass` is
+refused while `check --finish` is dirty unless `--force --reason`. `board hold "the user's reason"`
+/ `--off` records the user's pause as run state (HELD on the board), never as a rail.
+
+**Mail and the digest.** `board send` / `board inbox` / `board wait` / `board peers` — journaled, delivered at the
+recipient's next board call (every worker-side command hands over unread mail), never mid-turn, on
+any host. Controller mail is an INSTRUCTION; peer mail is INFORMATION; in a tree, `--by <lead>` on a
+dispatch makes the lead's mail an instruction too and routes the worker's `--to controller` asks to
+that lead while it is open (`strategy-hierarchical.md`). `send --ask --wait` asks and blocks in one
+call. Loop-proof by construction: `MAIL_CAP` sends per stint, `THREAD_CAP` replies deep, no
+duplicates, no mail to a returned agent. One watermark per checkpoint hands over unread mail, the
+team's learnings, and the decisions (`board decide ID "…" --why "…"`; re-deciding an id supersedes it)
+and rails recorded AFTER the dispatch — the brief snapshot predates them, so the worker reconciles or
+returns NEEDS_CONTEXT. A question waits only while its asker is still at work.
+
+**Project memory.** `board memory [--observation|--handoff --scope a,b --out PATH]` renders the run
+as ONE project-context record (decisions with their why, failed attempts, learnings, commits,
+verification, the frontier — paths, never bodies); the board prints the `ctx append` / `ctx
+handoff` line when the repo keeps `.agent/PROJECT_CONTEXT.jsonl` and never runs it. Parallel writers
+are serialized by a journal lock; a lane in a read-only sandbox cannot write it, so worker-side
+commands print the line to carry in the inline return instead of failing.
+
+**Views**, all derived from the journal plus the files above (briefs → todo, reports and findings →
+review, ledger → done — final, always wins): `board next` (the controller's checkpoint: run state,
+what needs you most urgently with its command, the next step), the kanban the user opens in their
+own pane (`board`), `board plan`, `board agents`, `board attention`, `board task N`, `board log`,
+`board check [--finish] [--replay]` (chain integrity, silence, ledger vs disk, gate order, drift,
+budget, finish validity; `--replay` re-derives every card from the journal alone), `board learn`,
+`board postmortem` (evidence for the evolve pass, recommend-only) and `board resume` (the handoff's
+state layer with a receipt; `NOT_PROVEN` on every claim no artifact backs). **The journal never
+outranks the ledger.**
 
 ## Task cards (parallel/team writers)
 

@@ -39,7 +39,10 @@ A dedicated reviewer that can REJECT the plan and force rework — cheaper than 
 Forms, by rising cost: controller self-check against the four lenses (overbuilt/fragile/missing/
 structure-fights-goal) → independent plan-review subagent → adversarial debate
 (`strategy-adversarial.md`) → team plan-approval (teammate stays read-only until the lead
-approves). Rejected plans go back with REASONS; cap the cycles (default 3), then escalate.
+approves). An independent plan reviewer first restates the plan in its own words — what gets
+built and how the parts connect; a part it cannot connect, or a restatement that misses the plan's
+intent, is a finding (a plan whose every term is defined can still fail to connect). Rejected
+plans go back with REASONS; cap the cycles (default 3), then escalate.
 
 ## 2. Output review (after execution)
 
@@ -61,14 +64,32 @@ non-compliant code is wasted tokens.
   EVERYTHING found, each with severity + confidence; filtering/triage is the CONTROLLER's job at
   the dedup/merge step. Terseness rules apply to a reviewer's prose, never its finding count.
   Findings go to the findings file (`shared-contracts.md`) so inline caps can't truncate them.
+- **Triage needs evidence.** Dismiss a finding only with evidence the reviewer could have read — a
+  `file:line`, a recorded decision (`decisions.md` id), a command's output — journaled on the
+  gate: `board gate N --kind K … --msg "settled: <file:line> <issue> — <evidence>"`. "Intended" is
+  not evidence, and neither is wanting to dismiss: you wrote the briefs. Evidence the reviewer
+  could not see (a user's spoken call, an unwritten convention) goes into the record first
+  (`board decide`) or to the user. Never lower a severity — dismiss with evidence or act at the
+  severity given — and never add code or comments only to quiet a reviewer.
 - Every gate is journaled: `board review N --kind K --round R` when dispatched, `board gate N
   --kind K --verdict ok|fail|warn --findings <file>` when it closes (the explicit verdict outranks
   the findings-file parse). A fix wave is a new implementer *attempt* — the review cycle resets
   and the ledger stays closed (`board done` refuses) until the current attempt's gates pass.
-- Findings loop: Critical/Important → fix subagent → RE-REVIEW (no skipping); Minor → ledger,
-  batch to final review. ⚠️ "cannot verify from diff" → the CONTROLLER resolves (it holds
-  cross-task context), never auto-pass. N failed rounds on the same task (default 2–3) is a
-  model-tier escalation (`shared-model-routing.md` rule 4), never another identical round.
+- Findings loop: Critical/Important → fix subagent → RE-REVIEW (no skipping); the fix answers
+  its findings and nothing more — no defensive extras, options or layers they did not ask for.
+  Minor → ledger, batch to final review. ⚠️ "cannot verify from diff" → the CONTROLLER resolves
+  (it holds cross-task context), never auto-pass.
+- **Convergence, not zero findings.** A fresh reviewer samples differently each round, so an
+  empty round is rare even when the code improves. A finding dismissed with evidence is
+  **settled**: the same issue at the same place in a later round stays closed (the gate `--msg`
+  lines are the list, kept across attempts; reviewers never see it — that is pre-judging). A fix does not settle a finding: the same issue back at the same place means the
+  fix failed — reopen it. A round is **clean** when it raises no unsettled Critical/Important.
+  **Churn** — a new finding on code a fix just wrote, which undoing that fix would resolve — stops
+  the loop: it is a trade-off the brief did not settle, so it goes to replan triage
+  (`shared-replan.md`), never another round. N failed rounds on the same task (default 2–3) —
+  rounds with an unsettled Critical/Important, not churn — is a model-tier escalation
+  (`shared-model-routing.md` rule 4), never another identical round. (Adapted from
+  google/elephant-goldfish-model, Apache-2.0.)
 - **A verdict binds the brief it judged**: the findings file records the brief's content hash
   (`git hash-object <brief>`) beside the judge line — a brief edited after review re-opens the
   gate, because the gate no longer describes the work that will ship.
@@ -102,10 +123,14 @@ weaken are off-limits precisely because bending them is how it would win.
   Diverse lenses catch what redundant copies can't.
 - **Votes, not a verdict you tally by hand**: each panelist casts `board vote N --kind <gate>
   --agent <me> --verdict ok|fail|warn --why "…"`; the gate is derived — `panel:N` = majority of
-  ok, `consensus:N` = any-deny (one fail fails it) — under the rules in force when the vote was
-  cast, and shows on the card as `approve 2/3 ok` / `fail (deny: sec-lens)`. The controller may
-  still close a gate explicitly (`board gate` outranks) — with the reason journaled. `kind=plan`
-  makes the plan-veto a multi-approver gate with the same mechanics.
+  ok once every lens has voted, `consensus:N` = any-deny (one fail fails it) — under the rules in
+  force when the vote was cast, and shows on the card as `approve ok 2/3` / `approve fail 1/3
+  (deny: sec-lens)`. The controller may still close a gate explicitly (`board gate` outranks) —
+  with the reason journaled. `kind=plan` makes the plan-veto a multi-approver gate with the same
+  mechanics.
+- **A lens that never votes is a hole, not a vote.** The gate stays pending (`.. 2/3`) and
+  `board done` refuses over it. Retry the lens once; then close the gate yourself with the gap
+  named (`board gate N --kind K --verdict … --msg "<lens> not run: …"`).
 - Lenses may also decorrelate by INPUT — diff-only · codebase-only (still brief + constraints, no
   diff) · diff+report+brief (standard) — or by ENGINE LINEAGE (xcli peers/peer tier); worker
   transcripts are post-mortem forensics only (`shared-monitoring.md` paths), referenced, never

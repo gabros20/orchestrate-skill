@@ -80,7 +80,7 @@ options · blast radius · user-visible? Local, reversible choices stay yours.
    types) means their designs disagree → DESIGN_CONFLICT with both sides, never glue.
 5. Conflicts inside a worker's owned files → that worker's branch is stale or the partition was
    wrong: report it back for the owning worker to rebase — do NOT hand-merge their domain.
-5. After all merges: full suite + typecheck/lint; `git worktree list` must be clean (report any
+6. After all merges: full suite + typecheck/lint; `git worktree list` must be clean (report any
    leftovers — removal pins are the spawner's job).
 
 ## Return (verdict first, <1000 tokens)

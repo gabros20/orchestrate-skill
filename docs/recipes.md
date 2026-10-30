@@ -130,7 +130,9 @@ far more than the debate.
 ```
 Add `review=panel:3` (or any N) to **any** strategy to replace its default review gate with N
 reviewers, each assigned one lens (security/performance/architecture/testing/a11y/…), deduped by
-file:line with conflicting severities resolved to the higher one.
+file:line with conflicting severities resolved to the higher one. The gate passes only once every
+lens has voted — a lens that never reports leaves it pending until it is retried or the controller
+closes the gate naming the gap.
 
 **Research with evaluated claims**
 ```

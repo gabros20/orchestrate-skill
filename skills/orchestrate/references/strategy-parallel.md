@@ -56,6 +56,10 @@ the worker cap (`workers=`, 3–5). Ready depends on the edge:
   dispatch (`git worktree add <path> -b agent/<task> <integration-branch>`) and pin that sha —
   native `isolation: worktree` cuts from origin/HEAD unless `worktree.baseRef: "head"` is set.
 
+**Proof first**: when several tasks rest on an assumption nobody has run in this stack, the first
+implementation wave carries one thin task that runs it end to end, and the tasks resting on it
+take a hard edge to it (`triage.md`) — a broken assumption then costs one task, not a wave.
+
 `board wait --task N` and `board launch … --after N` fire on N's *return* — right for soft edges
 and read-only inputs; a hard edge waits for `board done N` and the merge. Reviews run as each task
 lands, merges as each passes its gates — the slowest task never holds the fastest one's review or

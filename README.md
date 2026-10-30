@@ -52,6 +52,9 @@ waves inside one domain, and staged only for a true chain; **research** runs as 
 lanes ([shared-research.md](skills/orchestrate/references/shared-research.md)) with synthesis and a
 fact-check; **fix**, **review**, **content** and **ops** have their own defaults
 ([triage.md](skills/orchestrate/references/triage.md)). The gates never change with the shape.
+When several tasks rest on something nobody has run in this stack — a library's real behavior, a
+protocol, a performance budget — the first wave carries one thin proof task, and the tasks resting
+on it wait for it: a broken assumption costs one task, not a wave.
 
 | Strategy | Use when |
 |---|---|
@@ -158,6 +161,11 @@ live-verified against v0.28.0; end-to-end smoke run pending.
 - **Every dispatch pins a model and a reasoning effort** rather than inheriting an accidental
   default — and verifies the pin actually landed.
 - **Dual review is ordered**: spec review, then quality review.
+- **Review rounds converge**: a finding is dismissed only with evidence the reviewer could read,
+  and it stays settled when a later fresh reviewer raises it again; a fixed finding that returns
+  is reopened, and a fix that creates the next finding goes to replan, not another round.
+- **Workers stay in scope**: a worker changes only what its task needs, lists what it noticed
+  elsewhere (Noticed, not touched) instead of fixing it, and stops when its checks pass.
 - **Ledger before memory**: durable progress wins over recollection after resume or compaction.
 - **No duplicate workers on overload**: resume or nudge the existing worker.
 - **Branch and loop rails stay active**: explicit consent, cycle caps, kill switch, and open-work cap.
@@ -221,8 +229,8 @@ sandbox degrades to a printed line instead of failing. The receipt names the mod
 served the lane (aliases move server-side), and no lane fans out on its own: Claude lanes run with
 workflows off. When reality breaks the plan, a worker never patches around it: it returns
 `DESIGN_CONFLICT`, and a fresh strongest-tier architect redesigns (or the user decides, when
-users would see the change) before work continues on the new plan. Panels vote (`board vote`): majority or
-any-deny, derived.
+users would see the change) before work continues on the new plan. Panels vote (`board vote`): majority once
+every lens has voted, or any-deny, derived — a lens that never reports leaves the gate pending.
 
 ### Shared context
 

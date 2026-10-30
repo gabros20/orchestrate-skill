@@ -92,7 +92,8 @@ D-<task>.<n>`) · criteria before code, once (every task's acceptance checks as 
 non-implementer, before the first implementer starts) · its tasks in waves on the domain's
 dependency graph, each worker in its own worktree cut from the domain branch, dispatched
 on readiness — a hard dependency is ready once gated and merged into the domain branch
-(`strategy-parallel.md`) · spec then quality review as each task lands ·
+(`strategy-parallel.md`), proof first when several of them rest on an assumption nobody has run
+in this stack (`triage.md`) · spec then quality review as each task lands ·
 merge each gated branch into the domain branch, resolving conflicts itself (bouncing a merge back to
 the worker only when it needs that worker's intent) · the domain's machine checks green on the
 domain branch · then its typed return. The lead never implements; it plans, dispatches, reviews,
@@ -107,6 +108,9 @@ merges. Cross-domain contracts are the controller's, decided before any lead sta
    board the top-level tasks are the domains (`## Task 2: Backend`), one per lead; the plan's tasks
    become each lead's dotted subtasks (`board todo 2.1 …`, journaled by the lead) — regroup a flat
    plan that way before `board init PLAN --resume`. Prepare's Task 0 stays a single worker every lead waits for.
+   A cross-domain seam nobody has run in this stack (the client consuming the server's stream, the
+   sync engine on the mobile runtime) gets the same shape: proof first — one thin task across the
+   domains, a single worker that every lead resting on the seam waits for (`triage.md`).
 2. Dispatch sub-orchestrators with briefs; they run their own worker loops and return typed
    reports + artifacts on disk.
 3. Integrate: the integrator merges the domain branches into the run branch in dependency order,

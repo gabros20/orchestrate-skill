@@ -44,6 +44,9 @@ Branch: [agent/<domain>, cut from <run branch> @ <sha>] — your workers' worktr
 3. Dispatch in waves on your tasks' dependency graph, on readiness, never at a barrier: a task that
    needs only an agreed interface starts at once; one that needs another task's code starts when
    that task is gated and merged into your domain branch, in a worktree cut from the branch tip.
+   Proof first: when several of your tasks rest on an assumption nobody has run in this stack,
+   your first wave carries one thin task that runs it end to end, and the tasks resting on it
+   start once it is gated and merged.
 4. As each task lands: spec review, then quality review (fresh reviewers); fixes go back to the
    worker. Then merge its branch into your domain branch yourself — resolve conflicts from the
    briefs and reports; bounce a merge to the worker only when it needs that worker's intent.
@@ -128,7 +131,8 @@ DESIGN_CONFLICT to the controller with the worker's report; never patch across a
 ## Return (INLINE, <1500 tokens)
 Verdict first. Findings summary. Artifact paths (reports your workers wrote, files changed).
 Code domains: the domain branch, its head sha, and the checks that ran green on it (`board exec`
-names). Cross-domain flags. What you did NOT cover and why.
+names). Cross-domain flags, and your workers' Noticed, not touched items your domain did not take
+up. What you did NOT cover and why.
 DELIVERING this return is your completion condition — finishing the domain and going idle
 without it means the domain is NOT done. Running as a teammate or background agent, deliver
 it via SendMessage to the parent controller as your final action.

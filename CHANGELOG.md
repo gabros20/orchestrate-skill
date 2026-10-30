@@ -11,6 +11,72 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.32.0] — 2026-10-30
+
+### Added
+
+- **Proof first** (`references/triage.md`, `strategy-parallel.md`, `strategy-hierarchical.md`,
+  `prompt-sub-orchestrator.md`): when several tasks rest on an assumption nobody has run in this
+  stack — a library's real behavior, a protocol, a performance budget, a platform API, the seam
+  every task crosses — the plan gets one thin end-to-end task in the first implementation wave,
+  beside every task that does not rest on it, and the tasks that do take a hard edge to it. A
+  broken assumption reaches replan for the price of one task instead of a wave; proven ground gets
+  no proof task. The triage assessor reports the assumption (`unproven:`) and the pick line names
+  the proof task. Risk-first slicing from Addy Osmani's `incremental-implementation` skill
+  (addyosmani/agent-skills, MIT).
+- **Noticed, not touched** (`prompt-implementer.md`, `shared-contracts.md`): a worker changes only
+  what its task needs, its tests included — no cleanup, reformatting or renames in code it only
+  read, which in a parallel run may be a peer's. A bug, dead code or a missing test outside the
+  task goes into the report's Noticed, not touched section; the controller turns the ones the goal
+  needs into their own tasks and reports the rest to the user — adding them unasked is scope
+  expansion. The spec reviewer flags edits the task did not need as EXTRA; a lead returns its
+  workers' leftover items with its cross-domain flags.
+- **Simplicity in quality review** (`prompt-quality-reviewer.md`): abstraction that does not earn
+  its keep — a layer, generic mechanism or configurability serving one or two cases, a helper file
+  for a one-time operation, flexibility for requirements nobody stated — is a finding that names the
+  simpler shape. The implementer prompt asks for the simplest design that meets the brief.
+- **Review loops end on convergence, not on an empty round** (`shared-review-gates.md`,
+  `strategy-staged.md`, `prompt-quality-reviewer.md`): a fresh reviewer samples differently each
+  round, so the controller keeps what it settled. A finding is dismissed only with evidence the
+  reviewer could have read (`file:line`, a decision id, command output), journaled on the gate
+  (`board gate … --msg "settled: …"`); a dismissed finding stays closed when a later round raises it,
+  a fixed one that comes back is reopened, and churn — a new finding that undoing the last fix would
+  resolve — goes to replan instead of another round. The 2–3-round escalation counts only rounds
+  with an unsettled Critical/Important. Severities are never lowered, reviewers are never told what
+  is settled, and a fix answers its findings and nothing more. Adapted from Google's
+  elephant-goldfish-model review loop (google/elephant-goldfish-model, Apache-2.0).
+- **Plan review restates first** (`shared-review-gates.md`, `prompt-planner-debate.md`): an
+  independent plan reviewer, and the adversarial counter-planner, first state what the plan builds
+  and how its parts connect; a part that does not connect is a finding.
+- `scripts/count-skill-tokens --traversal`: the controller's read load per traversal eval case
+  (SKILL.md plus the references the case expects).
+- `evals/output/cases.json`: `proof-first`, `scope-discipline`, `review-convergence` and
+  `panel-missing-lens`. `scripts/check-sync` registers `proof first`, `Noticed, not touched`,
+  `settled` and `its findings and nothing more` as replicated invariants.
+
+### Changed
+
+- **The implementer stops when its checks pass** (`prompt-implementer.md`): a check that passed is
+  not re-run until the code it covers changes, and the worker starts no review or hardening rounds
+  and no reviewer subagents unless its brief asks — independent review is the next gate. In vendor
+  testing on Sonnet 5.5 at max effort, a stop-when-checks-pass line cut session cost by about a
+  third with no change in quality; the model-selection research recorded it
+  (`docs/research/model-selection/07-effort-curves.md`), but no prompt carried it until now. The
+  brief's verification command runs after the last change.
+- **A panel passes only once every lens has voted** (`scripts/board`, `shared-review-gates.md`,
+  `shared-contracts.md`): with `review=panel:N`, a majority of ok no longer passes the gate while a
+  lens is missing — it shows `.. k/N` and `board done` refuses until the lens votes or the
+  controller closes the gate with `board gate --msg` naming the gap. A plain opened review gate is
+  unchanged, and old journals are not re-flagged by `board check`.
+
+### Fixed
+
+- `shared-review-gates.md` quoted the card as `approve 2/3 ok`; it renders `approve ok 2/3`.
+- `shared-token-economy.md` listed "Communication contract" twice in its Contents;
+  `prompt-integrator.md` numbered two Procedure steps 5.
+- `strategy-xcli.md` carried a second, staler copy of the engines' division of labor; it now points
+  at `shared-engines.md`.
+
 ## [1.31.0] — 2026-10-13
 
 ### Added

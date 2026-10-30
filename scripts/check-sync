@@ -127,6 +127,10 @@ posture|SKILL.md,references/shared-model-routing.md,references/shared-model-cata
 DESIGN_CONFLICT|SKILL.md,references/shared-token-economy.md,references/shared-contracts.md,references/shared-replan.md,references/prompt-implementer.md,references/prompt-sub-orchestrator.md,references/strategy-hierarchical.md
 on readiness|SKILL.md,references/triage.md,references/strategy-parallel.md,references/strategy-hierarchical.md,references/prompt-sub-orchestrator.md
 Concurrency is the default|SKILL.md,references/triage.md
+proof first|references/triage.md,references/strategy-parallel.md,references/strategy-hierarchical.md,references/prompt-sub-orchestrator.md
+Noticed, not touched|references/prompt-implementer.md,references/shared-contracts.md,references/prompt-sub-orchestrator.md
+settled|references/shared-review-gates.md,references/strategy-staged.md,references/prompt-quality-reviewer.md
+its findings and nothing more|references/shared-review-gates.md,references/strategy-staged.md,references/prompt-quality-reviewer.md
 --prep auto|SKILL.md,references/shared-prepare.md
 manual-only|references/shared-prepare.md,references/shared-research.md,references/shared-contracts.md,references/shared-token-economy.md
 capabilities.md|references/shared-prepare.md,references/shared-research.md,references/shared-contracts.md,references/shared-token-economy.md,references/triage.md

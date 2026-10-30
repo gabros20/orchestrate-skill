@@ -48,6 +48,9 @@ If your inputs name a vote (panel or consensus), cast it: `board vote N --kind <
 - Correctness risks: edge cases, error handling, concurrency, resource leaks
 - Design: one clear responsibility per file/unit; well-defined interfaces; units independently
   understandable and testable
+- Simplicity: abstraction that does not earn its keep — a layer, generic mechanism or
+  configurability serving one or two cases; a helper file for a one-time operation; flexibility
+  for requirements nobody stated. Name the simpler shape
 - Patches around the design (special case, bypass, suppressed error or test, runtime patch,
   routing flag): severity high — name the design point it routes around
 - Tests: verify real behavior (not mock behavior); cover the risky paths
@@ -66,6 +69,7 @@ Issues: counts by Critical / Important / Minor + findings file path
 ```
 
 Fix-wave rule for the controller: Critical/Important → ONE fix subagent (with the implementer
-contract: re-run covering tests, name files, report command+output) → re-review. Minor → ledger,
-batched into the final whole-branch review. Final-review findings → ONE fix subagent with the
-complete list.
+contract: re-run covering tests, name files, report command+output; the fix answers
+its findings and nothing more) → re-review — findings you dismissed with evidence stay settled
+(`shared-review-gates.md`). Minor → ledger, batched into the final whole-branch review.
+Final-review findings → ONE fix subagent with the complete list.

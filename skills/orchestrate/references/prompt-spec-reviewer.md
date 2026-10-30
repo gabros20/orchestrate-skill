@@ -54,7 +54,8 @@ If your inputs name a vote (panel or consensus), cast it: `board vote N --kind <
 
 ## Check
 - MISSING: requirements skipped; things claimed but not actually implemented
-- EXTRA: features not requested; over-engineering; unrequested "nice to haves"
+- EXTRA: features not requested; over-engineering; unrequested "nice to haves"; edits the task
+  did not need (cleanup, reformatting or renames in code outside its scope)
 - MISUNDERSTOOD: right feature built the wrong way; wrong problem solved
 - CONSTRAINT VIOLATIONS: anything contradicting the global constraints above
 - UNRECORDED DEVIATION: the code departs from the design or plan with no decision recorded

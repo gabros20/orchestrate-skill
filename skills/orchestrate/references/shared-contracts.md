@@ -47,6 +47,10 @@ Controller handling: DONE → gate. CONCERNS → read report; correctness/scope 
 NEEDS_CONTEXT → supply + re-dispatch same model. BLOCKED → ladder (context → stronger model →
 split task → replan). DESIGN_CONFLICT → [replan](shared-replan.md): brief · architect pass · user.
 Never re-dispatch unchanged.
+**Noticed, not touched** (a report section) is what a worker saw outside its task and left alone —
+never its to fix, never folded into a running task. One the goal needs becomes its own task
+(`board todo`, its own brief and review); the rest go to the user in your closing report — adding
+them unasked is scope expansion (`triage.md`, re-triage triggers).
 **An escalation carries a packet, never an empty prompt**: the plan, the relevant files at their
 shas, the actions attempted, and the failure evidence (excerpt + raw path). That is model
 switching without losing the work; a stall escalation carries the same packet plus its counts
@@ -66,7 +70,7 @@ redundant summaries, or boilerplate (current models write long files by default)
 | verifier | `pass` / `fail` / `blocked` / `needs-human-judgment` · expected · observed · evidence path |
 | sub-orchestrator | <1500 tokens: verdict · findings summary · artifact paths · optional `surprise:` line |
 | parallel worker | verdict first, <1000 tokens: branch/PR ref · report path · optional `surprise:` line |
-| triage assessor | kind · scale · graph (waves, widest) · domains · independence · verifiability · recommended strategy + why |
+| triage assessor | kind · scale · graph (waves, widest) · unproven assumption · domains · independence · verifiability · recommended strategy + why |
 | search/explore worker | `path:line — symbol — ≤10-word note` per hit + `totals: <n> files` (or `No match.`) |
 | researcher (lane or scout) | ≤12 lines: Status · up to 5 graded findings with source URLs · lane file path · queries run · gaps |
 
@@ -181,7 +185,7 @@ transitions; `board receipt` fetches or states a receipt by hand) · `board exec
 <cmd>` (a machine check run THROUGH the journal: log under `raw/`, exit + duration journaled;
 `board result N --name --exit` for one that ran elsewhere) · `board nudge` / `board escalate N --to MODEL --why` · `board decide ID
 "…"` (mirrors into `decisions.md`) · `board rail "…"` · `board done N [--msg]` (writes the ledger
-line itself — refused while the current attempt has a failed gate or a failed check) · `board finish --gate pass|fail
+line itself — refused while the current attempt has a failed gate, a failed check, or a gate waiting on votes) · `board finish --gate pass|fail
 --evidence PATH` (`pass` is refused while `check --finish` is dirty unless `--force --reason`; binds
 HEAD, the goal hash and the journal cursor, so later work, a moved HEAD or a changed goal render it
 STALE). Workers get two optional observation lines — `board note N "<msg>"` (a heartbeat, never a
@@ -198,7 +202,7 @@ INFORMATION; in a tree, `--by <lead>` on a dispatch makes the lead's mail an ins
 routes the worker's `--to controller` asks to that lead while it is open (`strategy-hierarchical.md`). Loop-proof by construction: `MAIL_CAP` sends per stint, `THREAD_CAP` replies deep,
 no duplicates, no mail to a returned agent; `board check` flags chatter, unread-past-stale and
 unanswered asks. Votes: `board vote N --kind K --agent A --verdict ok|fail|warn` — the gate is
-derived by quorum (`panel:N` majority, `consensus:N` any-deny) under the rules in force when the
+derived by quorum (`panel:N` majority once every lens voted, `consensus:N` any-deny) under the rules in force when the
 vote was cast; an explicit `board gate` outranks. Parallel writers are serialized by a journal lock;
 a lane in a read-only sandbox cannot write it, so worker-side commands print the line to carry in
 the inline return instead of failing. **Learnings**: `board learn N "<one line>" --agent <you>

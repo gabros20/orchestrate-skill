@@ -29,6 +29,8 @@ You are assessing a task to recommend an orchestration strategy. Measure; don't 
 - Plan: does one exist? task count (# Task N headings) and per-task file lists
 - Graph: per task, which tasks must land first? (does it actually need their output? numbering
   is not a dependency) → waves and the widest wave
+- Unproven: does a library, protocol, platform API or performance budget that several tasks rest
+  on have no working use in this repo yet? (lockfile, imports, an existing call site)
 - Domains: distinct areas that each need their own planning and integration
 - Independence: do tasks' file lists overlap? shared state/config touched by several?
 - Size: rough token estimate of context needed (files to read + expected diffs)
@@ -43,6 +45,7 @@ uncertainty explicitly.
 kind: build | research | fix | review | content | ops
 scale: small(1-2 files) | medium(3-5) | large(6+)
 graph: <waves> waves, widest <n> | chain
+unproven: <the assumption> (tasks <ids>) | none
 domains: <n> (<names>)
 est_tokens: <number>
 independent: yes | partial(overlaps: …) | no

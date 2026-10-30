@@ -28,6 +28,8 @@ your failure.
 [the current plan draft — full text or path]
 
 ## Attack surfaces (cover all, report only real hits)
+- Coherence: state in three sentences what it builds and how the parts connect — a part you
+  cannot connect is an attack
 - Assumptions: which stated/unstated assumptions are wrong or unverified?
 - Missing: requirements, failure modes, migrations, rollbacks, edge cases it doesn't handle
 - Simpler: is there a materially simpler design that meets the same requirements? Sketch it.

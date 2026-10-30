@@ -111,13 +111,6 @@ flight plan prints the lane's launch line pre-configured from the record (`board
 
 ## Division-of-labor heuristic
 
-Claude = reasoning/architecture/review · Codex (GPT lineage) = heavy implementation + honest peer
-counter · Grok = fast second opinion / search-adjacent tasks · Kimi (Moonshot lineage, K3 —
-Artificial Analysis Intelligence Index 4/189 as of 2026-07-20) = the fourth vote in cross-lineage
-panels and the pick for 1M-context work · Cursor/agy/opencode/Hermes = alternate workers when
-quotas, sandboxing, or lineage diversity matter (agy = Gemini lineage, the third vote) · Pi =
-provider-agnostic carrier with NO lineage of its own — it adds no panel vote; reach for it when it
-carries a model or subscription quota no other lane offers, and contain it (no sandbox, no
-approvals — `engine-pi.md`). Cross-validation: send the same review to two engines, dedup
-findings, keep the union (conflicting severity → higher). Vendor-native review layers (Codex
-Guardian, Claude's auto-mode classifier) are extra independent signals, never gate substitutes.
+Which engine for which job, and cross-validation across lineages: `shared-engines.md` (Division
+of labor). Per-role picks: `shared-model-catalog.md`. Vendor-native review layers (Codex Guardian,
+Claude's auto-mode classifier) are extra independent signals, never gate substitutes.

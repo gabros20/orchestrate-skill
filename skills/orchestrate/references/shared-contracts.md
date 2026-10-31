@@ -190,7 +190,11 @@ explicitly and outranks the findings-file parse (which takes the FIRST verdict m
 any-deny — under the rules in force when the vote was cast; an explicit `board gate` outranks.
 `board exec` runs a machine check through the journal (log under `raw/`, exit + duration on the
 card); `board result` records one that ran elsewhere. `board done N` writes the ledger line itself —
-refused while the current attempt has a failed gate, a failed check, or a gate waiting on votes.
+refused while the current attempt has a failed gate, a failed check, or a gate waiting on votes — and
+while a gate the run's `review` requires has no pass (dual → spec and quality; panel, consensus and
+factcheck → any): fewer gates is a recorded `board set review=…`, which the retro reports. A pass
+needs a reviewer on record (`board review N --kind K --agent <kind>-N`, or votes) — never the
+controller; one without takes `--msg "why"` and is reported as unreviewed.
 `board finish --gate pass|fail --evidence PATH` binds HEAD, the goal hash and the journal cursor:
 later work, a moved HEAD, a changed goal or an open task means it no longer stands; `pass` is
 refused while `check --finish` is dirty unless `--force --reason`. `board hold "the user's reason"`

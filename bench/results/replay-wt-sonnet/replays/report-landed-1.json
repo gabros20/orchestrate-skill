@@ -1,0 +1,29 @@
+{
+ "schema": 1,
+ "case": "report-landed",
+ "label": "replay-wt-sonnet",
+ "skill_version": "1.35.0",
+ "model": "sonnet",
+ "pass": false,
+ "missing": [
+  "(?i)spec"
+ ],
+ "forbidden": [],
+ "commands": [
+  "git log --oneline | head; ls -la; tree -L 2 --dirsfirst -I 'node_modules|.git' | head -50",
+  "cat plan.md; find .orchestrate .claude -type f | head -50",
+  "cd /Users/tamas/.orchestrate-bench/20261031-223019-replay-report-landed/.orchestrate && cat run.md; echo ----; cat journal.jsonl; echo ----; cat task-1-report.md; cat .gitignore; git status --short",
+  "cd /Users/tamas/.orchestrate-bench/20261031-223019-replay-report-landed && git status --short --ignored; git worktree list; git branch -a; find / -name parse.py -path '*kv*' 2>/dev/null | head",
+  "TaskStop:",
+  "cd /Users/tamas/.orchestrate-bench/20261031-223019-replay-report-landed && mkdir -p kv tests && touch kv/__init__.py\ncat > kv/parse.py <<'EOF'\n\"\"\"Parse ``key=value`` lines into a dict.\"\"\"\n\n\ndef parse(text: str) -> dict:\n    \"\"\"Parse newline-separated ``key=value`` lines.\n\n    Blank lines and lines starting with ``#`` are skipped. Only the first\n    ``=`` splits key from value; keys and values are stripped. Later\n    duplicates override earlier ones.\n    \"\"\"\n    result = {}\n    for line in text.splitlines():\n        line = line.strip()\n        if not line or line.startswith(\"#\"):\n            continue\n        key, sep, value = line.partition(\"=\")\n        if not sep:\n            raise ValueError(f\"invalid line (missing '='): {line!r}\")\n        result[key.strip()] = value.strip()\n    return result\nEOF\ncat > kv/fmt.py <<'EOF'\n\"\"\"Format a dict back to sorted ``key=value`` lines.\"\"\"\n\n\ndef fmt(data: dict) -> str:\n    \"\"\"Return ``key=value`` lines sorted by key, newline-terminated.\"\"\"\n    return \"\".join(f\"{k}={data[k]}\\n\" for k in sorted(data))\nEOF\ncat > tests/test_kv.py <<'EOF'\nimport pytest\n\nfrom kv.fmt import fmt\nfrom kv.parse import parse\n\n\ndef test_parse_basic():\n    assert parse(\"a=1\\nb=2\\n\") == {\"a\": \"1\", \"b\": \"2\"}\n\n\ndef test_parse_skips_blank_and_comments():\n    assert parse(\"# c\\n\\na=1\\n\") == {\"a\": \"1\"}\n\n\ndef test_parse_splits_on_first_equals():\n    assert parse(\"a=b=c\") == {\"a\": \"b=c\"}\n\n\ndef test_parse_invalid_line():\n    with pytest.raises(ValueError):\n        parse(\"nokey\")\n\n\ndef test_fmt_sorted():\n    assert fmt({\"b\": \"2\", \"a\": \"1\"}) == \"a=1\\nb=2\\n\"\n\n\ndef test_fmt_empty():\n    assert fmt({}) == \"\"\n\n\ndef test_roundtrip():\n    d = {\"x\": \"1\", \"a\": \"b=c\"}\n    assert parse(fmt(d)) == d\nEOF\npython3 -m pytest -q tests 2>&1 | tail -5"
+ ],
+ "stream": {
+  "cost_usd": 0.0851655,
+  "turns": 7,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-223019-replay-report-landed",
+ "regraded": "2026-10-31"
+}

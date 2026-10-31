@@ -1,0 +1,31 @@
+{
+ "schema": 1,
+ "case": "resume-activation",
+ "label": "replay-v1.35.0-sonnet",
+ "skill_version": "1.35.0",
+ "model": "sonnet",
+ "pass": false,
+ "activated": false,
+ "missing": [
+  "^skill: orchestrate"
+ ],
+ "forbidden": [],
+ "commands": [
+  "git log --oneline | head; tree -L 3 --dirsfirst -I 'node_modules|.git'; ls -a",
+  "cat plan.md; find .claude .orchestrate -type f | head -50",
+  "cd /Users/tamas/.orchestrate-bench/20261031-223521-replay-resume-activation/.orchestrate && cat run.md; echo ---; cat journal.jsonl; echo ---; cat task-1-report.md; cat .gitignore; git status --short",
+  "cd /Users/tamas/.orchestrate-bench/20261031-223521-replay-resume-activation && ls kv 2>&1; git status --short --ignored; git worktree list; grep -n -i -B1 -A8 'resume' .claude/skills/orchestrate/SKILL.md | head -80; wc -l .claude/skills/orchestrate/references/strategy-staged.md",
+  "ls .claude/skills/orchestrate/scripts; B=.claude/skills/orchestrate/scripts/board; board check 2>&1 | head -30; board resume 2>&1 | head -40",
+  "board --help 2>&1 | head -60; git log --all --oneline; git stash list"
+ ],
+ "stream": {
+  "cost_usd": 0.07935990000000001,
+  "turns": 7,
+  "is_error": true,
+  "subtype": "error_max_turns",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-223521-replay-resume-activation",
+ "rebuilt": "2026-10-31 (repeats had overwritten one file)",
+ "regraded": "2026-10-31"
+}

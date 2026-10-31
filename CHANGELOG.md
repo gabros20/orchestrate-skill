@@ -11,6 +11,60 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.36.0] — 2026-10-31
+
+### Fixed
+
+- **A resumed run loads the skill** (`SKILL.md` description). This is the evolve loop's first shipped
+  edit (`bench/ledger.jsonl` E-2026-10-31-a). In a repo with a live `.orchestrate/` run, "Continue
+  the orchestration run" never invoked the skill: 0/3 on Sonnet, where the agent re-derived the run
+  from raw files and once implemented a task itself. Resuming is now a named trigger, and activation
+  is 3/3. `SKILL.md` is 7 tokens smaller net: the finish sentence duplicated by "Completion and
+  handoff" and a `postmortem` pointer `shared-contracts.md` keeps were dropped.
+- **Review gates are on the record, not on trust** (`scripts/board`, `shared-contracts.md`,
+  `shared-review-gates.md`, `SKILL.md` step 7; ledger E-2026-10-31-b).
+
+  What the bench found:
+  - On the fan-out task, all 6 baseline builds recorded no gate and finished `pass`. Four lowered
+    review with `board set review=off`; two never set it at all.
+  - A replay showed the next step down: the controller ran `board review … --agent controller`,
+    recorded `gate --verdict ok` itself, and finished on a worker's report.
+
+  The changes:
+  - `board done` refuses while a gate kind the run's review mode requires has no passing latest
+    verdict. Unset review means `dual`, as plan and check already read it; dual needs spec and
+    quality, and panel, consensus and factcheck need any gate. A fix wave re-reviews only what
+    failed.
+  - `board review --agent controller` is refused, because a reviewer is a fresh agent.
+  - `gate --verdict ok|warn` needs a reviewer stint or a vote for that kind in the attempt, or
+    `--msg "why"`, in which case it is journaled as `unreviewed`.
+  - The retro reports a mid-run review downgrade, unreviewed passes, and a finish whose evidence is a
+    worker's report. `score.discipline` gains `review_lowered` and `unreviewed_passes`.
+
+  Measured: the report-landed replay went from 0/3 to 3/3 dispatching real spec and quality
+  reviewers. The other replays held, with plan-pending at 2/3 (the miss re-triaged to solo). Old
+  journals are untouched, because the refusals are evaluated at command time.
+- **Bench grader fixes:**
+  - Replays grade the controller only: subagent events carry `parent_tool_use_id`.
+  - `S=…/board; $S retro` and path-qualified `board` calls count as `board …`.
+  - Repeats no longer overwrite one result file.
+  - `bench replay --regrade LABEL` re-grades saved transcripts for free.
+  - Replay setups can `commit`, so a "report landed" state has the code it claims.
+
+### Added
+
+- `evals/activation` case `positive-resume`, and `resume-activation` in `bench/replays.json`.
+- **The first baseline builds**, `bench/results/base-v1.34.0-sonnet` and `base-v1.35.0-sonnet`: 12
+  builds on Sonnet, $2.83 in all. There was no regression and every metric was unproven, which is
+  correct for two versions this close. They set the noise floor: fan-out cost spread ±$0.14 around
+  a $0.30 mean. They also showed the tasks saturate (100% pass; the chain task goes solo by its own
+  rule 8), so harder tasks are ledger E-2026-10-31-d.
+- **Results record a content hash of the skill each run used** (`skill_hash`). A working-tree arm
+  copies the tree at run start, so measure candidates by `--ref <commit>`.
+- **Ledger entries:**
+  - E-2026-10-31-c (proposed): infer the dispatch role from the agent name.
+  - E-2026-10-31-d (proposed): bench tasks with real coordination load.
+
 ## [1.35.0] — 2026-10-31
 
 ### Added

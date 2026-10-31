@@ -1,0 +1,24 @@
+{
+ "schema": 1,
+ "case": "plan-pending",
+ "label": "replay-E-2026-10-31-a-sonnet",
+ "skill_version": "1.35.0",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -40; board next 2>&1 | head -40",
+  "cat plan.md; board plan --why \"Two-task staged plan from plan.md\" 2>&1"
+ ],
+ "stream": {
+  "cost_usd": 0.0767273,
+  "turns": 5,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-224103-replay-plan-pending",
+ "regraded": "2026-10-31"
+}

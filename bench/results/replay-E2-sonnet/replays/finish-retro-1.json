@@ -1,0 +1,25 @@
+{
+ "schema": 1,
+ "case": "finish-retro",
+ "label": "replay-E2-sonnet",
+ "skill_version": "1.35.0",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate 2>&1 | head; board check --finish 2>&1 | tail -20",
+  "Read:",
+  "board retro 2>&1 | tail -40; board next 2>&1 | tail -8"
+ ],
+ "stream": {
+  "cost_usd": 0.0812316,
+  "turns": 6,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-225542-replay-finish-retro",
+ "regraded": "2026-10-31"
+}

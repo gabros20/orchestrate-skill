@@ -391,7 +391,7 @@ board decide D-04 "cookie, not header" --owner controller --task 3     # also ap
 board rail "single-flight: npm publish -> task2-impl"    # degradations, owners
 board blocked 3 --msg "owner: controller · resolve D-04 then re-dispatch"
 board return 4 --agent impl-4-codex --status REFUSED --msg "exit 0, empty diff: AGENTS.md rule"   # xcli lanes
-board done 3 --msg "commits a1b2c3d..e4f5a6b, review clean"   # writes the ledger line; refused over a failed gate or check
+board done 3 --msg "commits a1b2c3d..e4f5a6b, review clean"   # writes the ledger line; refused over a failed or missing gate (the run's review mode), or a failed check
 board finish --gate pass --evidence raw/final-review.md  # refused while `check --finish` is dirty (or --force --reason); binds HEAD + goal + cursor
 ```
 

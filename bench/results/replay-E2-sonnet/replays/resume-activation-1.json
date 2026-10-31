@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "case": "resume-activation",
+ "label": "replay-E2-sonnet",
+ "skill_version": "1.35.0",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate 2>&1 | head; cat .orchestrate/run.md 2>/dev/null | head -40; board next 2>&1 | head -30",
+  "cat .orchestrate/task-1-report.md; ls; ls .orchestrate/*; git show --stat HEAD | head -20; board help controller 2>&1 | head -60",
+  "cat plan.md kv/parse.py tests/test_parse.py; tail -5 .orchestrate/journal.jsonl",
+  "B=.claude/skills/orchestrate/scripts/board; board review 1 --kind spec --agent spec-1 --model haiku 2>&1 | tail -5",
+  "Agent:  Spec review task 1",
+  "python3 -m unittest 2>&1 | tail -4; ls tests",
+  "B=.claude/skills/orchestrate/scripts/board; board gate 1 --kind spec --verdict fail --round 1 --confidence 0.9 2>&1 | tail -3; board dispatch 1 --model sonnet --agent fix-1-r2 2>&1 | tail -3",
+  "Agent:  Fix test discovery task 1",
+  "B=.claude/skills/orchestrate/scripts/board; python3 -m unittest 2>&1 | tail -3; git log --oneline | head -3; board return 1 --agent fix-1-r2 --status DONE --commits 11491d7 2>&1 | tail -2; board exec 1 --name tests -- python3 -m unittest 2>&1 | tail -2; board gate 1 --kind spec --verdict ok --round 2 --confidence 0.9 2>&1 | tail -2; board next | tail -4",
+  "B=.claude/skills/orchestrate/scripts/board; board review 1 --kind quality --agent quality-1 --model haiku 2>&1|tail -1; board dispatch 2 --model sonnet --agent impl-2 2>&1|tail -1",
+  "Agent:  Quality review task 1",
+  "Agent:  Implement task 2 formatter",
+  "B=.claude/skills/orchestrate/scripts/board; board gate 1 --kind quality --verdict ok --round 1 --confidence 0.85 2>&1|tail -1; board done 1 2>&1|tail -2",
+  "B=.claude/skills/orchestrate/scripts/board; python3 -m unittest 2>&1|tail -3; cat kv/fmt.py; board return 2 --agent impl-2 --status DONE --commits 6f64bda --report .orchestrate/task-2-report.md 2>&1|tail -1; board review 2 --kind spec --agent spec-2 --model haiku|tail -1",
+  "Agent:  Dual review task 2",
+  "B=.claude/skills/orchestrate/scripts/board; board exec 2 --name tests -- python3 -m unittest 2>&1|tail -1; board gate 2 --kind spec --verdict ok --round 1 --confidence 0.85|tail -1; board review 2 --kind quality --agent quality-2 --model haiku|tail -1; board gate 2 --kind quality --verdict ok --round 1 --confidence 0.85|tail -1; board done 2|tail -1; board check --finish 2>&1|tail -8",
+  "B=.claude/skills/orchestrate/scripts/board; board finish --gate pass --evidence .orchestrate/raw/check-task2-tests-20.log 2>&1|tail -3; git status --short"
+ ],
+ "stream": {
+  "cost_usd": 0.26971864000000007,
+  "turns": 3,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 5
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-225556-replay-resume-activation",
+ "regraded": "2026-10-31"
+}

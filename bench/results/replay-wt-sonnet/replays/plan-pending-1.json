@@ -1,0 +1,26 @@
+{
+ "schema": 1,
+ "case": "plan-pending",
+ "label": "replay-wt-sonnet",
+ "skill_version": "1.35.0",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "ls -la && git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -50",
+  "cat plan.md .orchestrate/run.md .orchestrate/journal.jsonl .orchestrate/.gitignore",
+  "cd /Users/tamas/.orchestrate-bench/20261031-223003-replay-plan-pending/.claude/skills/orchestrate && wc -l SKILL.md && grep -n -i \"plan: pending\\|pending\\|confirm\" SKILL.md | head -40",
+  "Read:",
+  "cd /Users/tamas/.orchestrate-bench/20261031-223003-replay-plan-pending && ls .claude/skills/orchestrate/scripts; board plan --why \"Two independent small tasks, staged with dual review\" 2>&1 | head -80"
+ ],
+ "stream": {
+  "cost_usd": 0.0782628,
+  "turns": 6,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-223003-replay-plan-pending",
+ "regraded": "2026-10-31"
+}

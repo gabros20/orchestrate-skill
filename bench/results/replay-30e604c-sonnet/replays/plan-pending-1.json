@@ -1,0 +1,28 @@
+{
+ "schema": 1,
+ "case": "plan-pending",
+ "label": "replay-30e604c-sonnet",
+ "skill_version": "1.35.0",
+ "ref": "30e604c",
+ "skill_hash": "f9b45a79dcbd",
+ "model": "sonnet",
+ "pass": false,
+ "missing": [
+  "board plan(?![ \\t]+(approved|changed|skipped))",
+  "strategy=staged"
+ ],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -50; cat .orchestrate/run.md 2>/dev/null | head -60",
+  "cat plan.md; cat .orchestrate/journal.jsonl | tail -5; ls .claude/skills/orchestrate/scripts | head -30"
+ ],
+ "stream": {
+  "cost_usd": 0.0764499,
+  "turns": 5,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-230715-replay-plan-pending"
+}

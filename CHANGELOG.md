@@ -11,6 +11,30 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.34.0] — 2026-10-31
+
+### Added
+
+- **Every run is data for the skill — the field loop** (`scripts/board`, new
+  `references/shared-retro.md`, `SKILL.md` step 7, `.github/ISSUE_TEMPLATE/field-report.yml`;
+  research: `docs/research/2026-10-skill-rl/`). The steps:
+  - `board score [--json]` is the run as a versioned score vector with no model calls: outcome,
+    cost and calibration (what a skill change should move), then what explains them.
+  - `board retro` adds skill-level signals with their evidence.
+  - `--draft` writes a field-report draft (version, host, models, fix class, metric, prediction)
+    that the controller fills and files against this repo only on the user's yes.
+- **Calibration** (RLCR without weights): implementer reports and reviewer verdicts carry
+  `Confidence: 0–1`. The board reads that line itself at `return` and `gate` (`--confidence` and
+  `vote --confidence` override it) and scores it as Brier and bias against what the run later
+  showed: dozens of signals per run instead of one pass/fail.
+- **The board's own friction** goes to `.orchestrate/raw/friction.jsonl`, outside the journal: every
+  refusal, usage error and help read, with release and agent. In v1.33 this was mined by hand from
+  transcripts.
+
+### Changed
+
+- The REVIEWER block's vote line carries `--confidence 0.N` (≈223 tokens, was 221).
+
 ## [1.33.0] — 2026-10-30
 
 ### Fixed

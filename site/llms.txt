@@ -23,7 +23,7 @@ gates, and an honest budget range — and gates on the user's approval (confirm=
 never the print). Every run has a spine: `.orchestrate/journal.jsonl`, an append-only hash-chained record
 written only by the controller; `board` renders it as a live terminal kanban (any host, stdlib
 python3) with a priced flight plan, test checks on cards, an attention strip and a resume receipt; `board next` is the controller's one checkpoint call and `board help` a ~900-character index by role.
-Workers journal one-line learnings (`board learn`) that reach their team at the next board call, together with any decision recorded since their dispatch; `board memory` renders a run as one project-context record for the next run.
+Workers journal one-line learnings (`board learn`) that reach their team at the next board call, together with any decision recorded since their dispatch; `board memory` renders a run as one project-context record for the next run. At finish `board retro` scores the run (outcome, cost, the Brier calibration of every stated `Confidence:`, the board's own friction) and turns a skill-level finding into a field-report draft the user files against this repo.
 Agents talk through the same journal (`board send` / `inbox` / `wait` — information and questions,
 capped, delivered on the recipient's next board call), panels vote (a lens that never votes leaves the gate pending), and an external-CLI lane is one
 command (`board launch … --after N`: the wrapper sleeps in the shell until its inputs are on disk
@@ -59,6 +59,8 @@ primitive is missing.
 
 ## Optional
 
+- [docs/designs/v1.34.0-field-loop.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.34.0-field-loop.md): every run is data — board score, calibration from Confidence: lines, the board's friction log, board retro and field reports.
+- [docs/research/2026-10-skill-rl/README.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/research/2026-10-skill-rl/README.md): research — SkillOpt and text-space RL, a benchmark and an evolve loop for the skill.
 - [docs/designs/v1.33.0-board-truth.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.33.0-board-truth.md): a flight plan the user actually sees (dispatch gate, relay line, --ask), one derivation of what is still open, board next, help by role.
 - [docs/designs/v1.32.0-review-convergence.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.32.0-review-convergence.md): review rounds that converge (settled findings, churn → replan, evidence-backed dismissal), panels that wait for every lens, proof first, workers in scope.
 - [docs/designs/v1.31.0-prepare.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.31.0-prepare.md): prepare before dispatch (clarify rounds, tool inventory, install consent, scout), concurrency by default, research as source lanes.

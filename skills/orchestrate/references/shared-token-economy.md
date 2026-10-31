@@ -102,7 +102,7 @@ file under .orchestrate/ is your one write.
 Delivering your inline verdict is your completion condition — running as a background subagent
 or teammate, send it to the controller via SendMessage as your final action.
 If your inputs name a vote (panel or consensus), cast it: `board vote N --kind <gate> --agent
-<you> --verdict ok|fail|warn --why "…"` — ONE line, journaled; the quorum is derived, never yours to call.
+<you> --verdict ok|fail|warn --why "…" --confidence 0.N` — ONE line, journaled; the quorum is derived, never yours to call.
 ```
 
 "Report EVERY finding" is load-bearing and now vendor-confirmed: a reviewer told to be
@@ -263,7 +263,7 @@ before big runs.
 
 ## Honest numbers
 
-The blocks' own cost (measured, words×1.33): WORKER ≈ 758 tokens/dispatch, REVIEWER ≈ 221,
+The blocks' own cost (measured, words×1.33): WORKER ≈ 758 tokens/dispatch, REVIEWER ≈ 223,
 MINIMAL ≈ 31 — vs the hundreds-to-thousands of narration tokens per worker turn they remove,
 and the controller-context bloat every verbose return would re-cost on every later turn.
 The work log is a deliberate spend: ~50 output words per milestone, a few hundred tokens a task,

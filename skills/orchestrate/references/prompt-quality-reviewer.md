@@ -42,7 +42,7 @@ file under .orchestrate/ is your one write.
 Delivering your inline verdict is your completion condition — running as a background subagent
 or teammate, send it to the controller via SendMessage as your final action.
 If your inputs name a vote (panel or consensus), cast it: `board vote N --kind <gate> --agent
-<you> --verdict ok|fail|warn --why "…"` — ONE line, journaled; the quorum is derived, never yours to call.
+<you> --verdict ok|fail|warn --why "…" --confidence 0.N` — ONE line, journaled; the quorum is derived, never yours to call.
 
 ## Judge
 - Correctness risks: edge cases, error handling, concurrency, resource leaks
@@ -66,6 +66,7 @@ go in the findings FILE. Inline return:
 Assessment: Approved | Needs fixes
 Strengths: <one line>
 Issues: counts by Critical / Important / Minor + findings file path
+Confidence: <0–1 that this verdict holds — honest, it is scored> (also atop the findings file)
 ```
 
 Fix-wave rule for the controller: Critical/Important → ONE fix subagent (with the implementer

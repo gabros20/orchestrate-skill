@@ -1,0 +1,27 @@
+{
+ "schema": 1,
+ "case": "resume-activation",
+ "label": "replay-E-2026-10-31-a-sonnet",
+ "skill_version": "1.35.0+E-2026-10-31-a",
+ "model": "sonnet",
+ "pass": true,
+ "activated": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a && ls .orchestrate 2>/dev/null && cat .orchestrate/run.md 2>/dev/null | head -50; board next 2>&1 | head -30",
+  "cat plan.md .orchestrate/task-1-report.md; tail -5 .orchestrate/journal.jsonl; ls .orchestrate/..; git status --short",
+  "find . -path ./.git -prune -o -name '*.py' -print; git log --stat --oneline | head; git branch -a"
+ ],
+ "stream": {
+  "cost_usd": 0.08343280000000002,
+  "turns": 6,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-223941-replay-resume-activation",
+ "rebuilt": "2026-10-31 (repeats had overwritten one file)",
+ "regraded": "2026-10-31"
+}

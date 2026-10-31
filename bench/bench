@@ -9,7 +9,7 @@
   compare A B                       paired, per task: pass rate, pass^k, cost, wall, calibration — improved /
                                     regressed / unproven against the noise of the repeats
   field [--json]                    every run this machine knows (board runs), its board score grouped by release
-  replay [--case ID] [--model M] [--ref REF] [--dry-run]
+  replay [--case ID] [--model M] [--ref REF] [--dry-run] · replay --regrade LABEL (free: saved transcripts)
                                     decision replays: a frozen .orchestrate/ state + one prompt; the first commands
                                     are graded by pattern — the cheap tier between check-sync and a full build
 
@@ -115,6 +115,15 @@ def install_skill(work: Path, arm: str, ref: str) -> str:
     return (dst / "VERSION").read_text().strip()
 
 
+def tree_hash(d: Path) -> str:
+    """A content hash of the skill a run actually used — the working tree changes under a long bench."""
+    import hashlib
+    h = hashlib.sha256()
+    for p in sorted(x for x in d.rglob("*") if x.is_file() and "__pycache__" not in x.parts):
+        h.update(str(p.relative_to(d)).encode() + b"\0" + p.read_bytes())
+    return h.hexdigest()[:12]
+
+
 def summarize_stream(path: Path) -> dict:
     """From Claude Code's stream-json: the final result event, and how many subagents were spawned."""
     res, agents = {}, 0
@@ -135,14 +144,21 @@ def summarize_stream(path: Path) -> dict:
             "subtype": res.get("subtype"), "agents_spawned": agents}
 
 
+BOARD_ALIAS = re.compile(r"(?<![\w-])(\S*/board|\$\{?[A-Za-z_]\w*\}?)(?=\s)")
+
+
 def commands_of(path: Path) -> tuple[list[str], str]:
-    """Every Bash command and all assistant text, in order — what a replay is graded on."""
+    """The CONTROLLER's commands and text, in order — what a replay is graded on. Subagent events (they carry a
+    parent_tool_use_id in Claude Code's stream) are its workers' moves, not its own. `S=…/board; $S retro` and
+    `.claude/…/scripts/board next` both read as `board …`."""
     cmds, text = [], []
     try:
         for ln in path.read_text(encoding="utf-8", errors="replace").splitlines():
             try:
                 e = json.loads(ln)
             except ValueError:
+                continue
+            if e.get("parent_tool_use_id"):
                 continue
             for c in (e.get("message") or {}).get("content") or []:
                 if not isinstance(c, dict):
@@ -155,7 +171,15 @@ def commands_of(path: Path) -> tuple[list[str], str]:
                     text.append(str(c.get("text", "")))
     except OSError:
         pass
-    return cmds, "\n".join(text)
+    return [BOARD_ALIAS.sub("board", c) for c in cmds], "\n".join(text)
+
+
+def grade(c: dict, stream: Path) -> tuple[bool, list[str], list[str], list[str]]:
+    cmds, text = commands_of(stream)
+    hay = "\n".join(cmds) + "\n" + text
+    miss = [p for p in c.get("expect", []) if not re.search(p, hay, re.M)]
+    bad = [p for p in c.get("forbid", []) if re.search(p, "\n".join(cmds), re.M)]
+    return not miss and not bad, miss, bad, cmds
 
 
 def claude_cmd(prompt: str, model: str, budget: float, max_turns: int = 0) -> list[str]:
@@ -184,8 +208,10 @@ def cmd_validate(_: argparse.Namespace) -> int:
     return 1 if bad else 0
 
 
-def next_index(d: Path) -> int:
-    return 1 + max([int(p.stem) for p in d.glob("*.json") if p.stem.isdigit()] or [0])
+def next_index(d: Path, prefix: str = "") -> int:
+    """The next free result number — per case for replays (`<case>-<n>.json`), per task for builds (`<n>.json`)."""
+    pat = re.compile(rf"^{re.escape(prefix + '-') if prefix else ''}(\d+)$")
+    return 1 + max([int(m.group(1)) for p in d.glob("*.json") if (m := pat.match(p.stem))] or [0])
 
 
 def cmd_run(a: argparse.Namespace) -> int:
@@ -243,7 +269,8 @@ def cmd_run(a: argparse.Namespace) -> int:
             except (ValueError, subprocess.TimeoutExpired):
                 score = None
         res = {"schema": 1, "task": a.task, "split": task["split"], "arm": a.arm if a.agent is None else a.agent,
-               "label": label, "ref": a.ref or "", "skill_version": version, "model": a.model if a.agent is None else "",
+               "label": label, "ref": a.ref or "", "skill_version": version,
+               "skill_hash": tree_hash(skill_scripts.parent) if skill_scripts.exists() else "", "model": a.model if a.agent is None else "",
                "n": n, "started": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t0)), "wall_s": wall,
                "exit": rc, "timed_out": timed_out, "dirty": dirty, "accept": acc,
                "pass": acc["tests"] > 0 and acc["failed"] == 0, "stream": summarize_stream(stream) if stream.exists() else {},
@@ -350,8 +377,28 @@ def cmd_field(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_regrade(label: str, cases: list[dict]) -> int:
+    """Grade saved replay transcripts again with the current cases — a better grader never needs a paid rerun."""
+    by_id = {c["id"]: c for c in cases}
+    rows = []
+    for f in sorted((RESULTS / label / "replays").glob("*.json")):
+        r = json.loads(f.read_text())
+        c, stream = by_id.get(r["case"]), Path(r["workdir"] + ".stream.jsonl")
+        if not c or not stream.exists():
+            rows.append(f"{f.name}: kept ({'no case' if not c else 'transcript gone'})")
+            continue
+        ok, miss, bad, cmds = grade(c, stream)
+        r.update({"pass": ok, "missing": miss, "forbidden": bad, "commands": cmds[:40], "regraded": time.strftime("%Y-%m-%d")})
+        f.write_text(json.dumps(r, indent=1) + "\n")
+        rows.append(f"{f.name}: {'ok' if ok else 'FAIL'}" + (f" — missing {miss}" if miss else "") + (f" — did {bad}" if bad else ""))
+    print("\n".join(rows) or f"bench: no replays under {label}")
+    return 0
+
+
 def cmd_replay(a: argparse.Namespace) -> int:
     cases = json.loads((BENCH / "replays.json").read_text())
+    if a.regrade:
+        return cmd_regrade(a.regrade, cases)
     if a.case:
         cases = [c for c in cases if c["id"] == a.case] or sys.exit(f"bench: no replay {a.case}")
     label = a.label or f"replay-{a.ref or 'wt'}-{a.model}"
@@ -369,6 +416,11 @@ def cmd_replay(a: argparse.Namespace) -> int:
         env["PATH"] = f"{work / '.claude/skills/orchestrate/scripts'}{os.pathsep}{env.get('PATH', '')}"
         env.pop("ORCHESTRATE_WS", None)
         for step in c["setup"]:   # the frozen state, built by the candidate's own board: [board args] or {write, body}
+            if isinstance(step, dict) and "commit" in step:
+                g = ["git", "-c", "user.email=bench@local", "-c", "user.name=bench"]
+                sh("git", "add", "-A", cwd=work)
+                sh(*g, "commit", "-q", "-m", step["commit"], cwd=work)
+                continue
             if isinstance(step, dict):
                 (work / step["write"]).parent.mkdir(parents=True, exist_ok=True)
                 (work / step["write"]).write_text(step["body"])
@@ -387,16 +439,13 @@ def cmd_replay(a: argparse.Namespace) -> int:
                 subprocess.run(cmd, cwd=work, env=env, stdout=fh, stderr=subprocess.STDOUT, timeout=a.timeout)
             except subprocess.TimeoutExpired:
                 pass
-        cmds, text = commands_of(stream)
-        hay = "\n".join(cmds) + "\n" + text
-        miss = [p for p in c.get("expect", []) if not re.search(p, hay, re.M)]
-        bad = [p for p in c.get("forbid", []) if re.search(p, "\n".join(cmds), re.M)]
-        ok = not miss and not bad
+        ok, miss, bad, cmds = grade(c, stream)
         failed += not ok
         out_dir.mkdir(parents=True, exist_ok=True)
-        res = {"schema": 1, "case": c["id"], "label": label, "skill_version": version, "model": a.model, "pass": ok,
+        res = {"schema": 1, "case": c["id"], "label": label, "skill_version": version, "ref": a.ref or "",
+               "skill_hash": tree_hash(work / ".claude/skills/orchestrate"), "model": a.model, "pass": ok,
                "missing": miss, "forbidden": bad, "commands": cmds[:40], "stream": summarize_stream(stream), "workdir": str(work)}
-        (out_dir / f"{c['id']}-{next_index(out_dir)}.json").write_text(json.dumps(res, indent=1) + "\n")
+        (out_dir / f"{c['id']}-{next_index(out_dir, c['id'])}.json").write_text(json.dumps(res, indent=1) + "\n")
         print(f"bench replay: {c['id']} {'ok' if ok else 'FAIL'}" + (f" — missing {miss}" if miss else "") + (f" — did {bad}" if bad else "")
               + (f" · ${res['stream'].get('cost_usd')}" if res["stream"].get("cost_usd") else ""))
     return 1 if failed else 0
@@ -419,6 +468,7 @@ def main(argv: list[str]) -> int:
     p = sub.add_parser("replay"); p.add_argument("--case"); p.add_argument("--model", default="sonnet")
     p.add_argument("--ref", default=""); p.add_argument("--budget", type=float, default=1.0)
     p.add_argument("--timeout", type=int, default=600); p.add_argument("--label"); p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--regrade", metavar="LABEL", help="grade LABEL's saved transcripts again with the current cases (free)")
     a = ap.parse_args(argv)
     return {"validate": cmd_validate, "run": cmd_run, "compare": cmd_compare, "field": cmd_field, "replay": cmd_replay}[a.cmd](a)
 

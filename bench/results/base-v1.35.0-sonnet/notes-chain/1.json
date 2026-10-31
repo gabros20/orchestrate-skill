@@ -1,0 +1,89 @@
+{
+ "schema": 1,
+ "task": "notes-chain",
+ "split": "train",
+ "arm": "skill",
+ "label": "base-v1.35.0-sonnet",
+ "ref": "v1.35.0",
+ "skill_version": "1.35.0",
+ "model": "sonnet",
+ "n": 1,
+ "started": "2026-10-31T22:43:41",
+ "wall_s": 34.2,
+ "exit": 0,
+ "timed_out": false,
+ "dirty": false,
+ "accept": {
+  "tests": 7,
+  "failed": 0,
+  "passed": 7
+ },
+ "pass": true,
+ "stream": {
+  "cost_usd": 0.15019680000000002,
+  "turns": 9,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "score": {
+  "schema": 1,
+  "skill": "1.35.0",
+  "started_on": "1.35.0",
+  "run": "20261031-224349-a9c8",
+  "strategy": "staged",
+  "review": "",
+  "engine": "",
+  "host": "",
+  "models": {},
+  "outcome": {
+   "finish": "pass",
+   "forced": false,
+   "stands": true,
+   "tasks": 3,
+   "done": 3,
+   "blocked": 0,
+   "open": 0
+  },
+  "cost": {
+   "dispatches": 0,
+   "worker_attempts": 0,
+   "per_accepted": 0.0,
+   "tokens": 0,
+   "usd": null,
+   "wall_min": 0.4
+  },
+  "calibration": {
+   "returns": {
+    "n": 0
+   },
+   "verdicts": {
+    "n": 0
+   }
+  },
+  "quality": {
+   "first_pass": "3/3",
+   "gate_fails": 0,
+   "gate_rounds_max": 0,
+   "checks": "0/0",
+   "report_mismatch": 0,
+   "drift": 0
+  },
+  "discipline": {
+   "plan": "approved",
+   "check_findings": 0,
+   "nudges": 0,
+   "escalations": 0
+  },
+  "communication": {
+   "mail": 0,
+   "asks": 0,
+   "unanswered": 0,
+   "learnings": 0
+  },
+  "friction": {
+   "n": 0
+  }
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-224341-notes-chain-base-v1.35.0-sonnet-1"
+}

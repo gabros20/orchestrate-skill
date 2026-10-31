@@ -80,6 +80,12 @@ few turns. It is graded by regex: commands and text that must appear, and comman
 case makes one `evals/output/cases.json` scenario executable, named in its `covers` field. Add a case
 whenever a field report or a bug shows a wrong move at a known state.
 
+**Grading** reads the controller's own events only; subagents' commands are their workers' moves.
+`bench replay --regrade LABEL` re-grades saved transcripts against the current cases, so a better
+grader never needs a paid rerun. A case that the bench's own setup could pass by accident needs a
+note. One example: the skill is installed inside the repo, so exploring can find `SKILL.md`, and only
+the Skill tool counts as activation.
+
 ## Field data and the ledger
 
 **`bench field`** reads every run the board has registered (`~/.orchestrate/runs`) and groups their

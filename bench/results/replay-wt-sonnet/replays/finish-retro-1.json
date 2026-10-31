@@ -1,0 +1,24 @@
+{
+ "schema": 1,
+ "case": "finish-retro",
+ "label": "replay-wt-sonnet",
+ "skill_version": "1.35.0",
+ "model": "sonnet",
+ "pass": false,
+ "missing": [
+  "board retro"
+ ],
+ "forbidden": [],
+ "commands": [
+  "git status --short && git log --oneline -5"
+ ],
+ "stream": {
+  "cost_usd": 0.0338278,
+  "turns": 2,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-223242-replay-finish-retro",
+ "regraded": "2026-10-31"
+}

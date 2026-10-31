@@ -19,14 +19,14 @@
     "Ship the parser and the formatter"
    ]
   ],
-  "prompt": "Continue the orchestration run in this repo. The user is here and answers in the next message — end your turn when you need them.",
+  "prompt": "Use the orchestrate skill (this session already runs it): Continue the orchestration run in this repo. The user is here and answers in the next message — end your turn when you need them.",
   "max_turns": 8,
   "expect": [
    "board plan(?![ \\t]+(approved|changed|skipped))",
    "strategy=staged"
   ],
   "forbid": [
-   "board plan[^\\n]*\\|\\s*(head|tail)",
+   "board plan[^\\n]*\\|\\s*(head|tail)(\\s+-n)?\\s+-?([0-9]|1[0-9]|2[0-4])\\b",
    "board dispatch",
    "board plan (approved|skipped)"
   ]
@@ -65,8 +65,23 @@
     "sonnet"
    ],
    {
+    "write": "kv/__init__.py",
+    "body": ""
+   },
+   {
+    "write": "kv/parse.py",
+    "body": "def parse(text):\n    out = {}\n    for line in text.splitlines():\n        if line.strip():\n            k, _, v = line.partition(\"=\")\n            out[k.strip()] = v.strip()\n    return out\n"
+   },
+   {
+    "write": "tests/test_parse.py",
+    "body": "import unittest\nfrom kv.parse import parse\n\n\nclass T(unittest.TestCase):\n    def test_parse(self):\n        self.assertEqual(parse(\"a=1\\nb = 2\\n\"), {\"a\": \"1\", \"b\": \"2\"})\n"
+   },
+   {
+    "commit": "task 1: parser"
+   },
+   {
     "write": ".orchestrate/task-1-report.md",
-    "body": "Status: DONE\nConfidence: 0.8\nCommits: none (replay)\nTests: 4 passed\n"
+    "body": "Status: DONE\nConfidence: 0.8\nCommits: task 1: parser (HEAD)\nTests: python3 -m unittest — 1 passed\n"
    },
    [
     "return",
@@ -79,14 +94,13 @@
     ".orchestrate/task-1-report.md"
    ]
   ],
-  "prompt": "Continue the orchestration run in this repo.",
+  "prompt": "Use the orchestrate skill (this session already runs it): Continue the orchestration run in this repo.",
   "max_turns": 10,
   "expect": [
-   "(?i)spec"
+   "(?i)^Agent: .*(spec|review)|board review 1 [^\\n]*--agent spec"
   ],
   "forbid": [
-   "board done 1",
-   "board gate 1 [^\\n]*--verdict ok"
+   "board review 1 [^\\n]*--agent controller"
   ]
  },
  {
@@ -166,7 +180,7 @@
     ".orchestrate/final-review.md"
    ]
   ],
-  "prompt": "The final gate passed and the finish is recorded. Wrap up the run.",
+  "prompt": "Use the orchestrate skill (this session already runs it): The final gate passed and the finish is recorded. Wrap up the run.",
   "max_turns": 8,
   "expect": [
    "board retro"
@@ -174,5 +188,79 @@
   "forbid": [
    "gh issue create"
   ]
+ },
+ {
+  "id": "resume-activation",
+  "covers": "activation (resume)",
+  "files": {
+   "plan.md": "# Plan\n\n## Task 1: Parser\n\nParse `key=value` lines into a dict (`kv/parse.py`).\n\n## Task 2: Formatter\n\nFormat a dict back to sorted `key=value` lines (`kv/fmt.py`).\n"
+  },
+  "setup": [
+   [
+    "init",
+    "plan.md",
+    "--strategy",
+    "staged",
+    "--review",
+    "dual",
+    "--confirm",
+    "off",
+    "--goal",
+    "Ship the parser and the formatter"
+   ],
+   [
+    "plan",
+    "skipped",
+    "--msg",
+    "confirm=off"
+   ],
+   [
+    "dispatch",
+    "1",
+    "--agent",
+    "impl-1",
+    "--model",
+    "sonnet"
+   ],
+   {
+    "write": "kv/__init__.py",
+    "body": ""
+   },
+   {
+    "write": "kv/parse.py",
+    "body": "def parse(text):\n    out = {}\n    for line in text.splitlines():\n        if line.strip():\n            k, _, v = line.partition(\"=\")\n            out[k.strip()] = v.strip()\n    return out\n"
+   },
+   {
+    "write": "tests/test_parse.py",
+    "body": "import unittest\nfrom kv.parse import parse\n\n\nclass T(unittest.TestCase):\n    def test_parse(self):\n        self.assertEqual(parse(\"a=1\\nb = 2\\n\"), {\"a\": \"1\", \"b\": \"2\"})\n"
+   },
+   {
+    "commit": "task 1: parser"
+   },
+   {
+    "write": ".orchestrate/task-1-report.md",
+    "body": "Status: DONE\nConfidence: 0.8\nCommits: task 1: parser (HEAD)\nTests: python3 -m unittest — 1 passed\n"
+   },
+   [
+    "return",
+    "1",
+    "--agent",
+    "impl-1",
+    "--status",
+    "DONE",
+    "--report",
+    ".orchestrate/task-1-report.md"
+   ]
+  ],
+  "prompt": "Continue the orchestration run in this repo.",
+  "max_turns": 6,
+  "expect": [
+   "^skill: orchestrate"
+  ],
+  "forbid": [
+   "cat > kv/",
+   "> kv/parse\\.py"
+  ],
+  "note": "the bench installs the skill inside the repo, so exploring can find SKILL.md; in real use it lives in ~/.claude/skills — only the Skill tool counts"
  }
 ]

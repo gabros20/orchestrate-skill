@@ -1,0 +1,31 @@
+{
+ "schema": 1,
+ "case": "report-landed",
+ "label": "replay-30e604c-sonnet",
+ "skill_version": "1.35.0",
+ "ref": "30e604c",
+ "skill_hash": "f9b45a79dcbd",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate 2>&1 | head -30; board next 2>&1 | head -40",
+  "cat .orchestrate/run.md .orchestrate/task-1-report.md; tail -5 .orchestrate/journal.jsonl; git log --stat -2 | head -20; ls; board help controller | head -40",
+  "cat plan.md kv/parse.py tests/test_parse.py; B=.claude/skills/orchestrate/scripts/board; board review 1 --kind spec --agent spec-1 --model sonnet 2>&1 | tail -3",
+  "Agent: general-purpose Spec review task 1",
+  "python3 -m unittest 2>&1 | tail -4; B=.claude/skills/orchestrate/scripts/board; board gate 1 --kind spec --verdict ok --findings .orchestrate/task-1-spec-findings.md 2>&1 | tail -2",
+  "B=.claude/skills/orchestrate/scripts/board; board review 1 --kind quality --agent quality-1 --model sonnet 2>&1 | tail -2",
+  "Agent: general-purpose Quality review task 1",
+  "B=.claude/skills/orchestrate/scripts/board; board gate 1 --kind quality --verdict ok --findings .orchestrate/task-1-quality-findings.md 2>&1|tail -2; board done 1 --msg \"parser; note: tests/ lacks __init__.py so bare unittest runs 0 tests\" 2>&1|tail -3; board decide D1 \"task 2 must add tests/__init__.py so bare 'python3 -m unittest' discovers tests\" --owner controller 2>&1|tail -1; board next 2>&1|tail -4"
+ ],
+ "stream": {
+  "cost_usd": 0.2122988,
+  "turns": 2,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 2
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-230200-replay-report-landed"
+}

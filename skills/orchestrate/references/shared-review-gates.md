@@ -26,12 +26,12 @@ Produces:
 
 Two DISTINCT gate kinds; don't conflate them. Gates are enforced, not trusted: a gate that can't
 fail the work isn't a gate. Machine checks (tests, lint, `scripts/check-sync`) are the cheapest
-gate of all: run them through the journal (`board exec N --name tests -- …`) so the exit code is
-on the record and on the card, and `board done` is refused over a failure. The record itself is a
-gate: `board check` fails a task marked done with no review gate ever opened (review on) or with
-quality opened before spec — an output-blind governance floor, judged on roles and order alone.
-Vendor-native review layers (Codex Guardian, Claude Code's auto-mode classifier) are additional
-independent signals; they never replace `board gate`.
+gate of all: run them through the journal (`board exec N --name tests -- …`): the exit code lands
+on the card, and `board done` refuses a failure. The record itself is a
+gate: `board done` refuses a task whose required review never
+passed, a pass needs a reviewer on record, and `board check` fails quality opened before spec.
+Vendor-native review layers (Codex Guardian, Claude Code's auto-mode classifier) are extra
+signals; they never replace `board gate`.
 
 ## 1. Plan-veto (before any execution)
 
@@ -74,7 +74,8 @@ non-compliant code is wasted tokens.
 - Every gate is journaled: `board review N --kind K --round R` when dispatched, `board gate N
   --kind K --verdict ok|fail|warn --findings <file>` when it closes (the explicit verdict outranks
   the findings-file parse). A fix wave is a new implementer *attempt* — the review cycle resets
-  and the ledger stays closed (`board done` refuses) until the current attempt's gates pass.
+  and the ledger stays closed (`board done` refuses) while a current gate has failed or a required
+  kind's latest verdict is not a pass — re-review what failed.
 - Findings loop: Critical/Important → fix subagent → RE-REVIEW (no skipping); the fix answers
   its findings and nothing more — no defensive extras, options or layers they did not ask for.
   Minor → ledger, batch to final review. ⚠️ "cannot verify from diff" → the CONTROLLER resolves

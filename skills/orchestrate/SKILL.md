@@ -6,7 +6,8 @@ description: >-
   app builds and deep multi-source research — parallel worktrees, hierarchical fleets, staged
   reviews, teams, workflows, goal loops, advisor splits, adversarial planning, external coding CLIs.
   Triggers: "orchestrate this", "run this plan with subagents", "fan out agents", "deep research",
-  "agent swarm". Not for small coupled tasks, single lookups, or choosing a product lifecycle.
+  "agent swarm", or resuming a run (`.orchestrate/` exists: "continue the run").
+  Not for small coupled tasks, single lookups, or choosing a product lifecycle.
 ---
 
 # Orchestrate
@@ -200,13 +201,13 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    the selected strategy's owner.
 6. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
    and send failures back to the correct worker or owner.
-7. Close each gated unit with `board done N` (it writes the ledger line; refused over a failed
-   gate or check); `board check --finish` must be clean (it refuses processes the run left: `board reap`) and `board finish --gate pass|fail --evidence`
-   recorded before you finish or hand off (`board resume` is the handoff's state layer, with a
-   receipt; `board postmortem` feeds the evolve pass; `board memory` renders the run as one
-   project-context record when the repo keeps project memory). Finish only when the stop
-   condition is verified. Then the [retro](references/shared-retro.md): `board retro` scores the
-   run; a skill-level finding becomes a field report, filed on the user's yes.
+7. Close each gated unit with `board done N` (it writes the ledger line; refused over a failed or
+   missing gate, or a failed check); `board check --finish` must be clean (it refuses processes the run left:
+   `board reap`) and `board finish --gate pass|fail --evidence` recorded before you finish or hand
+   off (`board resume` is the handoff's state layer, with a receipt; `board memory` renders the run
+   as one project-context record when the repo keeps project memory). Then the
+   [retro](references/shared-retro.md): `board retro` scores the run; a skill-level finding becomes
+   a field report, filed on the user's yes.
 
 Run [toolbox](scripts/toolbox) (repo recipes) and [capabilities](scripts/capabilities) (machine tools)
 once; reuse their files.

@@ -1,0 +1,31 @@
+{
+ "schema": 1,
+ "case": "resume-activation",
+ "label": "replay-E-2026-10-31-a-sonnet",
+ "skill_version": "1.35.0+E-2026-10-31-a",
+ "model": "sonnet",
+ "pass": true,
+ "activated": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -30; ls .claude/skills/orchestrate/scripts | head -30",
+  "cat plan.md .orchestrate/run.md .orchestrate/task-1-report.md; tail -5 .orchestrate/journal.jsonl; board next 2>&1 | head -30",
+  "git status --short; ls kv 2>&1; board help controller 2>&1 | head -40",
+  "B=.claude/skills/orchestrate/scripts/board; git branch -a; git worktree list; board rail \"task 1 report claims DONE but kv/parse.py absent and tree clean; re-dispatching\" ; board dispatch 1 --model sonnet --agent fix-1-r2 2>&1 | tail -5",
+  "Agent:  Implement kv parser",
+  "B=.claude/skills/orchestrate/scripts/board; git status --short; cat kv/parse.py; board exec 1 --name tests -- python3 -m unittest discover -s tests 2>&1 | tail -5; cat .orchestrate/task-1-report.md",
+  "B=.claude/skills/orchestrate/scripts/board; board return 1 --agent fix-1-r2 --status DONE --report .orchestrate/task-1-report.md --confidence 0.95 2>&1|tail -2; board next"
+ ],
+ "stream": {
+  "cost_usd": 0.1690985,
+  "turns": 3,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 1
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-223910-replay-resume-activation",
+ "rebuilt": "2026-10-31 (repeats had overwritten one file)",
+ "regraded": "2026-10-31"
+}

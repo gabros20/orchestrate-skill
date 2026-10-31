@@ -75,12 +75,13 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "1.35.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
+VERSION = "1.36.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
 SCHEMA = 2           # the journal's shape; bumps ONLY for a breaking change, with an in-place upgrader (migrate_v1 is one)
 # What a run started on an older release must know. Newest first, one line per release: "none" = additive, nothing to
 # do · "action" = do it, then `board version --ack V --msg ".."` (a check finding, so finish refuses, until acked).
 # Automatic journal rewrites never live here — they run on open (journal_path), like the v1→v2 upgrade.
 MIGRATIONS = (
+    ("1.36.0", "none", "board done refuses a task whose required review gate never passed (unset review = dual); a passing gate needs a reviewer on record or --msg (unreviewed); review --agent controller is refused — evaluated at command time, old journals are untouched; resuming a run is a skill trigger"),
     ("1.35.0", "none", "board next points a finished run at board retro until it has run; maintainer-side bench/ (tasks with hidden tests, replays, compare, field) and the orchestrate-evolve skill — nothing changes for a run in progress"),
     ("1.34.0", "none", "board score / board retro (--draft) at finish; reports and verdicts carry Confidence: 0–1, read by return/gate and scored as Brier; the board logs its own friction to raw/friction.jsonl — additive, older runs score with no calibration"),
     ("1.33.0", "none", "dispatch/launch refuse while the flight plan is pending (the refusal names the fix: board plan, show it, board plan approved|changed|skipped); ledgered tasks close their unreturned stints and old questions stop counting — older runs only get quieter; board next, board help, board hold, send --ask --wait"),
@@ -887,6 +888,29 @@ def parse_kv(value: str | None) -> dict[str, str]:
             continue
         k, sep, v = re.split(r"([=:])", part, maxsplit=1) if re.search(r"[=:]", part) else (part, "", "")
         out[k.strip()] = v.strip() if sep else ""
+    return out
+
+
+def review_required(review: object) -> list[str]:
+    """The gate kinds `board done` needs passed in the current attempt: none when review is off; "*" = any kind
+    (panel, consensus and factcheck gates are named by the run)."""
+    r = str(review or "").strip()
+    if r in ("", "off", "none"):
+        return []
+    return {"dual": ["spec", "quality"], "spec": ["spec"], "quality": ["quality"]}.get(r, ["*"])
+
+
+def review_lowered(st: State) -> list[str]:
+    """Each mid-run `set review=` that asks for fewer gates than the run started with — a recorded choice, reported."""
+    out, cur = [], None
+    for e in st.events:
+        if e.get("ev") == "run":
+            cur = str(e.get("review") or "")
+        elif e.get("ev") == "set" and "review" in (e.get("dims") or {}):
+            new = str(e["dims"]["review"])
+            if cur is not None and len(review_required(new)) < len(review_required(cur)):
+                out.append(f"review lowered mid-run: {cur or '-'} → {new} (seq {e.get('seq', '?')})")
+            cur = new
     return out
 
 
@@ -3618,7 +3642,9 @@ def compute_score(st: State) -> dict:
                     "checks": f"{sum(1 for c in chk if c[3] == 'ok')}/{len(chk)}",
                     "report_mismatch": sum(1 for s in st.stints if s.reported and s.reported != s.status),
                     "drift": len(run.drift)},
-        "discipline": {"plan": run.plan or "none", "check_findings": len(check(st)), "nudges": sum(s.nudges for s in st.stints),
+        "discipline": {"plan": run.plan or "none", "check_findings": len(check(st)), "review_lowered": len(review_lowered(st)),
+                       "unreviewed_passes": sum(1 for e in st.events if e.get("ev") == "gate" and e.get("unreviewed")),
+                       "nudges": sum(s.nudges for s in st.stints),
                        "escalations": sum(1 for s in st.stints if s.escalated_to)},
         "communication": {"mail": len(st.mail), "asks": len(asks), "unanswered": sum(1 for m in asks if m.seq not in answered),
                           "learnings": len(st.learned)},
@@ -3642,7 +3668,9 @@ def render_score(sc: dict) -> str:
         f"calibration  returns: {cl(cal['returns'])} · verdicts: {cl(cal['verdicts'])}",
         f"quality      first pass {q['first_pass']} · gate fails {q['gate_fails']} · most rounds {q['gate_rounds_max']} · checks {q['checks']} ok · "
         f"report≠return {q['report_mismatch']} · drift {q['drift']}",
-        f"discipline   plan {d['plan']} · check findings {d['check_findings']} · nudges {d['nudges']} · escalations {d['escalations']}",
+        f"discipline   plan {d['plan']} · check findings {d['check_findings']} · review lowered {d['review_lowered']} · "
+        f"unreviewed passes {d['unreviewed_passes']} · nudges {d['nudges']} · "
+        f"escalations {d['escalations']}",
         f"comms        mail {m['mail']} · asks {m['asks']} ({m['unanswered']} unanswered) · learnings {m['learnings']}",
         "friction     " + (" · ".join(f"{k} {v}" for k, v in sc["friction"].items() if k != "n") or "none") +
         (f"  ({FRICTION})" if sc["friction"]["n"] else ""),
@@ -3670,6 +3698,13 @@ def retro_signals(st: State, sc: dict) -> list[str]:
         if s.reported and s.reported != s.status:
             out.append(f"report≠return: {s.agent} (task {s.task}, dispatch seq {s.seq}) reported {s.reported}, recorded {s.status}")
     out += [f"drift: {x}" for x in st.run.drift[:4]]
+    out += review_lowered(st)
+    unrev = [e for e in st.events if e.get("ev") == "gate" and e.get("unreviewed")]
+    if unrev:
+        out.append(f"unreviewed passes: {len(unrev)} gate(s) passed with no reviewer on record (seq {', '.join(str(e.get('seq')) for e in unrev[:5])})")
+    fin = next((e for e in reversed(st.events) if e.get("ev") == "finish"), {})
+    if fin.get("gate") == "pass" and re.search(r"task-[\w.]+-report", str(fin.get("evidence", ""))):
+        out.append(f"finish evidence is a worker's report ({fin.get('evidence')}), not the final-deliverable gate's findings (seq {fin.get('seq')})")
     for t in st.ordered():
         tries = sum(1 for s in st.stints if s.task == t.id and role_tier(s.role) == "worker")
         if tries >= 3:
@@ -4994,6 +5029,9 @@ def _main(argv: list[str]) -> int:
         if args.observed_model:
             write_resolved(ws)
     elif cmd == "review":
+        if clean(args.agent or "") == "controller":
+            sys.exit(f"board: a reviewer is a fresh agent, never the controller — dispatch one: board review {args.task} --kind {args.kind} "
+                     f"--agent {args.kind}-{args.task} --model M (maker/checker: shared-review-gates.md)")
         if args.agent:
             check_agent(clean(args.agent), load(ws), str(args.task), f"{args.kind} reviewer")
         append_event(ws, task=args.task, ev="review", kind=args.kind, round=args.round, agent=args.agent,
@@ -5002,11 +5040,23 @@ def _main(argv: list[str]) -> int:
         conf = parse_conf(args.confidence) if args.confidence else None
         if args.confidence and conf is None:
             sys.exit(f"board: --confidence {args.confidence} — a probability: 0.8, .8 or 80%")
+        unreviewed = None
+        if args.verdict in ("ok", "warn"):
+            st = load(ws)
+            t = st.tasks.get(str(args.task))
+            att = t.attempt if t else 0
+            seen = any(x.task == str(args.task) and x.attempt >= att and x.role.startswith(args.kind) for x in st.stints) or \
+                any(v[1] >= att and v[2] == args.kind for v in (t.vote_entries if t else []))
+            if not seen and not args.msg:
+                sys.exit(f"board: no {args.kind} reviewer on record for task {args.task} — dispatch one (board review {args.task} --kind {args.kind} "
+                         f"--agent {args.kind}-{args.task} --model M), then record its verdict; passing it without one needs --msg \"why\" "
+                         f"(journaled as unreviewed, reported by the retro)")
+            unreviewed = True if not seen else None
         if conf is None and args.findings:
             fp = Path(args.findings)
             conf = next((file_conf(c) for c in ([fp] if fp.is_absolute() else [ws / fp, ws.parent / fp, Path.cwd() / fp]) if c.exists()), None)
         append_event(ws, task=args.task, ev="gate", kind=args.kind, verdict=args.verdict, round=args.round,
-                     findings=args.findings, agent=args.agent, msg=args.msg, confidence=conf)
+                     findings=args.findings, agent=args.agent, msg=args.msg, confidence=conf, unreviewed=unreviewed)
     elif cmd == "nudge":
         append_event(ws, task=args.task, ev="nudge", agent=args.agent, msg=args.msg)
     elif cmd == "escalate":
@@ -5023,6 +5073,17 @@ def _main(argv: list[str]) -> int:
                      f"is a hole: retry it once, then close the gate yourself (board gate {args.task} --kind K --verdict … --msg \"<lens> not run: …\")")
         if t and t.failed_checks:
             sys.exit(f"board: task {args.task} has a failed check ({', '.join(t.failed_checks)}) — fix, re-run it first")
+        review = str(st.run.dims.get("review") or ("dual" if st.run.dims.get("strategy") else ""))   # unset = the skill's default, as in plan and check
+        latest: dict[str, tuple[float, str]] = {}   # each kind's latest verdict, any attempt: a fix wave re-reviews what failed
+        for ts_, _, kind_, text_ in (t.gate_entries if t else []):
+            if kind_ not in latest or ts_ >= latest[kind_][0]:
+                latest[kind_] = (ts_, text_)
+        passed = [k for k, (_, v) in latest.items() if v.startswith(("ok", "warn"))]
+        missing = [k for k in review_required(review) if not any(k == "*" or g.startswith(k) for g in passed)]
+        if missing:
+            sys.exit(f"board: task {args.task} has no passed {' / '.join('review' if k == '*' else k for k in missing)} gate (review={review}) — "
+                     f"dispatch the reviewer and record its verdict (board gate {args.task} --kind K --verdict …); running with fewer gates "
+                     f"is a recorded run decision: board set review=… (the plan goes back to pending, the retro reports it)")
         line = f"Task {args.task}: complete" + (f" ({clean(args.msg)})" if args.msg else "")
         ws.mkdir(parents=True, exist_ok=True)
         with (ws / "progress.md").open("a", encoding="utf-8") as fh:
@@ -5453,7 +5514,7 @@ def selftest() -> int:
         run("init", "--resume")
         assert (ws / "progress.md").exists()
         run("init", "plan.md", "--strategy", "loop", "--goal", "Round two", expect_fail=True)  # tasks 2/3 still open
-        out = run("init", "plan.md", "--fresh", "--strategy", "loop", "--goal", "Round two")
+        out = run("init", "plan.md", "--fresh", "--strategy", "loop", "--review", "off", "--goal", "Round two")
         st = load(ws)
         assert "archived" in out and st.run.dims["strategy"] == "loop" and not st.problems and st.tasks["1"].state == "todo"
         assert len(list((ws / "archive").iterdir())) == 2 and not (ws / "progress.md").exists()
@@ -5912,11 +5973,15 @@ def selftest() -> int:
         run("gate", "1", "--kind", "spec", "--verdict", "fail", "--findings", "f1.md")
         run("dispatch", "1", "--agent", "fix-1-r2", "--model", "sonnet")
         run("return", "1", "--agent", "fix-1-r2", "--status", "DONE", "--confidence", "0.6")
+        run("review", "1", "--kind", "spec", "--agent", "controller", expect_fail=True)   # a reviewer is a fresh agent
+        run("review", "1", "--kind", "spec", "--agent", "spec-1", "--model", "sonnet")
         run("gate", "1", "--kind", "spec", "--verdict", "ok", "--confidence", ".8")
         run("done", "1")
         run("dispatch", "2", "--agent", "impl-2", "--model", "sonnet")
         run("return", "2", "--agent", "impl-2", "--status", "DONE", "--confidence", "0.95")
-        run("gate", "2", "--kind", "spec", "--verdict", "ok")
+        run("done", "2", expect_fail=True)   # review=spec and no spec gate on record: a missing gate blocks like a failed one
+        run("gate", "2", "--kind", "spec", "--verdict", "ok", expect_fail=True)   # a pass needs a reviewer on record …
+        run("gate", "2", "--kind", "spec", "--verdict", "ok", "--msg", "one-line rename, read in full by the controller")   # … or a reason
         run("done", "2")
         (wsf / "final.md").write_text("✅ ship\n")
         run("finish", "--gate", "pass", "--evidence", "final.md")
@@ -5929,12 +5994,12 @@ def selftest() -> int:
         run("bogus-cmd", expect_fail=True)
         run("help")
         fr = read_friction(wsf)
-        assert [f["kind"] for f in fr] == ["refusal", "refusal", "refusal", "usage", "help"] and fr[1]["cmd"] == "blocked" and fr[0]["v"] == VERSION, fr
+        assert [f["kind"] for f in fr] == ["refusal"] * 6 + ["usage", "help"] and fr[0]["cmd"] == "review" and fr[4]["cmd"] == "blocked" and fr[0]["v"] == VERSION, fr
         sc = json.loads(run("score", "--json"))
         cal = sc["calibration"]
         assert cal["returns"] == {"n": 3, "brier": 0.324, "bias": 0.15}, cal   # 0.9 → a failed gate · 0.6, 0.95 → accepted
         assert cal["verdicts"] == {"n": 1, "brier": 0.04, "bias": -0.2}, cal   # a fail verdict is not scored; an unstated one is left out
-        assert sc["outcome"]["done"] == 2 and sc["cost"]["per_accepted"] == 1.5 and sc["quality"]["first_pass"] == "1/2" and sc["friction"]["refusal"] == 3, sc
+        assert sc["outcome"]["done"] == 2 and sc["cost"]["per_accepted"] == 1.5 and sc["quality"]["first_pass"] == "1/2" and sc["friction"]["refusal"] == 6 and sc["discipline"]["unreviewed_passes"] == 1, sc
         txt = run("score")
         assert txt.startswith("# SCORE") and "brier 0.324" in txt and len(txt.splitlines()) <= 10, txt
         ro = run("retro")
@@ -5944,6 +6009,8 @@ def selftest() -> int:
         dt_ = draft.read_text()
         assert dt_.startswith("---\norchestrate: ") and "## Evidence (board retro)" in dt_ and "refused 2×" in dt_ and "gh issue create" in ro, dt_
         assert "board retro" not in run("next"), "once the retro has run, next no longer points at it"
+        run("set", "review=off")
+        assert "review lowered mid-run: spec → off" in run("retro") and json.loads(run("score", "--json"))["discipline"]["review_lowered"] == 1
         draft.write_text(dt_ + "edited\n")
         run("retro", "--draft")
         assert draft.read_text().endswith("edited\n"), "a second --draft never overwrites the controller's edits"
@@ -6110,6 +6177,7 @@ def selftest() -> int:
         run("todo", "0.1", "scout: X lane")
         run("dispatch", "0.1", "--role", "researcher", "--model", "sonnet")
         run("return", "0.1", "--agent", "research-0.1", "--status", "DONE")
+        run("review", "0.1", "--kind", "factcheck", "--agent", "factcheck-0.1", "--model", "opus")
         run("gate", "0.1", "--kind", "factcheck", "--verdict", "ok")
         run("done", "0.1")
         run("plan", "approved", "--msg", "scout")

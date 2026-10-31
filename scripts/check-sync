@@ -124,6 +124,7 @@ Must NOT|references/shared-token-economy.md,references/strategy-parallel.md,refe
 board learn|SKILL.md,references/shared-token-economy.md,references/shared-contracts.md,references/strategy-parallel.md
 board memory|SKILL.md,references/shared-handoff.md,references/shared-contracts.md
 board retro|SKILL.md,references/shared-retro.md,references/shared-contracts.md,scripts/board
+reviewer on record|references/shared-review-gates.md,references/shared-contracts.md,scripts/board
 Confidence:|references/prompt-implementer.md,references/prompt-spec-reviewer.md,references/prompt-quality-reviewer.md,references/shared-retro.md,scripts/board
 board reap|SKILL.md,references/shared-lane-hygiene.md,references/shared-monitoring.md
 board version|SKILL.md,references/shared-lane-hygiene.md,references/shared-handoff.md

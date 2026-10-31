@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "case": "report-landed",
+ "label": "replay-30e604c-sonnet",
+ "skill_version": "1.35.0",
+ "ref": "30e604c",
+ "skill_hash": "f9b45a79dcbd",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -40; board next 2>&1 | head -40",
+  "cat plan.md .orchestrate/run.md .orchestrate/task-1-report.md; tail -5 .orchestrate/journal.jsonl; git status --short; ls kv tests",
+  "cat kv/parse.py tests/test_parse.py; cat .claude/skills/orchestrate/references/prompt-spec-reviewer.md | head -60; board help controller | head -50",
+  "board review 1 --kind spec --round 1 --agent spec-1 --model haiku 2>&1 | tail -5; git diff 1a46264..HEAD --stat",
+  "Agent:  Spec review task 1",
+  "B=.claude/skills/orchestrate/scripts/board; board gate 1 --kind spec --verdict ok --round 1 --findings .orchestrate/review-task1-spec-r1.md 2>&1 | tail -3; board review 1 --kind quality --round 1 --agent quality-1 --model sonnet 2>&1 | tail -3",
+  "Agent:  Quality review task 1",
+  "B=.claude/skills/orchestrate/scripts/board; board gate 1 --kind quality --verdict ok --round 1 --findings .orchestrate/review-task1-quality-r1.md 2>&1|tail -3; board exec 1 --name tests -- python3 -m unittest 2>&1|tail -3; board done 1 2>&1|tail -3; board next",
+  "cat .orchestrate/raw/check-task1-tests-11.log; python3 -m unittest 2>&1 | tail -5; python3 -m unittest discover -s tests -t . 2>&1 | tail -3",
+  "B=.claude/skills/orchestrate/scripts/board; touch tests/__init__.py && git add tests/__init__.py && git commit -qm \"task 1: make tests discoverable\" -m \"Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\" && board exec 1 --name tests -- python3 -m unittest 2>&1|tail -3; board done 1 2>&1|tail -3; board next"
+ ],
+ "stream": {
+  "cost_usd": 0.21644886500000005,
+  "turns": 4,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 2
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-230445-replay-report-landed"
+}

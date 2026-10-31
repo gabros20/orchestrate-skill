@@ -1,0 +1,28 @@
+{
+ "schema": 1,
+ "case": "report-landed",
+ "label": "replay-v1.35.0-sonnet",
+ "skill_version": "1.35.0",
+ "model": "sonnet",
+ "pass": false,
+ "missing": [
+  "(?i)^Agent: .*(spec|review)|board review 1 [^\\n]*--agent spec"
+ ],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -40; board next 2>&1 | head -30",
+  "cat plan.md .orchestrate/run.md .orchestrate/task-1-report.md; tail -15 .orchestrate/journal.jsonl; git status --short",
+  "ls kv 2>&1; git log --oneline; git branch -a; cat .claude/skills/orchestrate/references/shared-review-gates.md | head -60",
+  "find / -name parse.py -path '*kv*' 2>/dev/null | head; git stash list; git worktree list"
+ ],
+ "stream": {
+  "cost_usd": 0.09767379999999998,
+  "turns": 7,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-223354-replay-report-landed",
+ "regraded": "2026-10-31"
+}

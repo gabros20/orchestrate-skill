@@ -17,5 +17,6 @@
   {"id":"negative-monitor","prompt":"Wait for this one existing command to finish and report its exit code.","should_trigger":false},
   {"id":"negative-architecture","prompt":"Choose a multi-tenant data architecture for this SaaS app.","should_trigger":false},
   {"id":"negative-automation","prompt":"Create a deterministic nightly backup shell script.","should_trigger":false},
-  {"id":"negative-single-lookup","prompt":"What is the latest stable version of Node.js?","should_trigger":false}
+  {"id":"negative-single-lookup","prompt":"What is the latest stable version of Node.js?","should_trigger":false},
+  {"id": "positive-resume", "prompt": "Continue the orchestration run in this repo.", "should_trigger": true}
 ]

@@ -221,6 +221,7 @@ board resume                            # the handoff's state layer, with a rece
 board reap [--kill]                     # what the run left running (servers, watchers) · finish refuses leftovers
 board version                           # this release; on a run: its start release and what changed since
 board postmortem                        # per-tier evidence for routing, recommend-only
+board score · board retro --draft       # the run's versioned score · skill-level signals → a field report you file
 ```
 
 A subprocess lane is one command — `board launch N --agent A --engine grok --model M -- brief.md`
@@ -254,6 +255,13 @@ feature):
   why, failed attempts, learnings, verification, the frontier) so the next run, in any tool,
   starts from what this one learned. No dependency: the board prints the `ctx` command when the
   repo keeps project memory and stays silent otherwise.
+- **retro** — at finish, `board retro` scores the run: outcome, cost, and the **calibration** of
+  every stated `Confidence:` (implementers' "passes review first time", reviewers' "this verdict
+  holds", as a Brier score). It also lists what the board noticed going wrong: its own refusals,
+  usage errors and help reads, report≠return, drift, churn. A finding about the skill itself (not
+  the project) becomes a field-report draft with a metric and a prediction; the agent shows it to
+  you and files it against this repo only on your yes. Every run becomes data for the next release
+  ([research](docs/research/2026-10-skill-rl/)).
 
 ```text
 $ board inbox                      # what impl-3 sees at its next checkpoint

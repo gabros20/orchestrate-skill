@@ -50,7 +50,7 @@ file under .orchestrate/ is your one write.
 Delivering your inline verdict is your completion condition — running as a background subagent
 or teammate, send it to the controller via SendMessage as your final action.
 If your inputs name a vote (panel or consensus), cast it: `board vote N --kind <gate> --agent
-<you> --verdict ok|fail|warn --why "…"` — ONE line, journaled; the quorum is derived, never yours to call.
+<you> --verdict ok|fail|warn --why "…" --confidence 0.N` — ONE line, journaled; the quorum is derived, never yours to call.
 
 ## Check
 - MISSING: requirements skipped; things claimed but not actually implemented
@@ -71,4 +71,5 @@ missing/extra/wrong — go in the findings FILE. Inline return:
 ❌ Issues — counts by severity + findings file path
 ⚠️ Cannot verify from diff — count + findings file path (each listed there with what evidence
 would settle it)
+Confidence: <0–1 that this verdict holds — honest, it is scored> (also atop the findings file)
 ```

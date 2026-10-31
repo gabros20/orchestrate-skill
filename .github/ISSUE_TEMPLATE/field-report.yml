@@ -1,0 +1,45 @@
+name: Field report
+description: A run showed the skill or the board doing something wrong — from `board retro --draft`.
+title: "[field] "
+labels: ["field-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Paste the draft `board retro --draft` wrote (`.orchestrate/retro/field-report-<run>.md`), or fill the fields.
+        Keep it shareable: no project code, file contents, secrets, private names or paths.
+  - type: input
+    id: version
+    attributes:
+      label: orchestrate version
+      description: The `orchestrate:` line of the draft (`board --version`).
+      placeholder: "1.34.0"
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Host · strategy · review · models
+      placeholder: "Claude Code · staged · dual · worker=sonnet, reviewer=opus"
+  - type: dropdown
+    id: fix-class
+    attributes:
+      label: Fix class
+      options: ["skill text", "board", "routing", "bench", "not sure"]
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: What happened, evidence, likely cause, proposed fix
+      description: The draft's sections. Evidence = `board retro` signal lines and journal seq numbers.
+    validations:
+      required: true
+  - type: input
+    id: prediction
+    attributes:
+      label: Metric and prediction
+      description: The `board score` line the fix should move, and which way — so a later run can check it.
+      placeholder: "calibration returns bias: +0.3 → under +0.1"
+    validations:
+      required: true

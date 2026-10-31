@@ -14,8 +14,9 @@ CONTROLLER — the loop    (board next at every checkpoint: what needs you, most
   dispatch N --model M [--agent <role>-<task>: derived when omitted] [--role --engine --effort --worktree --owns --by LEAD
        --session --log --cmd-file]        names: impl-3 · lead-1 · impl-1.1 · spec-3 · quality-3 · verify-3 · integ-1 · fix-3-r2
   return N --agent A --status DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED|REFUSED|DESIGN_CONFLICT
-       [--commits a..b --report PATH --observed-model M --tokens 84k --session ID]
-  review N --kind K [--round --agent --model] · gate N --kind K --verdict ok|fail|warn [--round --findings]
+       [--commits a..b --report PATH --observed-model M --tokens 84k --session ID --confidence 0.8]
+  review N --kind K [--round --agent --model] · gate N --kind K --verdict ok|fail|warn [--round --findings --confidence]
+       (confidence: read from the report's / findings file's `Confidence:` line when the flag is absent)
   exec N --name X -- <cmd> · result N --name X --exit RC [--log]     a check THROUGH the journal
   nudge N --agent A · escalate N --agent A --to MODEL --why ".." · blocked N --msg ".."
   decide ID "msg" [--why ".." --owner --task] · rail "msg" · todo N [title]     (re-deciding an id supersedes it)
@@ -23,6 +24,8 @@ CONTROLLER — the loop    (board next at every checkpoint: what needs you, most
   check [--finish] [--replay] [--json] · finish --gate pass|fail --evidence PATH [--force --reason]
   wait --task N [--task M] [--timeout 0]   block until their work is on disk (exit 3: one cannot land)
   next · hold "the user's reason" | hold --off     (a held run shows HELD; dispatch warns while held)
+  score [--json] · retro [--draft]  at finish: the run's score vector, then skill-level signals → a field-report
+       draft the user files (references/shared-retro.md); the board's own friction lands in raw/friction.jsonl
 
 LANES — a subprocess engine as one command
   launch N --agent A --engine E --model M [--effort --owns --after N,M --cwd --extra='..' --dry-run --fg] -- spec.md
@@ -42,7 +45,7 @@ WORKERS — observations (every one also hands you your unread mail, peers' lear
   send "msg" --from A --to <agent|controller|lead|all> [--ask [--wait]] [--re SEQ] · inbox --agent A [--peek --full]
        (controller/lead resolve to YOUR dispatcher in a tree: a subtree's questions go to its lead)
   wait --agent A [--timeout S] · wait --agent A --task N [--or-mail: exit 5 when mail comes first] · peers --agent A
-  vote N --kind K --agent A --verdict ok|fail|warn [--why ".."]
+  vote N --kind K --agent A --verdict ok|fail|warn [--why ".." --confidence 0.8]
 
 VIEWS
   board (live kanban: q · j/k · enter · e · a · r · n) · watch [--here] · runs · show [-x --attention --json]
@@ -72,12 +75,13 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "1.33.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
+VERSION = "1.34.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
 SCHEMA = 2           # the journal's shape; bumps ONLY for a breaking change, with an in-place upgrader (migrate_v1 is one)
 # What a run started on an older release must know. Newest first, one line per release: "none" = additive, nothing to
 # do · "action" = do it, then `board version --ack V --msg ".."` (a check finding, so finish refuses, until acked).
 # Automatic journal rewrites never live here — they run on open (journal_path), like the v1→v2 upgrade.
 MIGRATIONS = (
+    ("1.34.0", "none", "board score / board retro (--draft) at finish; reports and verdicts carry Confidence: 0–1, read by return/gate and scored as Brier; the board logs its own friction to raw/friction.jsonl — additive, older runs score with no calibration"),
     ("1.33.0", "none", "dispatch/launch refuse while the flight plan is pending (the refusal names the fix: board plan, show it, board plan approved|changed|skipped); ledgered tasks close their unreturned stints and old questions stop counting — older runs only get quieter; board next, board help, board hold, send --ask --wait"),
     ("1.32.0", "none", "review rounds converge (settled findings, churn → replan); a panel gate waits for every lens and done refuses a vote-pending gate (evaluated at command time — old journals are not re-flagged); proof first, noticed-not-touched, implementer stops when checks pass"),
     ("1.31.0", "none", "Prepare (clarify · equip · scout · set up) and kind/prep/tools dims; WORKER block keeps a work log; catalog refresh 2026-10-13: haiku = Haiku 5.5 @medium, Sol workers @medium, Sol @xhigh grinder — runs before 1.31 read as prep off"),
@@ -127,6 +131,8 @@ def default_model(role: str, posture: str, engine: str) -> str:
     return pick[1] if engine == "claude" else pick[0]
 STATUSES = ("DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED", "REFUSED", "DESIGN_CONFLICT")
 HALTED = ("BLOCKED", "NEEDS_CONTEXT", "REFUSED", "DESIGN_CONFLICT")   # returns that stop the task and its dependents
+FRICTION = "raw/friction.jsonl"   # the board's own misuse: refusals, usage errors, help reads (outside the journal)
+ISSUES_REPO = "gabros20/orchestrate-skill"   # where a run's field report goes — on the user's yes, never by the board
 REDESIGN_CAP = 2   # architect passes per run before the plan is the user's to see (shared-replan.md)
 TASK_EVENTS = {"todo", "title", "dispatch", "return", "review", "gate", "nudge", "escalate", "done",
                "blocked", "note", "check", "vote", "exit", "receipt"}
@@ -3481,6 +3487,232 @@ def render_postmortem(st: State) -> str:
     return "\n".join(L)
 
 
+# --- the field loop: a run's score, the board's own friction, and the retro -----------------------
+# Every run is data for the skill (docs/research/2026-10-skill-rl): `score` is deterministic and versioned, the friction
+# log is the board noticing its own misuse, and `retro` turns skill-level signals into a field report the user files.
+
+def parse_conf(value: object) -> float | None:
+    """0.8 · .8 · 80% → 0.8; anything else (or outside 0–1) is no confidence at all."""
+    m = re.fullmatch(r"\s*(\d*\.?\d+)\s*(%?)\s*", str(value or ""))
+    if not m:
+        return None
+    q = float(m.group(1)) / (100 if m.group(2) else 1)
+    return q if 0.0 <= q <= 1.0 else None
+
+
+def file_conf(path: Path) -> float | None:
+    """The `Confidence:` line of a report or findings file — read by the board, so nobody has to remember a flag."""
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:3000]
+    except OSError:
+        return None
+    m = re.search(r"(?im)^[\s>*_-]*confidence\**\s*[:=]\s*\**\s*([0-9.]+\s*%?)", head)
+    return parse_conf(m.group(1)) if m else None
+
+
+def friction(argv: list[str], kind: str, msg: str) -> None:
+    """One line in raw/friction.jsonl when the board refuses, a flag is wrong, or someone reads the help — outside the
+    journal, so the record stays semantic. Only inside a run; never fails the command it observes."""
+    try:
+        ws = workspace_or_none()
+        if ws is None or not (ws / JOURNAL).exists():
+            return
+        head = argv[:argv.index("--")] if "--" in argv else argv
+        agent = next((head[i + 1] for i, a in enumerate(head[:-1]) if a in ("--agent", "--from")), os.environ.get("BOARD_AGENT", ""))
+        (ws / "raw").mkdir(parents=True, exist_ok=True)
+        with (ws / FRICTION).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"ts": dt.datetime.now().isoformat(timespec="seconds"), "v": VERSION, "kind": kind,
+                                 "cmd": head[0] if head else "", "agent": agent, "msg": clean(msg)[:200]}, ensure_ascii=False) + "\n")
+    except Exception:   # an observer never breaks what it observes
+        pass
+
+
+def read_friction(ws: Path) -> list[dict]:
+    out = []
+    try:
+        for ln in (ws / FRICTION).read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                out.append(json.loads(ln))
+            except ValueError:
+                continue
+    except OSError:
+        pass
+    return out
+
+
+def brier(pairs: list[tuple[float, int]]) -> dict:
+    if not pairs:
+        return {"n": 0}
+    n = len(pairs)
+    return {"n": n, "brier": round(sum((q - y) ** 2 for q, y in pairs) / n, 3),
+            "bias": round(sum(q for q, _ in pairs) / n - sum(y for _, y in pairs) / n, 3)}
+
+
+def calibration(st: State) -> dict:
+    """RLCR without weights: each claim's stated confidence against what the run later showed.
+    A return claims "accepted with no fix wave": wrong when a gate or check of its attempt fails after it, or a new attempt
+    starts; right when the task reaches the ledger. A pass verdict claims "holds": wrong when a later check on the task,
+    or a later gate of its kind, fails. Unresolved claims are left out."""
+    rets: list[tuple[float, int]] = []
+    verds: list[tuple[float, int]] = []
+    for e in st.events:
+        q = parse_conf(e.get("confidence"))
+        t = st.tasks.get(str(e.get("task", "")))
+        if q is None or t is None:
+            continue
+        ts = parse_ts(e.get("ts"))
+        if e.get("ev") == "return" and e.get("status") in ("DONE", "DONE_WITH_CONCERNS"):
+            s = next((x for x in st.stints if x.agent == str(e.get("agent", "")) and x.task == t.id), None)
+            a = s.attempt if s else t.attempt
+            failed = any(g[1] == a and g[0] >= ts and g[3].startswith("fail") for g in t.gate_entries) or \
+                any(c[1] == a and c[0] >= ts and c[3] == "fail" for c in t.check_entries)
+            y = 0 if failed or t.attempt > a else (1 if t.state == "done" else None)
+            if y is not None:
+                rets.append((q, y))
+        elif e.get("ev") in ("gate", "vote") and str(e.get("verdict", "")) in ("ok", "warn"):
+            kind = str(e.get("kind", ""))
+            failed = any(g[0] > ts and g[2] == kind and g[3].startswith("fail") for g in t.gate_entries) or \
+                any(c[0] > ts and c[3] == "fail" for c in t.check_entries)
+            y = 0 if failed else (1 if t.state == "done" else None)
+            if y is not None:
+                verds.append((q, y))
+    return {"returns": brier(rets), "verdicts": brier(verds)}
+
+
+def compute_score(st: State) -> dict:
+    """The run as a versioned score vector — deterministic, no model calls. Outcome, cost and calibration are what a
+    change to the skill should move; quality, discipline and communication explain a result and are never the goal
+    (fewer gate rounds is also what a lenient reviewer produces)."""
+    run, tasks = st.run, list(st.tasks.values())
+    done = [t for t in tasks if t.state == "done"]
+    workers = [s for s in st.stints if role_tier(s.role) == "worker"]
+    first_run = next((e for e in st.events if e.get("ev") == "run"), {})
+    fin = next((e for e in reversed(st.events) if e.get("ev") == "finish"), {})
+    last_ts = max((parse_ts(e.get("ts")) for e in st.events), default=0.0)
+    chk = [c for t in tasks for c in t.check_entries if c[3] in ("ok", "fail")]
+    fails = [g for t in tasks for g in t.gate_entries if g[3].startswith("fail")]
+    rounds = [len(t.gate_entries) for t in done]
+    asks = [m for m in st.mail if m.ask]
+    answered = {m.re for m in st.mail if m.re}
+    fr = read_friction(st.ws)
+    fk: dict[str, int] = {}
+    for f in fr:
+        fk[str(f.get("kind", "?"))] = fk.get(str(f.get("kind", "?")), 0) + 1
+    tok = sum(s.tokens for s in st.stints) or run.tokens
+    cost = sum(s.cost for s in st.stints)
+    return {
+        "schema": 1, "skill": VERSION, "started_on": str(first_run.get("v", "")), "run": run.id,
+        "strategy": str(run.dims.get("strategy", "")), "review": str(run.dims.get("review", "")),
+        "engine": str(run.dims.get("engine", "")), "host": str(run.dims.get("host", "")), "models": run.models,
+        "outcome": {"finish": run.finish, "forced": bool(fin.get("forced")), "stands": bool(run.finish) and not finish_invalid(st),
+                    "tasks": len(tasks), "done": len(done), "blocked": sum(1 for t in tasks if t.state == "blocked"),
+                    "open": sum(1 for t in tasks if t.state != "done")},
+        "cost": {"dispatches": len(st.stints), "worker_attempts": len(workers),
+                 "per_accepted": round(len(workers) / len(done), 2) if done else None,
+                 "tokens": tok, "usd": round(cost, 2) if cost else None,
+                 "wall_min": round((((run.finish_ts or last_ts) - run.kickoff) / 60), 1) if run.kickoff and last_ts else None},
+        "calibration": calibration(st),
+        "quality": {"first_pass": f"{sum(1 for t in done if t.attempt <= 1 and not any(g[3].startswith('fail') for g in t.gate_entries))}/{len(done)}",
+                    "gate_fails": len(fails), "gate_rounds_max": max(rounds, default=0),
+                    "checks": f"{sum(1 for c in chk if c[3] == 'ok')}/{len(chk)}",
+                    "report_mismatch": sum(1 for s in st.stints if s.reported and s.reported != s.status),
+                    "drift": len(run.drift)},
+        "discipline": {"plan": run.plan or "none", "check_findings": len(check(st)), "nudges": sum(s.nudges for s in st.stints),
+                       "escalations": sum(1 for s in st.stints if s.escalated_to)},
+        "communication": {"mail": len(st.mail), "asks": len(asks), "unanswered": sum(1 for m in asks if m.seq not in answered),
+                          "learnings": len(st.learned)},
+        "friction": {"n": len(fr), **fk},
+    }
+
+
+def render_score(sc: dict) -> str:
+    o, c, cal, q, d, m = sc["outcome"], sc["cost"], sc["calibration"], sc["quality"], sc["discipline"], sc["communication"]
+
+    def cl(x: dict) -> str:
+        return f"brier {x['brier']} · bias {x['bias']:+} (n={x['n']})" if x.get("n") else "no stated confidence"
+    since = f" (started on {sc['started_on']})" if sc["started_on"] and sc["started_on"] != sc["skill"] else ""
+    fin = (o["finish"] or "not finished") + (" (forced)" if o["forced"] else "") + ("" if o["stands"] or not o["finish"] else " — no longer stands")
+    return "\n".join([
+        f"# SCORE · run {sc['run'] or '?'} · orchestrate {sc['skill']}{since} · {sc['strategy'] or '?'} · review {sc['review'] or '?'}",
+        f"outcome      {o['done']}/{o['tasks']} done · {o['blocked']} blocked · finish {fin}",
+        f"cost         {c['worker_attempts']} worker attempts ({c['per_accepted'] if c['per_accepted'] is not None else '-'} per accepted task) · "
+        f"{c['dispatches']} dispatches · {fmt_tokens(c['tokens']) if c['tokens'] else '- tokens'}" +
+        (f" · ${c['usd']}" if c["usd"] else "") + (f" · {fmt_dur(c['wall_min'] * 60)} wall" if c["wall_min"] is not None else ""),
+        f"calibration  returns: {cl(cal['returns'])} · verdicts: {cl(cal['verdicts'])}",
+        f"quality      first pass {q['first_pass']} · gate fails {q['gate_fails']} · most rounds {q['gate_rounds_max']} · checks {q['checks']} ok · "
+        f"report≠return {q['report_mismatch']} · drift {q['drift']}",
+        f"discipline   plan {d['plan']} · check findings {d['check_findings']} · nudges {d['nudges']} · escalations {d['escalations']}",
+        f"comms        mail {m['mail']} · asks {m['asks']} ({m['unanswered']} unanswered) · learnings {m['learnings']}",
+        "friction     " + (" · ".join(f"{k} {v}" for k, v in sc["friction"].items() if k != "n") or "none") +
+        (f"  ({FRICTION})" if sc["friction"]["n"] else ""),
+        "(outcome, cost and calibration are what a skill change should move; the rest explains them)",
+    ])
+
+
+def retro_signals(st: State, sc: dict) -> list[str]:
+    """Candidate SKILL-level findings, each with its evidence. The controller sorts them: a project's own lesson stays in
+    board learn / memory; only what the skill or the board got wrong becomes a field report."""
+    out: list[str] = []
+    fr = read_friction(st.ws)
+    groups: dict[tuple[str, str], int] = {}
+    for f in fr:
+        if f.get("kind") in ("refusal", "usage"):
+            key = (str(f.get("cmd", "")), re.sub(r"\d+", "N", str(f.get("msg", "")))[:110])
+            groups[key] = groups.get(key, 0) + 1
+    for (cmd, msg), n in sorted(groups.items(), key=lambda kv: -kv[1]):
+        if n >= 2:
+            out.append(f"friction: board {cmd} refused {n}× — {msg}")
+    helps = sum(1 for f in fr if f.get("kind") == "help")
+    if helps >= 3:
+        out.append(f"friction: {helps} help reads — the syntax was not where the agent looked")
+    for s in st.stints:
+        if s.reported and s.reported != s.status:
+            out.append(f"report≠return: {s.agent} (task {s.task}, dispatch seq {s.seq}) reported {s.reported}, recorded {s.status}")
+    out += [f"drift: {x}" for x in st.run.drift[:4]]
+    for t in st.ordered():
+        tries = sum(1 for s in st.stints if s.task == t.id and role_tier(s.role) == "worker")
+        if tries >= 3:
+            out.append(f"churn: task {t.id} took {tries} worker attempts ({t.state})")
+    for kind in ("returns", "verdicts"):
+        x = sc["calibration"][kind]
+        if x.get("n", 0) >= 4 and abs(x["bias"]) >= 0.25:
+            out.append(f"calibration: {kind} {'over' if x['bias'] > 0 else 'under'}confident by {abs(x['bias']):.2f} (brier {x['brier']}, n={x['n']})")
+    if sc["outcome"]["forced"]:
+        fin = next((e for e in reversed(st.events) if e.get("ev") == "finish"), {})
+        out.append(f"finish forced (seq {fin.get('seq', '?')}): {clean(fin.get('reason', ''))[:200]}")
+    for f in check(st, finish_mode=bool(st.run.finish))[:4]:
+        out.append(f"check: {f}")
+    return out
+
+
+def render_retro(st: State, draft: bool) -> str:
+    sc = compute_score(st)
+    sig = retro_signals(st, sc)
+    L = [render_score(sc), "", "## Skill-level signals (sort each: the project's own lesson → board learn; the skill's or the board's → a field report)"]
+    L += [f"- {x}" for x in sig] or ["- none from the record — add what you saw (a rule that misled you, a missing or confusing board behaviour)"]
+    if not draft:
+        L.append("next: board retro --draft writes the field-report draft · references/shared-retro.md")
+        return "\n".join(L)
+    path = st.ws / "retro" / f"field-report-{st.run.id or 'run'}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    models = ", ".join(f"{k}={v}" for k, v in sc["models"].items()) or "-"
+    body = [
+        "---", f"orchestrate: {sc['skill']}" + (f" (run started on {sc['started_on']})" if sc["started_on"] and sc["started_on"] != sc["skill"] else ""),
+        f"host: {sc['host'] or '<host>'}", f"strategy: {sc['strategy']} · review: {sc['review']} · engine: {sc['engine'] or '-'}",
+        f"models: {models}", "fix class: <skill text | board | routing | bench>",
+        "metric: <the score line this should move>", "prediction: <direction and rough size>", "---", "",
+        "## What happened", "<one paragraph in your words — no project code, file contents, secrets, private names or paths>", "",
+        "## Evidence (board retro)", *[f"- {x}" for x in sig], "", "## Score", "```text", render_score(sc), "```", "",
+        "## Likely cause", "<the rule, template or board behaviour, and why>", "",
+        "## Proposed fix", "<smallest change; prefer the board over new prose, and a deletion over an addition>", ""]
+    if not path.exists():
+        path.write_text("\n".join(body), encoding="utf-8")
+    L += ["", f"draft: {path.relative_to(st.ws.parent) if path.is_relative_to(st.ws.parent) else path} — fill the <…> lines, delete what is project-local",
+          f"dedupe: gh issue list --repo {ISSUES_REPO} --state all --search \"<keywords>\"",
+          f"file (only on the user's yes): gh issue create --repo {ISSUES_REPO} --title \"[field] <one line>\" --body-file <draft>"]
+    return "\n".join(L)
+
+
 def project_memory(ws: Path) -> tuple[Path | None, int]:
     """Whether the repo keeps project memory (the two files `ctx init` creates) — the board only DETECTS it; it never
     runs `ctx`. Returns (repo root, entry count of the default ledger; 0 when the ledger lives elsewhere)."""
@@ -4199,6 +4431,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("check"); p.add_argument("--finish", action="store_true", help="the pre-finish gate: strict"); p.add_argument("--json", action="store_true")
     p.add_argument("--replay", action="store_true", help="cold replay: derive from the journal alone and diff against the disk view")
     sub.add_parser("postmortem")
+    p = sub.add_parser("score", help="the run as a versioned score vector: outcome, cost, calibration, then what explains them")
+    p.add_argument("--json", action="store_true")
+    p = sub.add_parser("retro", help="the score plus skill-level signals; --draft writes the field-report draft (filing is the user's call)")
+    p.add_argument("--draft", action="store_true")
     me = os.environ.get("BOARD_AGENT") or None   # inside a launched lane the worker's own name — no worker-side call needs --agent
     p = sub.add_parser("send", help="mail: information between agents, never a transition")
     p.add_argument("msg"); p.add_argument("--from", dest="sender", default=me, required=me is None); p.add_argument("--to", required=True)
@@ -4218,6 +4454,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("vote", help="one reviewer's verdict; the gate is derived by quorum (panel = majority, consensus = any-deny)")
     p.add_argument("task"); p.add_argument("--kind", required=True); p.add_argument("--agent", default=me, required=me is None)
     p.add_argument("--verdict", choices=["ok", "fail", "warn"], required=True); p.add_argument("--why"); p.add_argument("--round", type=int)
+    p.add_argument("--confidence", help="0–1 that this verdict holds")
     p = sub.add_parser("learn", help="a worker's one-line discovery, handed to its team at their next board call — information, never a transition; no args: list the run's learnings")
     p.add_argument("task", nargs="?"); p.add_argument("msg", nargs="?"); p.add_argument("--agent", default=me)
     p.add_argument("--kind", choices=LEARN_KINDS, default="gotcha"); p.add_argument("--path", help="the file or area it is about"); p.add_argument("--json", action="store_true")
@@ -4289,10 +4526,12 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--status", choices=STATUSES, required=True)
             p.add_argument("--commits"); p.add_argument("--report"); p.add_argument("--observed-model"); p.add_argument("--tokens")
             p.add_argument("--session", help="the engine's session id, if only known after the launch")
+            p.add_argument("--confidence", help="0–1 that this passes review with no fix wave (default: the report's Confidence: line)")
         if name in ("review", "gate"):
             p.add_argument("--kind", required=True); p.add_argument("--round", type=int)
         if name == "gate":
             p.add_argument("--verdict", choices=["ok", "fail", "warn"], required=True); p.add_argument("--findings")
+            p.add_argument("--confidence", help="0–1 that this verdict holds (default: the findings file's Confidence: line)")
         if name == "escalate":
             p.add_argument("--to", required=True); p.add_argument("--why", required=True)
     p = sub.add_parser("decide"); p.add_argument("id"); p.add_argument("msg"); p.add_argument("--why", help="the rationale — the least recoverable fact; the memory record carries it")
@@ -4306,6 +4545,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str]) -> int:
+    head = argv[:argv.index("--")] if "--" in argv else argv
+    if head and (head[0] in ("-h", "--help", "help") or "-h" in head or "--help" in head):
+        friction(argv, "help", " ".join(head[:2]))
+    try:
+        return _main(argv)
+    except SystemExit as exc:
+        if isinstance(exc.code, str) and exc.code:
+            friction(argv, "usage" if exc.code.rstrip().endswith("--help") else "refusal", exc.code)
+        raise
+
+
+def _main(argv: list[str]) -> int:
     if argv and argv[0] in ("-h", "--help", "help"):
         print(help_text(argv[1] if len(argv) > 1 else ""))
         return 0
@@ -4398,6 +4649,11 @@ def main(argv: list[str]) -> int:
         print(render_resume(load(ws), probe=not args.no_probe))
     elif cmd == "postmortem":
         print(render_postmortem(load(ws)))
+    elif cmd == "score":
+        sc = compute_score(load(ws))
+        print(json.dumps(sc, ensure_ascii=False, indent=1) if args.json else render_score(sc))
+    elif cmd == "retro":
+        print(render_retro(load(ws), args.draft))
     elif cmd == "launch":
         if not args.dry_run:   # a dry run prints the wrapper and starts nothing
             launch_gate(load(ws))
@@ -4622,8 +4878,12 @@ def main(argv: list[str]) -> int:
         print(render_peers(load(ws), clean(args.agent)))
         deliver(ws, clean(args.agent))
     elif cmd == "vote":
-        ev = observe(ws, f"board vote {args.task} --kind {args.kind} --agent {args.agent} --verdict {args.verdict}" + (f" --why {shlex.quote(args.why)}" if args.why else ""),
-                     task=args.task, ev="vote", kind=args.kind, agent=args.agent, verdict=args.verdict, why=args.why, round=args.round)
+        conf = parse_conf(args.confidence) if args.confidence else None
+        if args.confidence and conf is None:
+            sys.exit(f"board: --confidence {args.confidence} — a probability: 0.8, .8 or 80%")
+        ev = observe(ws, f"board vote {args.task} --kind {args.kind} --agent {args.agent} --verdict {args.verdict}" + (f" --why {shlex.quote(args.why)}" if args.why else "")
+                     + (f" --confidence {conf}" if conf is not None else ""),
+                     task=args.task, ev="vote", kind=args.kind, agent=args.agent, verdict=args.verdict, why=args.why, round=args.round, confidence=conf)
         if not ev:
             return 0
         st = load(ws)
@@ -4722,9 +4982,12 @@ def main(argv: list[str]) -> int:
                     print(f"board: note — the report says Status: {reported}, you are recording {args.status} (your call; journaled as reported={reported})")
             else:
                 print(f"board: warning — report {args.report} does not exist (recorded anyway; board check will name it)")
+        conf = parse_conf(args.confidence) if args.confidence else (file_conf(rp) if args.report and rp.exists() else None)
+        if args.confidence and conf is None:
+            sys.exit(f"board: --confidence {args.confidence} — a probability: 0.8, .8 or 80%")
         append_event(ws, task=args.task, ev="return", agent=args.agent, status=args.status, commits=args.commits,
                      report=args.report, reported=reported, observed_model=args.observed_model, tokens=args.tokens,
-                     session=args.session, msg=args.msg)
+                     session=args.session, msg=args.msg, confidence=conf)
         if args.observed_model:
             write_resolved(ws)
     elif cmd == "review":
@@ -4733,8 +4996,14 @@ def main(argv: list[str]) -> int:
         append_event(ws, task=args.task, ev="review", kind=args.kind, round=args.round, agent=args.agent,
                      model=args.model, engine=args.engine, msg=args.msg)
     elif cmd == "gate":
+        conf = parse_conf(args.confidence) if args.confidence else None
+        if args.confidence and conf is None:
+            sys.exit(f"board: --confidence {args.confidence} — a probability: 0.8, .8 or 80%")
+        if conf is None and args.findings:
+            fp = Path(args.findings)
+            conf = next((file_conf(c) for c in ([fp] if fp.is_absolute() else [ws / fp, ws.parent / fp, Path.cwd() / fp]) if c.exists()), None)
         append_event(ws, task=args.task, ev="gate", kind=args.kind, verdict=args.verdict, round=args.round,
-                     findings=args.findings, agent=args.agent, msg=args.msg)
+                     findings=args.findings, agent=args.agent, msg=args.msg, confidence=conf)
     elif cmd == "nudge":
         append_event(ws, task=args.task, ev="nudge", agent=args.agent, msg=args.msg)
     elif cmd == "escalate":
@@ -5622,6 +5891,55 @@ def selftest() -> int:
         idx = help_text()
         assert len(idx) < 1500 and "next" in idx and "hold" in idx and len(help_text("controller")) < 3500, idx
         assert help_text("lead").startswith("LEADS") and help_text("nope") == idx, "an unknown topic gets the index"
+        os.chdir(tmp)
+
+        # --- field loop (v1.34): a versioned score, calibration from Confidence: lines, the board's friction, the retro draft ---
+        fl = Path(tmp) / "field"
+        fl.mkdir()
+        os.chdir(fl)
+        subprocess.run(["git", "init", "-q"], check=True)
+        (fl / "plan.md").write_text("# Plan\n\n## Task 1: A\n\n## Task 2: B\n")
+        run("init", "plan.md", "--strategy", "staged", "--review", "spec", "--goal", "field")
+        wsf = fl / ".orchestrate"
+        run("plan", "approved")
+        run("dispatch", "1", "--agent", "impl-1", "--model", "sonnet")
+        (wsf / "task-1-report.md").write_text("Status: DONE\nConfidence: 90%\n")
+        run("return", "1", "--agent", "impl-1", "--status", "DONE", "--report", "task-1-report.md")   # read from the report, no flag
+        (wsf / "f1.md").write_text("❌ Issues: 1 Important\nConfidence: 0.7\n")
+        run("gate", "1", "--kind", "spec", "--verdict", "fail", "--findings", "f1.md")
+        run("dispatch", "1", "--agent", "fix-1-r2", "--model", "sonnet")
+        run("return", "1", "--agent", "fix-1-r2", "--status", "DONE", "--confidence", "0.6")
+        run("gate", "1", "--kind", "spec", "--verdict", "ok", "--confidence", ".8")
+        run("done", "1")
+        run("dispatch", "2", "--agent", "impl-2", "--model", "sonnet")
+        run("return", "2", "--agent", "impl-2", "--status", "DONE", "--confidence", "0.95")
+        run("gate", "2", "--kind", "spec", "--verdict", "ok")
+        run("done", "2")
+        ev_ = [e for e in load(wsf).events if e.get("ev") in ("return", "gate")]
+        assert [e.get("confidence") for e in ev_] == [0.9, 0.7, 0.6, 0.8, 0.95, None], ev_
+        run("return", "2", "--agent", "impl-2", "--status", "DONE", "--confidence", "high", expect_fail=True)
+        run("blocked", "2", expect_fail=True)
+        run("blocked", "2", expect_fail=True)
+        run("bogus-cmd", expect_fail=True)
+        run("help")
+        fr = read_friction(wsf)
+        assert [f["kind"] for f in fr] == ["refusal", "refusal", "refusal", "usage", "help"] and fr[1]["cmd"] == "blocked" and fr[0]["v"] == VERSION, fr
+        sc = json.loads(run("score", "--json"))
+        cal = sc["calibration"]
+        assert cal["returns"] == {"n": 3, "brier": 0.324, "bias": 0.15}, cal   # 0.9 → a failed gate · 0.6, 0.95 → accepted
+        assert cal["verdicts"] == {"n": 1, "brier": 0.04, "bias": -0.2}, cal   # a fail verdict is not scored; an unstated one is left out
+        assert sc["outcome"]["done"] == 2 and sc["cost"]["per_accepted"] == 1.5 and sc["quality"]["first_pass"] == "1/2" and sc["friction"]["refusal"] == 3, sc
+        txt = run("score")
+        assert txt.startswith("# SCORE") and "brier 0.324" in txt and len(txt.splitlines()) <= 10, txt
+        ro = run("retro")
+        assert "board blocked refused 2×" in ro and "--draft" in ro and not (wsf / "retro").exists(), ro
+        ro = run("retro", "--draft")
+        draft = next((wsf / "retro").glob("field-report-*.md"))
+        dt_ = draft.read_text()
+        assert dt_.startswith("---\norchestrate: ") and "## Evidence (board retro)" in dt_ and "refused 2×" in dt_ and "gh issue create" in ro, dt_
+        draft.write_text(dt_ + "edited\n")
+        run("retro", "--draft")
+        assert draft.read_text().endswith("edited\n"), "a second --draft never overwrites the controller's edits"
         os.chdir(tmp)
 
         # --- versioning: every event says which board wrote it; a run knows its release and what changed since ------

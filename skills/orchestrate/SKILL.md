@@ -92,6 +92,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 | Every run | [Safety rails](references/shared-safety-rails.md) | Main-branch, overload, loop, budget, and reward-hacking guards |
 | A `DESIGN_CONFLICT`, or reality breaks the plan | [Replan](references/shared-replan.md) | Triage, architect pass, decisions, bounds |
 | Resume, compaction, or controller transfer | [Handoff](references/shared-handoff.md) | Durable state and clean controller handoff |
+| Finish or a milestone | [Retro](references/shared-retro.md) | Run score, calibration, field-report draft |
 | Every dispatch and returned report | [Token economy](references/shared-token-economy.md) | Role-scoped communication blocks and priming anatomy |
 
 ### Prompt route
@@ -204,7 +205,8 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    recorded before you finish or hand off (`board resume` is the handoff's state layer, with a
    receipt; `board postmortem` feeds the evolve pass; `board memory` renders the run as one
    project-context record when the repo keeps project memory). Finish only when the stop
-   condition is verified.
+   condition is verified. Then the [retro](references/shared-retro.md): `board retro` scores the
+   run; a skill-level finding becomes a field report, filed on the user's yes.
 
 Run [toolbox](scripts/toolbox) (repo recipes) and [capabilities](scripts/capabilities) (machine tools)
 once; reuse their files.

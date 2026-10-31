@@ -204,5 +204,16 @@
       "references/strategy-staged.md",
       "references/strategy-loop.md"
     ]
+  },
+  {
+    "id": "finish-retro",
+    "prompt": "The final gate passed and the run is finished — score it and tell me if anything in the skill should change.",
+    "expected_references": [
+      "references/shared-retro.md"
+    ],
+    "forbidden_references": [
+      "references/strategy-loop.md",
+      "references/prompt-evolve.md"
+    ]
   }
 ]

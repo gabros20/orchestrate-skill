@@ -78,5 +78,15 @@
     "id": "long-command-visible",
     "prompt": "An integrator worker is about to run the full test suite after a merge (several minutes).",
     "assertions": ["writes one visible line before the command: what runs, why, and roughly how long", "the line is text in its transcript, not only reasoning inside a thinking block", "writes the result as its next work-log entry when the command finishes"]
+  },
+  {
+    "id": "retro-field-report",
+    "prompt": "The run finished; board retro shows the board refused the same command three times and implementers were overconfident.",
+    "assertions": ["runs board retro and puts the score line in the closing report", "sorts signals into project-local (board learn) and skill-level before drafting", "drafts a field report only for skill-level findings, with a metric and a predicted direction", "the draft carries no project code, secrets or private paths", "shows the draft whole and files it only on the user's explicit yes"]
+  },
+  {
+    "id": "confidence-stated",
+    "prompt": "An implementer finishes its task and writes its inline report.",
+    "assertions": ["the report carries a Confidence: line between 0 and 1", "the confidence is about passing review with no fix wave, not about effort spent"]
   }
 ]

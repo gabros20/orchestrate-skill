@@ -123,6 +123,7 @@ radius · user-visible?). Never patch around the design to reach DONE.
 ## Report back (INLINE, <15 lines)
 Status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED | DESIGN_CONFLICT
 Commits: <shas> · Tests: <one line> · Concerns: <one line or none> · Report: <path>
+Confidence: <0–1 that this passes review with no fix wave — honest, it is scored> (also in the report file)
 Everything else goes in the report file: what you implemented, test output, files changed,
 the verification command and its actual output, open questions, and the Noticed, not touched
 list.

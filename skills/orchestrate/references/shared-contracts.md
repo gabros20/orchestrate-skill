@@ -180,7 +180,7 @@ session id is what `board resume` resumes by. **Agent names are `<role>-<task>[-
 Omit `--agent` and the board derives it (`-rN` on a repeat); `controller` is reserved; a trailing tag
 tells twins apart (`spec-3-codex`); spawn native subagents under the same name. `board return N
 --agent A --status …` is the typed return (`--observed-model` is rule 13's observation, `--tokens`
-the receipt). A task that reaches the ledger closes any stint that never returned — it shows as
+the receipt, `--confidence` the report's `Confidence:` line, read by the board when the flag is absent). A task that reaches the ledger closes any stint that never returned — it shows as
 "closed, no return", never stale. `board launch` is dispatch + wrapper + session in one command;
 its `exit` and `receipt` events are observations, never transitions.
 
@@ -220,7 +220,8 @@ what needs you most urgently with its command, the next step), the kanban the us
 own pane (`board`), `board plan`, `board agents`, `board attention`, `board task N`, `board log`,
 `board check [--finish] [--replay]` (chain integrity, silence, ledger vs disk, gate order, drift,
 budget, finish validity; `--replay` re-derives every card from the journal alone), `board learn`,
-`board postmortem` (evidence for the evolve pass, recommend-only) and `board resume` (the handoff's
+`board postmortem` (evidence for the evolve pass, recommend-only), `board score` / `board retro`
+(the run's versioned score and its skill-level signals — [retro](shared-retro.md)) and `board resume` (the handoff's
 state layer with a receipt; `NOT_PROVEN` on every claim no artifact backs). **The journal never
 outranks the ledger.**
 

@@ -75,12 +75,13 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "1.34.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
+VERSION = "1.35.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
 SCHEMA = 2           # the journal's shape; bumps ONLY for a breaking change, with an in-place upgrader (migrate_v1 is one)
 # What a run started on an older release must know. Newest first, one line per release: "none" = additive, nothing to
 # do · "action" = do it, then `board version --ack V --msg ".."` (a check finding, so finish refuses, until acked).
 # Automatic journal rewrites never live here — they run on open (journal_path), like the v1→v2 upgrade.
 MIGRATIONS = (
+    ("1.35.0", "none", "board next points a finished run at board retro until it has run; maintainer-side bench/ (tasks with hidden tests, replays, compare, field) and the orchestrate-evolve skill — nothing changes for a run in progress"),
     ("1.34.0", "none", "board score / board retro (--draft) at finish; reports and verdicts carry Confidence: 0–1, read by return/gate and scored as Brier; the board logs its own friction to raw/friction.jsonl — additive, older runs score with no calibration"),
     ("1.33.0", "none", "dispatch/launch refuse while the flight plan is pending (the refusal names the fix: board plan, show it, board plan approved|changed|skipped); ledgered tasks close their unreturned stints and old questions stop counting — older runs only get quieter; board next, board help, board hold, send --ask --wait"),
     ("1.32.0", "none", "review rounds converge (settled findings, churn → replan); a panel gate waits for every lens and done refuses a vote-pending gate (evaluated at command time — old journals are not re-flagged); proof first, noticed-not-touched, implementer stops when checks pass"),
@@ -3999,6 +4000,8 @@ def render_next(st: State) -> str:
         nxt = "final-deliverable gate (fresh context, the goal verbatim), then board finish --gate pass|fail --evidence PATH"
     if not nxt and st.open_stints():
         nxt = "wait: board wait --task N --timeout 0 in a background shell (exit 3 = it cannot land)"
+    if not nxt and run.finish and not inv and not (st.ws / "retro").exists():
+        nxt = "board retro — the run's score and skill-level signals (references/shared-retro.md), then hand off"
     out.append("→ " + (nxt or "nothing to do"))
     return "\n".join(out)
 
@@ -5915,6 +5918,9 @@ def selftest() -> int:
         run("return", "2", "--agent", "impl-2", "--status", "DONE", "--confidence", "0.95")
         run("gate", "2", "--kind", "spec", "--verdict", "ok")
         run("done", "2")
+        (wsf / "final.md").write_text("✅ ship\n")
+        run("finish", "--gate", "pass", "--evidence", "final.md")
+        assert run("next").splitlines()[-1].startswith("→ board retro"), "a finished run's next step is the retro"
         ev_ = [e for e in load(wsf).events if e.get("ev") in ("return", "gate")]
         assert [e.get("confidence") for e in ev_] == [0.9, 0.7, 0.6, 0.8, 0.95, None], ev_
         run("return", "2", "--agent", "impl-2", "--status", "DONE", "--confidence", "high", expect_fail=True)
@@ -5937,6 +5943,7 @@ def selftest() -> int:
         draft = next((wsf / "retro").glob("field-report-*.md"))
         dt_ = draft.read_text()
         assert dt_.startswith("---\norchestrate: ") and "## Evidence (board retro)" in dt_ and "refused 2×" in dt_ and "gh issue create" in ro, dt_
+        assert "board retro" not in run("next"), "once the retro has run, next no longer points at it"
         draft.write_text(dt_ + "edited\n")
         run("retro", "--draft")
         assert draft.read_text().endswith("edited\n"), "a second --draft never overwrites the controller's edits"

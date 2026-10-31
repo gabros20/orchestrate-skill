@@ -28,6 +28,8 @@ while IFS= read -r -d '' script; do
   fi
 done < <(find "$skill/scripts" -type f -print0)
 "$skill/scripts/board" --selftest || exit 1   # journal + views replay in a temp repo
+python3 -m py_compile "$root/bench/bench" && "$root/bench/bench" validate || exit 1   # every bench task: seed fails, oracle passes
+python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$root/bench/replays.json" || exit 1
 
 fail=0
 err() { echo "check-sync: FAIL: $1" >&2; fail=1; }

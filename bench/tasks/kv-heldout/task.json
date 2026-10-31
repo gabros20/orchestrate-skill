@@ -1,0 +1,8 @@
+{
+ "id": "kv-heldout",
+ "shape": "chain",
+ "split": "heldout",
+ "minutes": 20,
+ "prompt": "Execute plan.md: a small key-value store with expiry and a CLI.",
+ "accept": "accept"
+}

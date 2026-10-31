@@ -19,6 +19,9 @@ coordination efficiency without absorbing domain workflows or digital-product li
 6. Update README/user docs when the public workflow changes and `AGENTS.md`/`CLAUDE.md` when
    repository invariants change.
 7. Record user-visible behavior in `CHANGELOG.md`.
+8. A behaviour change states its expected effect, and is measured: add a decision replay
+   (`bench/replays.json`) for a changed controller move; for a release candidate, compare builds
+   against the previous release (`bench/README.md`) and record the edit in `bench/ledger.jsonl`.
 
 Use semantic versioning. Start a release with `scripts/bump <version>` (VERSION, the board's constant,
 plugin.json), then write the `## [<version>]` entry and the board's `MIGRATIONS` line — `none` when

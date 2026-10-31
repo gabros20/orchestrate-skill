@@ -24,6 +24,10 @@ capabilities stay independent.
 - `skills/orchestrate/agents/openai.yaml` contains Codex-facing discovery metadata.
 - `.codex-plugin/plugin.json` contains package, storefront, and release metadata.
 - `evals/` tests activation, traversal, output quality, and compression separately.
+- `bench/` measures behaviour: Terminal-Bench-style tasks (seed, hidden `accept/`, `oracle/`;
+  `bench validate` keeps them honest inside `check-sync`), decision replays, paired build comparisons
+  against the previous release, field data by release, and `ledger.jsonl` (every proposed skill edit,
+  its prediction and verdict). Never quote `accept/` or replay patterns into the skill.
 
 ## Change rules
 

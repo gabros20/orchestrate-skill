@@ -1,6 +1,6 @@
 # Skill RL — a benchmark and a feedback loop for `orchestrate` — research record
 
-> **Status:** phase 1 (the field loop) implemented for v1.34.0 — [design](../../designs/v1.34.0-field-loop.md); the bench and the evolve loop are proposals (research on main @ `ae2bcbc`).
+> **Status:** implemented — the field loop in v1.34.0 ([design](../../designs/v1.34.0-field-loop.md)); the bench and the evolve loop in v1.35.0 ([`bench/`](../../../bench/README.md), `.claude/skills/orchestrate-evolve/`). Research on main @ `ae2bcbc`.
 > Research date: 2026-10-30.
 
 *Method: three Sonnet researcher lanes. Lane A read Microsoft SkillOpt and about 15 neighbouring optimizers and

@@ -11,6 +11,39 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.35.0] — 2026-10-31
+
+### Added
+
+- **`bench/`, the controlled comparison** (maintainer-side, never installed). It has three tiers,
+  cheapest first: static (`check-sync`, which now runs `bench validate`), decision replays, and builds.
+  - **Tasks:** three stdlib-only apps in Terminal-Bench form:
+    - `notes-chain`, a chain;
+    - `textkit-fanout`, a fan-out;
+    - `kv-heldout`, held-out, never used while tuning.
+
+    Each has a seed with `plan.md`, hidden `accept/` tests and an `oracle/` solution.
+    `bench validate` requires the seed to fail and the oracle to pass.
+  - **`bench run`:** builds in a fresh repo with no remote and no history. The arm's skill is
+    installed as the project skill, isolated from user skills and MCP servers (verified). The hidden
+    tests run on a clean clone of what was committed. The result records `board score`, cost and
+    subagents.
+  - **Arms:** `skill`, `prev`, `thin` and `solo`.
+  - **`bench compare`:** paired per task: pass rate, pass^k, cost, wall time and calibration. Each
+    metric is improved, REGRESSED or unproven against the repeats' own spread.
+  - **`bench field`:** every registered real run's score, grouped by release.
+  - **`bench replay`:** three decision replays (plan pending, report landed, finished run) graded on
+    the controller's first commands.
+- **`.claude/skills/orchestrate-evolve/`, the maintainer loop.** Evidence (field reports, `bench field`,
+  the ledger) → a cluster and a good-vs-bad contrast → at most four anchored edits, board first and
+  deletions preferred, each with a prediction written to `bench/ledger.jsonl` → the cascade → shipped,
+  rejected or unproven → the user merges. Shipped predictions are checked against later field data.
+
+### Changed
+
+- `board next` on a finished run whose finish stands points at `board retro` (instead of "nothing
+  to do") until the retro has run.
+
 ## [1.34.0] — 2026-10-31
 
 ### Added

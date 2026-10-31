@@ -63,8 +63,8 @@ brief → dispatch implementer → (questions? answer, re-dispatch) → implemen
 
 1. **Brief**: `scripts/task-brief PLAN_FILE N` extracts the plan section; COMPOSE the brief
    around it per the priming anatomy (`shared-token-economy.md`) and gate it with
-   `scripts/brief-check` before dispatch. Dispatch the implementer (prompt template) with: brief
-   path, report path (`task-N-report.md`), scene-setting (where this fits, interfaces from prior
+   `scripts/brief-check` before dispatch. Dispatch the implementer — its prompt starts with the card line
+   `board dispatch` prints (template, brief and report paths filled in) — with scene-setting (where this fits, interfaces from prior
    tasks, resolved ambiguities), and an EXPLICIT model. A dispatch is ONE task — never session
    history.
 2. **Record BASE** (`git rev-parse HEAD`) before the implementer starts.

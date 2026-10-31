@@ -1,0 +1,94 @@
+{
+ "schema": 1,
+ "task": "textkit-fanout",
+ "split": "train",
+ "arm": "skill",
+ "label": "build-e501eb4-sonnet",
+ "ref": "e501eb4",
+ "skill_version": "1.36.0",
+ "skill_hash": "f9895785008e",
+ "model": "sonnet",
+ "n": 1,
+ "started": "2026-10-31T23:41:32",
+ "wall_s": 33.4,
+ "exit": 0,
+ "timed_out": false,
+ "dirty": false,
+ "accept": {
+  "tests": 5,
+  "failed": 0,
+  "passed": 5
+ },
+ "pass": true,
+ "stream": {
+  "cost_usd": 0.1459795,
+  "turns": 11,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "score": {
+  "schema": 1,
+  "skill": "1.36.0",
+  "started_on": "1.36.0",
+  "run": "20261031-234149-4c76",
+  "strategy": "solo",
+  "review": "off",
+  "engine": "",
+  "host": "",
+  "models": {},
+  "outcome": {
+   "finish": "pass",
+   "forced": false,
+   "stands": true,
+   "tasks": 4,
+   "done": 4,
+   "blocked": 0,
+   "open": 0
+  },
+  "cost": {
+   "dispatches": 0,
+   "worker_attempts": 0,
+   "per_accepted": 0.0,
+   "tokens": 0,
+   "usd": null,
+   "wall_min": 0.2
+  },
+  "calibration": {
+   "returns": {
+    "n": 0
+   },
+   "verdicts": {
+    "n": 0
+   }
+  },
+  "quality": {
+   "first_pass": "4/4",
+   "gate_fails": 0,
+   "gate_rounds_max": 0,
+   "checks": "4/4",
+   "report_mismatch": 0,
+   "drift": 0
+  },
+  "discipline": {
+   "plan": "approved",
+   "check_findings": 0,
+   "review_lowered": 0,
+   "unreviewed_passes": 0,
+   "nudges": 0,
+   "escalations": 0
+  },
+  "communication": {
+   "mail": 0,
+   "asks": 0,
+   "unanswered": 0,
+   "learnings": 0
+  },
+  "friction": {
+   "n": 5,
+   "help": 1,
+   "refusal": 4
+  }
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-234131-textkit-fanout-build-e501eb4-sonnet-1"
+}

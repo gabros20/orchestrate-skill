@@ -1,0 +1,34 @@
+{
+ "schema": 1,
+ "case": "report-landed",
+ "label": "replay-e501eb4-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "e501eb4",
+ "skill_hash": "f9895785008e",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -40; board version 2>&1 | head; board next 2>&1 | head -30",
+  "cat plan.md .orchestrate/run.md | head -60; cat .orchestrate/task-1-report.md | head -30; ls .orchestrate/prompts",
+  "board review 1 --kind spec --agent spec-1 --model sonnet 2>&1 | head -60",
+  "Agent:  Spec review task 1 :: Read /Users/tamas/.orchestrate-bench/20261031-233806-replay-report-landed/.orchestrate/prompts/spec-1.md first \u2014 it is how you work and report. Then give the task: spec-review Task 1 (Parser: parse `key=value` lines into a dict in kv/parse.py, see plan.md) against commit 50a0129 and .orchestrate/tas",
+  "B=.claude/skills/orchestrate/scripts/board; board help controller 2>&1 | grep -iE \"gate|return\" | head; board next 2>&1 | head",
+  "board review 1 --kind quality --agent quality-1 --model sonnet 2>&1 | head",
+  "Agent:  Quality review task 1 :: Read /Users/tamas/.orchestrate-bench/20261031-233806-replay-report-landed/.orchestrate/prompts/quality-1.md first \u2014 it is how you work and report. Then give the task: quality-review Task 1 (Parser, kv/parse.py, commit 50a0129; spec review findings at .orchestrate/review-task1-spec-r1.md). Report you",
+  "B=.claude/skills/orchestrate/scripts/board; board next 2>&1 | head -5; board done 1 2>&1 | head; board next 2>&1 | head",
+  "B=.claude/skills/orchestrate/scripts/board; board dispatch 2 --model sonnet --agent impl-2 --owns kv/fmt.py 2>&1 | head; ls .orchestrate/prompts; ls kv tests",
+  "Agent:  Implement task 2 formatter :: Read /Users/tamas/.orchestrate-bench/20261031-233806-replay-report-landed/.orchestrate/prompts/impl-2.md first \u2014 it is how you work and report. Then give the task: Task 2 from plan.md \u2014 format a dict back to sorted `key=value` lines in kv/fmt.py (you own only kv/fmt.py and a new tests/test_fmt.py). "
+ ],
+ "stream": {
+  "cost_usd": 0.26983650000000003,
+  "turns": 11,
+  "is_error": true,
+  "subtype": "error_max_turns",
+  "agents_spawned": 3
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233806-replay-report-landed",
+ "regraded": "2026-10-31"
+}

@@ -215,6 +215,7 @@ controller's "act on this" list; lanes are todo · in progress · review · done
 board                                   # live board in your pane · e expand · a attention-only · r reload · q
 board plan                              # the flight plan, priced from past receipts — the agent pastes it whole
 board next                              # the controller's checkpoint: what needs action, with its command
+board dispatch 3 --agent impl-3 --model M   # writes the agent's card (its role's template, filled in) + the line that starts its prompt
 board exec 3 --name tests -- npm test   # a check through the journal: exit + duration on the card
 board check --replay                    # reconciliation: chain, gates, receipts, journal vs disk
 board resume                            # the handoff's state layer, with a receipt and resume-by-id lines

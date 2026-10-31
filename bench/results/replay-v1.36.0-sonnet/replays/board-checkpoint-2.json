@@ -1,0 +1,28 @@
+{
+ "schema": 1,
+ "case": "board-checkpoint",
+ "label": "replay-v1.36.0-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "v1.36.0",
+ "skill_hash": "8f97784bb4bc",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate 2>&1 | head -30; board next 2>&1 | head -40",
+  "ls; cat .orchestrate/run.md | head -40; grep -ril \"f3\" . --include=*.md 2>/dev/null | head",
+  "cat plan.md",
+  "board send --from controller --to impl-3 --re 12 \"No offset argument. Plan says exactly: def f3(): return 3 (no params). Keep to spec.\" && board next | head"
+ ],
+ "stream": {
+  "cost_usd": 0.08472560000000001,
+  "turns": 7,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233409-replay-board-checkpoint",
+ "regraded": "2026-10-31"
+}

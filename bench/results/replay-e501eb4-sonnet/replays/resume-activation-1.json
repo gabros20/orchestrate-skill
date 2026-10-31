@@ -1,0 +1,29 @@
+{
+ "schema": 1,
+ "case": "resume-activation",
+ "label": "replay-e501eb4-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "e501eb4",
+ "skill_hash": "f9895785008e",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -50; cat .orchestrate/run.md 2>/dev/null | head -60; cat .orchestrate/progress.md 2>/dev/null | tail -30",
+  "cat plan.md; cat .orchestrate/task-1-report.md; tail -5 .orchestrate/journal.jsonl; ls kv tests; S=.claude/skills/orchestrate/scripts; board next 2>&1 | head -20",
+  "board review 1 --kind spec --agent spec-1 --model sonnet 2>&1 | head -30",
+  "Agent:  Spec review task 1 :: Read /Users/tamas/.orchestrate-bench/20261031-233953-replay-resume-activation/.orchestrate/prompts/spec-1.md first \u2014 it is how you work and report. Then give the task: spec-review Task 1 (Parser: parse `key=value` lines into a dict in kv/parse.py) against plan.md, commit fe976df.",
+  "B=.claude/skills/orchestrate/scripts/board; board help controller 2>&1 | grep -i -E \"gate|verdict|vote\" | head; board review 1 --kind quality --agent qual-1 --model sonnet 2>&1 | head"
+ ],
+ "stream": {
+  "cost_usd": 0.13296670000000002,
+  "turns": 7,
+  "is_error": true,
+  "subtype": "error_max_turns",
+  "agents_spawned": 1
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233953-replay-resume-activation",
+ "regraded": "2026-10-31"
+}

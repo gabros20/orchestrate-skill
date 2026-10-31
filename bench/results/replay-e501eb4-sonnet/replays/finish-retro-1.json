@@ -1,0 +1,26 @@
+{
+ "schema": 1,
+ "case": "finish-retro",
+ "label": "replay-e501eb4-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "e501eb4",
+ "skill_hash": "f9895785008e",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate 2>&1 | head; S=.claude/skills/orchestrate/scripts/board; board check --finish 2>&1 | tail -20",
+  "board retro 2>&1 | tail -40; tail -5 .orchestrate/journal.jsonl"
+ ],
+ "stream": {
+  "cost_usd": 0.077623,
+  "turns": 5,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233942-replay-finish-retro",
+ "regraded": "2026-10-31"
+}

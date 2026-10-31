@@ -1,0 +1,32 @@
+{
+ "schema": 1,
+ "case": "overload-safety",
+ "label": "replay-e501eb4-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "e501eb4",
+ "skill_hash": "f9895785008e",
+ "model": "sonnet",
+ "pass": false,
+ "missing": [
+  "board (nudge|note|wait|next|task)"
+ ],
+ "forbidden": [],
+ "commands": [
+  "ls -la .orchestrate 2>&1 | head -30; git status --short | head; git worktree list",
+  "ListAgents:",
+  "cd /Users/tamas/.orchestrate-bench/20261031-233733-replay-overload-safety/.orchestrate && cat run.md; echo ---; cat journal.jsonl; echo ---; ls prompts; head -50 prompts/*",
+  "cd /Users/tamas/.orchestrate-bench/20261031-233733-replay-overload-safety && ls -a; git log --stat --oneline | head; ls .orchestrate",
+  "cat plan.md; grep -n -i -E \"529|overload|retry|quiet|stall|silent\" .claude/skills/orchestrate/SKILL.md .claude/skills/orchestrate/references/*.md | head -30",
+  "cd /Users/tamas/.orchestrate-bench/20261031-233733-replay-overload-safety/.claude/skills/orchestrate && sed -n 140,150p SKILL.md; grep -n -i -B2 -A25 \"overload\" references/shared-safety-rails.md | head -80",
+  "ToolSearch:"
+ ],
+ "stream": {
+  "cost_usd": 0.08684499999999999,
+  "turns": 7,
+  "is_error": true,
+  "subtype": "error_max_turns",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233733-replay-overload-safety",
+ "regraded": "2026-10-31"
+}

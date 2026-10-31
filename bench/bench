@@ -8,6 +8,7 @@
                                     tests run in a clean clone of what was committed; result → bench/results/<label>/
   compare A B                       paired, per task: pass rate, pass^k, cost, wall, calibration — improved /
                                     regressed / unproven against the noise of the repeats
+  clean [--dry-run]                 remove workdirs no result references (dry-run states); never a transcript a result needs
   field [--json]                    every run this machine knows (board runs), its board score grouped by release
   replay [--case ID] [--model M] [--ref REF] [--dry-run] · replay --regrade LABEL (free: saved transcripts)
                                     decision replays: a frozen .orchestrate/ state + one prompt; the first commands
@@ -144,13 +145,22 @@ def summarize_stream(path: Path) -> dict:
             "subtype": res.get("subtype"), "agents_spawned": agents}
 
 
-BOARD_ALIAS = re.compile(r"(?<![\w-])(\S*/board|\$\{?[A-Za-z_]\w*\}?)(?=\s)")
+BOARD_PATH = re.compile(r"(?<![\w-])\S*/board(?=\s)")
 
 
-def commands_of(path: Path) -> tuple[list[str], str]:
-    """The CONTROLLER's commands and text, in order — what a replay is graded on. Subagent events (they carry a
-    parent_tool_use_id in Claude Code's stream) are its workers' moves, not its own. `S=…/board; $S retro` and
-    `.claude/…/scripts/board next` both read as `board …`."""
+def unalias(cmd: str) -> str:
+    """`.claude/…/scripts/board next` → `board next`; `B=…/board; $B gate …` → `board gate …` — only for variables the
+    command itself set to a board path (a loop's `$n` stays `$n`)."""
+    names = re.findall(r"\b([A-Za-z_]\w*)=\S*/board\b", cmd)
+    for n in names:
+        cmd = re.sub(rf"\$\{{?{n}\}}?(?=\s)", "board", cmd)
+    return BOARD_PATH.sub("board", cmd)
+
+
+def commands_of(path: Path, workers: bool = False) -> tuple[list[str], str]:
+    """The CONTROLLER's commands and text, in order — what a replay is graded on (workers=True: its subagents' instead;
+    they carry a parent_tool_use_id in Claude Code's stream). `S=…/board; $S retro` and `.claude/…/scripts/board next`
+    both read as `board …`; an Agent call reads as its type, description and the head of its prompt."""
     cmds, text = [], []
     try:
         for ln in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -158,26 +168,47 @@ def commands_of(path: Path) -> tuple[list[str], str]:
                 e = json.loads(ln)
             except ValueError:
                 continue
-            if e.get("parent_tool_use_id"):
+            if bool(e.get("parent_tool_use_id")) != workers:
                 continue
             for c in (e.get("message") or {}).get("content") or []:
                 if not isinstance(c, dict):
                     continue
                 if c.get("type") == "tool_use":
                     inp = c.get("input") or {}
-                    cmds.append(str(inp.get("command") or (f"skill: {inp['skill']}" if inp.get("skill") else "")
-                                    or f"{c.get('name')}: {inp.get('subagent_type', '')} {inp.get('description', '')}".strip()))
+                    if inp.get("command"):
+                        cmds.append(str(inp["command"]))
+                    elif inp.get("skill"):
+                        cmds.append(f"skill: {inp['skill']}")
+                    elif c.get("name") in ("Agent", "Task"):
+                        cmds.append(f"Agent: {inp.get('subagent_type', '')} {inp.get('description', '')} :: {str(inp.get('prompt', ''))[:300]}")
+                    else:
+                        cmds.append(f"{c.get('name')}: {inp.get('file_path') or inp.get('path') or inp.get('pattern') or ''}".strip())
                 elif c.get("type") == "text" and e.get("type") == "assistant":
                     text.append(str(c.get("text", "")))
     except OSError:
         pass
-    return [BOARD_ALIAS.sub("board", c) for c in cmds], "\n".join(text)
+    return [unalias(c) for c in cmds], "\n".join(text)
 
 
 def grade(c: dict, stream: Path) -> tuple[bool, list[str], list[str], list[str]]:
+    """expect / forbid: the controller's moves · expect_worker: its subagents' moves and text · expect_count: [regex, n]
+    over the controller's commands · expect_files: {glob under the workdir: regex its content must match}."""
     cmds, text = commands_of(stream)
     hay = "\n".join(cmds) + "\n" + text
     miss = [p for p in c.get("expect", []) if not re.search(p, hay, re.M)]
+    if c.get("expect_worker"):
+        wc, wt = commands_of(stream, workers=True)
+        whay = "\n".join(wc) + "\n" + wt
+        miss += [f"worker: {p}" for p in c["expect_worker"] if not re.search(p, whay, re.M)]
+    for pat, n, *until in c.get("expect_count", []):   # [regex, n] or [regex, n, until]: n matches before `until` first appears
+        joined = "\n".join(cmds)
+        cut = re.search(until[0], joined, re.M) if until else None
+        if len(re.findall(pat, joined[:cut.start()] if cut else joined, re.M)) < n:
+            miss.append(f"≥{n}× {pat}" + (f" before {until[0]}" if until else ""))
+    work = Path(str(stream)[:-len(".stream.jsonl")])
+    for glob_, pat in (c.get("expect_files") or {}).items():
+        if not any(re.search(pat, f.read_text(errors="replace"), re.M) for f in work.glob(glob_) if f.is_file()):
+            miss.append(f"file {glob_} ~ {pat}")
     bad = [p for p in c.get("forbid", []) if re.search(p, "\n".join(cmds), re.M)]
     return not miss and not bad, miss, bad, cmds
 
@@ -451,6 +482,25 @@ def cmd_replay(a: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def cmd_clean(a: argparse.Namespace) -> int:
+    """Remove bench workdirs no result file references (and dry-run states) — never a transcript a result still needs."""
+    keep = set()
+    for f in RESULTS.rglob("*.json"):
+        try:
+            w = json.loads(f.read_text()).get("workdir")
+        except ValueError:
+            continue
+        if w:
+            keep |= {w, w + ".stream.jsonl"}
+    gone = [p for p in RUNS_HOME.iterdir() if str(p) not in keep] if RUNS_HOME.exists() else []
+    for p in gone:
+        print(("would remove " if a.dry_run else "removed ") + p.name)
+        if not a.dry_run:
+            shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
+    print(f"bench clean: {len(gone)} unreferenced, {len(keep) // 2} result workdirs kept")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="bench", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -469,8 +519,10 @@ def main(argv: list[str]) -> int:
     p.add_argument("--ref", default=""); p.add_argument("--budget", type=float, default=1.0)
     p.add_argument("--timeout", type=int, default=600); p.add_argument("--label"); p.add_argument("--dry-run", action="store_true")
     p.add_argument("--regrade", metavar="LABEL", help="grade LABEL's saved transcripts again with the current cases (free)")
+    p = sub.add_parser("clean", help="remove workdirs no result references (dry-run states) — transcripts results need stay")
+    p.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
-    return {"validate": cmd_validate, "run": cmd_run, "compare": cmd_compare, "field": cmd_field, "replay": cmd_replay}[a.cmd](a)
+    return {"validate": cmd_validate, "run": cmd_run, "compare": cmd_compare, "field": cmd_field, "replay": cmd_replay, "clean": cmd_clean}[a.cmd](a)
 
 
 if __name__ == "__main__":

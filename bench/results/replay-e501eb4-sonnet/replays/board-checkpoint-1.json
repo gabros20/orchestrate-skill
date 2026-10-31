@@ -1,0 +1,27 @@
+{
+ "schema": 1,
+ "case": "board-checkpoint",
+ "label": "replay-e501eb4-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "e501eb4",
+ "skill_hash": "f9895785008e",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate 2>&1 | head -30; board next 2>&1 | head -40",
+  "grep -n \"f3\\|Module 3\" -r .orchestrate/run.md .orchestrate/prompts | head; tail -5 .orchestrate/journal.jsonl | cut -c1-400",
+  "board send --from controller --to impl-3 --re 12 \"No offset argument. The brief doesn't ask for one, so keep f3 to the spec: no parameters, returns 3. If you think the spec is wrong, report it as DESIGN_CONFLICT instead of widening the signature.\" && board next | head"
+ ],
+ "stream": {
+  "cost_usd": 0.0843291,
+  "turns": 6,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233349-replay-board-checkpoint",
+ "regraded": "2026-10-31"
+}

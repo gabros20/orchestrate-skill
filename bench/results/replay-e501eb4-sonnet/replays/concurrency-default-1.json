@@ -1,0 +1,37 @@
+{
+ "schema": 1,
+ "case": "concurrency-default",
+ "label": "replay-e501eb4-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "e501eb4",
+ "skill_hash": "f9895785008e",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate 2>&1 | head -30; S=.claude/skills/orchestrate/scripts/board; board version 2>&1 | head -20; board next 2>&1 | head -30",
+  "cat .orchestrate/run.md | head -60; tail -5 .orchestrate/progress.md; ls; board 2>&1 | head -40",
+  "cat plan.md; ls -R app | head; board help controller 2>&1 | head -60",
+  "B=.claude/skills/orchestrate/scripts/board; for n in 2 3 4 5; do board dispatch $n --model sonnet --owns app/m$n.py 2>&1 | head -15; done",
+  "Agent:  Implement module 2 :: Read /Users/tamas/.orchestrate-bench/20261031-233526-replay-concurrency-default/.orchestrate/prompts/impl-2.md first \u2014 it is how you work and report. Then the task: Task 2 from plan.md. Create `app/m2.py` with `def f2(): return 2` and a unittest. Only touch files you own (app/m2.py plus its test).",
+  "Agent:  Implement module 3 :: Read /Users/tamas/.orchestrate-bench/20261031-233526-replay-concurrency-default/.orchestrate/prompts/impl-3.md first \u2014 it is how you work and report. Then the task: Task 3 from plan.md. Create `app/m3.py` with `def f3(): return 3` and a unittest. Only touch files you own (app/m3.py plus its test).",
+  "Agent:  Implement module 4 :: Read /Users/tamas/.orchestrate-bench/20261031-233526-replay-concurrency-default/.orchestrate/prompts/impl-4.md first \u2014 it is how you work and report. Then the task: Task 4 from plan.md. Create `app/m4.py` with `def f4(): return 4` and a unittest. Only touch files you own (app/m4.py plus its test).",
+  "Agent:  Implement module 5 :: Read /Users/tamas/.orchestrate-bench/20261031-233526-replay-concurrency-default/.orchestrate/prompts/impl-5.md first \u2014 it is how you work and report. Then the task: Task 5 from plan.md. Create `app/m5.py` with `def f5(): return 5` and a unittest. Only touch files you own (app/m5.py plus its test).",
+  "B=.claude/skills/orchestrate/scripts/board; board return 4 --agent impl-4 --status DONE --commits 9f1ac93 --report .orchestrate/task-4-report.md --confidence 0.95 2>&1 | tail -3; board exec 4 --name tests -- python3 -m unittest app.test_m4 2>&1 | tail -3; board done 4 2>&1 | tail -3; board next | head",
+  "B=.claude/skills/orchestrate/scripts/board; declare -A C=([2]=59e6714 [3]=d63d373 [5]=8035e69); for n in 2 3 5; do board return $n --agent impl-$n --status DONE --commits ${C[$n]} --report .orchestrate/task-$n-report.md --confidence 0.9 >/dev/null 2>&1; board exec $n --name tests -- python3 -m unittest tests.test_m$n 2>&1 | tail -1; board done $n 2>&1 | tail -1; done; board dispatch 6 --model sonnet --owns NOTES.md 2>&1 | head -3",
+  "Agent:  Write release notes :: Read /Users/tamas/.orchestrate-bench/20261031-233526-replay-concurrency-default/.orchestrate/prompts/impl-6.md first \u2014 it is how you work and report. Then the task: Task 6 from plan.md. Write `NOTES.md` listing the modules (app/core.py, app/m2.py\u2013m5.py; tasks 1\u20135 are done and committed). Only touch ",
+  "B=.claude/skills/orchestrate/scripts/board; board return 6 --agent impl-6 --status DONE --commits 7ec67c4 --report .orchestrate/task-6-report.md --confidence 0.9 2>&1 | tail -1; board exec 6 --name notes -- grep -c \"m5\" NOTES.md 2>&1 | tail -1; board done 6 2>&1 | tail -1; board check --finish 2>&1 | tail -8",
+  "B=.claude/skills/orchestrate/scripts/board; board exec 6 --name all-tests -- sh -c 'python3 -m unittest app.test_m4 tests.test_m2 tests.test_m3 tests.test_m5' 2>&1 | tail -1; board finish --gate pass --evidence .orchestrate/raw/check-task6-all-tests-*.log 2>&1 | tail -4"
+ ],
+ "stream": {
+  "cost_usd": 0.3987341999999999,
+  "turns": 3,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 5
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233526-replay-concurrency-default",
+ "regraded": "2026-10-31"
+}

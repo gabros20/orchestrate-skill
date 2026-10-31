@@ -11,6 +11,51 @@ The release procedure synchronizes `.codex-plugin/plugin.json`, `skills/orchestr
 board's `VERSION` and `MIGRATIONS` line, this changelog, git tag `v<version>`, and the matching GitHub
 Release (`scripts/bump`, then `scripts/release`). Runtime `SKILL.md` contains no version metadata.
 
+## [1.37.0] — 2026-11-01
+
+### Fixed
+
+- **The role's contract reaches the worker: worker cards** (`scripts/board`, `SKILL.md` step 5,
+  `shared-contracts.md`, `strategy-staged.md`; ledger E-2026-10-31-e;
+  `docs/designs/v1.37.0-worker-cards.md`).
+
+  The bench found the gap: controllers never pasted the role template, so every worker got a
+  ~750-character ad-hoc prompt with no communication block, no report contract and no
+  `Confidence:` line. Of 24 build returns, 0 carried a report or a confidence.
+
+  Now:
+  - `board dispatch` writes `.orchestrate/prompts/<agent>.md`, the role's template verbatim from the
+    skill's references under a header with agent, brief, report path and board identity. So do
+    `review --agent` and `launch`; a lane gets the card prepended to its spec.
+  - It prints one line that starts the agent's prompt.
+  - `return` and `gate` read the card's report and findings paths when the flags are absent.
+
+  Measured:
+  - Replay dispatch-card went from 0/3 to 3/3; the other eight cases were unchanged.
+  - On orchestrated fan-out builds, returns with a confidence went from 0/8 to 17/18, so
+    calibration finally has data: Brier ≈0.01, slightly underconfident.
+  - Orchestrated wall time was 414–650 s against 91–344 s: unproven, and being watched.
+- **`board dispatch` takes the role from the agent's name** when `--role` is absent (`spec-3` → spec
+  reviewer), so a reviewer dispatched by name no longer resets the review cycle (ledger E-c).
+- **`board next` / `attention` print the exact next command.** That is the review to dispatch, with
+  agent name and the run's reviewer model, then the gate line; passed gates point at `board done N`.
+- **`SKILL.md` is 13 tokens smaller.** Step 5 points at the card. The worker-side `board learn` line
+  moved to the card; its invariant was re-homed in `check-sync`.
+- The 1.36.0 entry's "7 tokens smaller net" was 2 tokens (1 word) against v1.35.0.
+
+### Added
+
+- **Replay grader:**
+  - `expect_worker` (subagent events), `expect_files` (a file's content) and `expect_count` with an
+    `until` marker.
+  - A variable reads as `board` only when the command set it to a board path.
+  - Agent calls carry their prompt head.
+- **Five replays from the output evals:** dispatch-card, board-checkpoint, panel-missing-lens,
+  concurrency-default and overload-safety, making nine cases in all.
+- **`bench clean [--dry-run]`:** removes only workdirs no result references.
+- **Results:** `bench/results/replay-v1.36.0-sonnet`, `replay-e501eb4-sonnet` and
+  `build-e501eb4-sonnet` and `build-v1.36.0-sonnet`.
+
 ## [1.36.0] — 2026-10-31
 
 ### Fixed

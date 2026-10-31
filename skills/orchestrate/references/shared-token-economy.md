@@ -16,7 +16,7 @@ Produces:
 
 ## Contents
 
-- The communication blocks (role-scoped — paste the ROLE's block into its dispatch, verbatim)
+- The communication blocks (role-scoped — the card `board dispatch` writes carries the ROLE's block verbatim)
 - Dispatch coverage matrix (every surface, its block)
 - Priming anatomy — "prime, don't dump" (brief quality standard)
 - Orientation — filling a fresh context is work, not waste
@@ -31,7 +31,7 @@ variance — spending tokens IS the capability. Cut narration, duplication, raw 
 unstructured returns; never cut brief completeness. Underpriming costs more than overpriming: a
 worker missing context burns turns blind-searching or round-trips NEEDS_CONTEXT (a full re-dispatch).
 
-## The communication blocks (role-scoped — paste the ROLE's block into its dispatch, verbatim)
+## The communication blocks (role-scoped — the card `board dispatch` writes carries the ROLE's block verbatim)
 
 One block does not fit all roles: ~300 tokens of contract on a 4-line verifier is net-negative.
 Keep block text byte-stable across a run (cache hygiene); per-task variables go late in the prompt.

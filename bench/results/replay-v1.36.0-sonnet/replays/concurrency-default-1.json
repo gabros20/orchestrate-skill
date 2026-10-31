@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "case": "concurrency-default",
+ "label": "replay-v1.36.0-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "v1.36.0",
+ "skill_hash": "8f97784bb4bc",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate; scripts=.claude/skills/orchestrate/scripts; board version 2>&1 | head -20; board next 2>&1 | head -40",
+  "cat .orchestrate/run.md .orchestrate/progress.md; ls; board help controller | head -60",
+  "cat plan.md; ls -R app | head -30; ls .orchestrate; tail -5 .orchestrate/journal.jsonl",
+  "B=.claude/skills/orchestrate/scripts/board; for n in 2 3 4 5; do board dispatch $n --model sonnet --owns \"app/m$n.py,app/test_m$n.py\" 2>&1 | tail -2; done; board next",
+  "Agent:  Task 2: module m2 :: In /Users/tamas/.orchestrate-bench/20261031-233512-replay-concurrency-default create app/m2.py with `def f2(): return 2` and a unittest app/test_m2.py. Touch only those two files. Run `python3 -m unittest app.test_m2` from the repo root and confirm it passes. Do not commit. Report briefly: status, f",
+  "Agent:  Task 3: module m3 :: In /Users/tamas/.orchestrate-bench/20261031-233512-replay-concurrency-default create app/m3.py with `def f3(): return 3` and a unittest app/test_m3.py. Touch only those two files. Run `python3 -m unittest app.test_m3` from the repo root and confirm it passes. Do not commit. Report briefly: status, f",
+  "Agent:  Task 4: module m4 :: In /Users/tamas/.orchestrate-bench/20261031-233512-replay-concurrency-default create app/m4.py with `def f4(): return 4` and a unittest app/test_m4.py. Touch only those two files. Run `python3 -m unittest app.test_m4` from the repo root and confirm it passes. Do not commit. Report briefly: status, f",
+  "Agent:  Task 5: module m5 :: In /Users/tamas/.orchestrate-bench/20261031-233512-replay-concurrency-default create app/m5.py with `def f5(): return 5` and a unittest app/test_m5.py. Touch only those two files. Run `python3 -m unittest app.test_m5` from the repo root and confirm it passes. Do not commit. Report briefly: status, f",
+  "B=.claude/skills/orchestrate/scripts/board; board return 3 --agent impl-3 --status DONE 2>&1 | tail -2; board done 3 2>&1 | tail -2; board next",
+  "B=.claude/skills/orchestrate/scripts/board; for n in 4 5; do board return $n --agent impl-$n --status DONE 2>&1|tail -1; board done $n 2>&1|tail -1; done; board next",
+  "B=.claude/skills/orchestrate/scripts/board; board return 2 --agent impl-2 --status DONE 2>&1|tail -1; board done 2 2>&1|tail -1; board dispatch 6 --model sonnet --owns NOTES.md 2>&1|tail -1",
+  "Agent:  Task 6: release notes :: In /Users/tamas/.orchestrate-bench/20261031-233512-replay-concurrency-default write NOTES.md listing the modules in app/: core (VERSION \"1.0\"), m2 (f2), m3 (f3), m4 (f4), m5 (f5). Touch only NOTES.md. Do not commit. Report briefly.",
+  "B=.claude/skills/orchestrate/scripts/board; board return 6 --agent impl-6 --status DONE 2>&1|tail -1; board done 6 2>&1|tail -1; board next; cat NOTES.md",
+  "B=.claude/skills/orchestrate/scripts/board; python3 -m unittest discover -s . -p 'test_m*.py' -t . > .orchestrate/raw/final-tests.log 2>&1; echo rc=$?; tail -4 .orchestrate/raw/final-tests.log; find . -name __pycache__ -not -path './.claude/*' -exec rm -rf {} + ; board check --finish 2>&1|tail -5",
+  "board finish --gate pass --evidence .orchestrate/raw/final-tests.log 2>&1|tail -3"
+ ],
+ "stream": {
+  "cost_usd": 0.3266621,
+  "turns": 4,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 5
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233512-replay-concurrency-default",
+ "regraded": "2026-10-31"
+}

@@ -1,0 +1,37 @@
+{
+ "schema": 1,
+ "case": "dispatch-card",
+ "label": "replay-v1.36.0-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "v1.36.0",
+ "skill_hash": "8f97784bb4bc",
+ "model": "sonnet",
+ "pass": false,
+ "missing": [
+  "worker: prompts/impl-1\\.md",
+  "file .orchestrate/task-1-report*.md ~ (?im)^\\W*confidence\\W*[:=]\\s*\\**\\s*[0-9.]+"
+ ],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -30; ls .claude/skills/orchestrate/scripts",
+  "cat plan.md; cat .orchestrate/run.md; cat .orchestrate/journal.jsonl | tail -20; board next 2>&1 | head -30",
+  "S=.claude/skills/orchestrate; board help controller 2>&1 | head -50; sed -n 1,60p $S/references/prompt-implementer.md",
+  "S=.claude/skills/orchestrate/scripts; $S/task-brief --help 2>&1 | head -30; sed -n 60,120p .claude/skills/orchestrate/references/prompt-implementer.md",
+  "S=.claude/skills/orchestrate/scripts; $S/task-brief plan.md 1 > .orchestrate/task-1-brief.md 2>&1; cat .orchestrate/task-1-brief.md | head -40; $S/brief-check .orchestrate/task-1-brief.md 2>&1 | head; board dispatch 1 --model sonnet 2>&1 | tail -5",
+  "ls .orchestrate; cat .orchestrate/task-1-brief.md | head -50",
+  "Write: /Users/tamas/.orchestrate-bench/20261031-233315-replay-dispatch-card/.orchestrate/task-1-brief.md",
+  ".claude/skills/orchestrate/scripts/brief-check .orchestrate/task-1-brief.md",
+  "Agent: general-purpose Implement Task 1 parser :: You are implementing Task 1: Parser\n\n## Your brief\nRead /Users/tamas/.orchestrate-bench/20261031-233315-replay-dispatch-card/.orchestrate/task-1-brief.md \u2014 it contains the full task text.\nWrite your full report to /Users/tamas/.orchestrate-bench/20261031-233315-replay-dispatch-card/.orchestrate/task",
+  "board return 1 --agent impl-1 --status DONE --commits cf7a2a7 --report .orchestrate/task-1-report.md --observed-model sonnet 2>&1 | tail -5; board next | tail -4"
+ ],
+ "stream": {
+  "cost_usd": 0.1804091,
+  "turns": 11,
+  "is_error": true,
+  "subtype": "error_max_turns",
+  "agents_spawned": 1
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233315-replay-dispatch-card",
+ "regraded": "2026-10-31"
+}

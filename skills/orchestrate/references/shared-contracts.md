@@ -172,7 +172,11 @@ plan back to pending when it re-resolves anything. `board set key=value` re-reso
 (`lanes=todo,implement,verify,review,integrate,done,blocked` declares the board's lanes — a
 projection of state × role; `todo/done/blocked` required).
 
-**Dispatch and return.** Every dispatch pins `--model` (rule 3) and is refused while the flight
+**Dispatch and return.** `board dispatch` (and `review --agent`, `launch`) writes the agent's card,
+`.orchestrate/prompts/<agent>.md`: the role's template verbatim under a header naming the agent, its
+brief, its report or findings path and its board identity. The agent's prompt starts with the line
+it prints; `return` and `gate` read the card's paths when `--report` / `--findings` are absent, and
+`dispatch` takes the role from the agent's name. Every dispatch pins `--model` (rule 3) and is refused while the flight
 plan is pending; every implementer dispatch is a new *attempt*, which resets the review cycle; the
 session id is what `board resume` resumes by. **Agent names are `<role>-<task>[-tag]`** — `impl-3`,
 `lead-1`, `impl-1.1` (under `lead-1`), `spec-3`, `quality-3`, `verify-3`, `integ-1`, `fix-3-r2`,

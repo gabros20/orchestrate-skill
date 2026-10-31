@@ -75,12 +75,13 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "1.36.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
+VERSION = "1.37.0"   # the release; == skills/orchestrate/VERSION == plugin.json == CHANGELOG top == MIGRATIONS top (check-sync)
 SCHEMA = 2           # the journal's shape; bumps ONLY for a breaking change, with an in-place upgrader (migrate_v1 is one)
 # What a run started on an older release must know. Newest first, one line per release: "none" = additive, nothing to
 # do · "action" = do it, then `board version --ack V --msg ".."` (a check finding, so finish refuses, until acked).
 # Automatic journal rewrites never live here — they run on open (journal_path), like the v1→v2 upgrade.
 MIGRATIONS = (
+    ("1.37.0", "none", "dispatch / review --agent / launch write the agent's card (.orchestrate/prompts/<agent>.md) and print the line that starts its prompt; return and gate read the card's report/findings paths; dispatch infers the role from the agent name; next names the exact review and gate commands — additive, a run in progress just gains cards"),
     ("1.36.0", "none", "board done refuses a task whose required review gate never passed (unset review = dual); a passing gate needs a reviewer on record or --msg (unreviewed); review --agent controller is refused — evaluated at command time, old journals are untouched; resuming a run is a skill trigger"),
     ("1.35.0", "none", "board next points a finished run at board retro until it has run; maintainer-side bench/ (tasks with hidden tests, replays, compare, field) and the orchestrate-evolve skill — nothing changes for a run in progress"),
     ("1.34.0", "none", "board score / board retro (--draft) at finish; reports and verdicts carry Confidence: 0–1, read by return/gate and scored as Brier; the board logs its own friction to raw/friction.jsonl — additive, older runs score with no calibration"),
@@ -914,6 +915,100 @@ def review_lowered(st: State) -> list[str]:
     return out
 
 
+# --- the worker card: the role's contract handed over by the tool, not by the controller's memory -------------------
+# Measured (bench 2026-10-31): controllers wrote ~750-char ad-hoc worker prompts and never pasted the role template, so
+# the communication block, the report contract and the Confidence line reached no worker. `dispatch` and `review --agent`
+# now write .orchestrate/prompts/<agent>.md from the skill's own references and print one line to hand over.
+CARD_DIR = "prompts"
+ROLE_PREFIX = {"impl": "implementer", "fix": "implementer", "spec": "spec reviewer", "quality": "quality reviewer",
+               "verify": "verifier", "integ": "integrator", "research": "researcher", "lead": "sub-orchestrator",
+               "synth": "synthesizer", "arch": "architect", "advisor": "advisor"}
+ROLE_TEMPLATE = {"implementer": "prompt-implementer.md", "spec reviewer": "prompt-spec-reviewer.md",
+                 "quality reviewer": "prompt-quality-reviewer.md", "integrator": "prompt-integrator.md",
+                 "sub-orchestrator": "prompt-sub-orchestrator.md", "researcher": "prompt-researcher.md",
+                 "verifier": "prompt-verifier.md", "architect": "prompt-architect.md", "advisor": "prompt-advisor.md"}
+
+
+def role_of_agent(agent: str) -> str:
+    """The role an agent's name says it has (`spec-3` → spec reviewer) — dispatch's default when --role is absent."""
+    return ROLE_PREFIX.get(agent.split("-", 1)[0], "")
+
+
+def skill_root(ws: Path | None = None) -> Path | None:
+    """The skill directory whose references this board renders cards from — the copy beside this script first, then the
+    repo's project skill, then the installed ones; a copy at this board's release wins over an older one."""
+    home = Path.home()
+    cands = [Path(__file__).resolve().parent.parent, Path(os.environ["ORCHESTRATE_SKILL"]) if os.environ.get("ORCHESTRATE_SKILL") else None,
+             (ws.resolve().parent / ".claude/skills/orchestrate") if ws else None, home / ".claude/skills/orchestrate",
+             home / ".agents/skills/orchestrate", home / ".codex/skills/orchestrate"]
+    found = [c for c in cands if c and (c / "references/shared-token-economy.md").exists()]
+    same = [c for c in found if file_version(c / "scripts/board") == VERSION]
+    return (same or found or [None])[0]
+
+
+def fence_after(text: str, heading: str) -> str:
+    """The first fenced block after a heading line matching `heading` — the same extraction check-sync uses."""
+    m = re.search(heading, text, re.M)
+    if not m:
+        return ""
+    f = re.search(r"^```[^\n]*\n(.*?)^```", text[m.end():], re.M | re.S)
+    return f.group(1).rstrip() if f else ""
+
+
+def report_section(template: str) -> str:
+    """A role template's report contract: from its `## Report` heading to the end of the template's fence."""
+    m = re.search(r"^## Report[^\n]*\n(.*?)(?=^```|^## )", template, re.M | re.S)
+    return m.group(0).rstrip() if m else ""
+
+
+def card_paths(ws: Path, st: "State", task: str, agent: str, role: str, kind: str = "", rnd: int | None = None) -> tuple[Path, str]:
+    """Where an agent's card lives and the report (or findings) file it is told to write, relative to .orchestrate/."""
+    if role.endswith("reviewer") or kind:
+        k = kind or role.split()[0]
+        r = rnd or 1 + max([int(m.group(1)) for p in ws.glob(f"review-task{task}-{k}-r*.md") if (m := re.search(r"-r(\d+)\.md$", p.name))] or [0])
+        out = f"review-task{task}-{k}-r{r}.md"
+    else:
+        prior = [x for x in st.stints if x.task == task and role_tier(x.role) == "worker"]
+        out = f"task-{task}-report.md" if not prior else f"task-{task}-report-{agent}.md"
+    return ws / CARD_DIR / f"{agent}.md", out
+
+
+def write_card(ws: Path, st: "State", task: str, agent: str, role: str, kind: str = "", rnd: int | None = None) -> tuple[Path, str]:
+    card, out = card_paths(ws, st, task, agent, role, kind, rnd)
+    root = skill_root(ws)
+    te = (root / "references/shared-token-economy.md").read_text(encoding="utf-8") if root else ""
+    reviewer = role.endswith("reviewer") or bool(kind)
+    tier_ = "reviewer" if reviewer else role_tier(role)
+    block = fence_after(te, r"^### REVIEWER block") if reviewer else (fence_after(te, r"^### WORKER block") if tier_ == "worker" else fence_after(te, r"^### MINIMAL line"))
+    tpl_name = ROLE_TEMPLATE.get(role, ("prompt-spec-reviewer.md" if (kind or role).startswith("spec") else "prompt-quality-reviewer.md")
+                                 if reviewer else "prompt-implementer.md")
+    tpl = (root / "references" / tpl_name).read_text(encoding="utf-8") if root and (root / "references" / tpl_name).exists() else ""
+    absws = ws.resolve()
+    brief = absws / f"task-{task}-brief.md"
+    L = [f"# {agent} · {role or 'implementer'} · task {task} · orchestrate run {st.run.id or '?'}",
+         "You work inside an orchestrate run. The controller's message gives your task; this card is HOW you work and report.",
+         f"- brief: {brief}" + ("" if brief.exists() else "  (none on disk — the controller's message is your brief)"),
+         (f"- findings: write {absws / out} — its first line is the verdict (✅ / ❌ / ⚠️) and a `Confidence: 0–1` line, then every finding"
+          if reviewer else f"- report: write {absws / out} — Status, Commits, Tests, Concerns and `Confidence: 0–1` first, then the detail"),
+         f"- board: you are {agent} — pass --agent {agent} to every call (start with board inbox --agent {agent}). You only observe: "
+         f"note · exec · learn · send{' · vote' if reviewer else ''}; never return, done or gate — the controller records those.",
+         "- [bracketed] fields below are filled by this header and the controller's message."]
+    fences = re.findall(r"^```[^\n]*\n(.*?)^```", tpl, re.M | re.S)
+    body = max(fences, key=len).rstrip() if fences else ""
+    if body:   # the role's dispatch prompt, verbatim — it carries the role's communication block (check-sync keeps it identical)
+        L += ["", body]
+    else:      # no template beside this board: the block and the report contract alone
+        L += [f"- full role contract: the orchestrate skill's references/{tpl_name}"] + (["", block] if block else [])
+    card.parent.mkdir(parents=True, exist_ok=True)
+    card.write_text("\n".join(L) + "\n", encoding="utf-8")
+    return card, out
+
+
+def card_line(card: Path) -> str:
+    return (f"board: the agent's prompt starts with: Read {card.resolve()} first — it is how you work and report. "
+            "Then give the task. (The card is the role's template, filled in; never paste the template yourself.)")
+
+
 def quorum(review: str, votes: list[tuple[str, str]]) -> str:
     """Derived gate text from votes: panel:N = majority of ok once all N lenses voted (a lens that
     never votes is a hole, not a vote), consensus:N (and anything else) = any-deny."""
@@ -1571,9 +1666,19 @@ def attention(st: State, now: float) -> list[tuple[str, Task, str]]:
                 if rs and stint_stale(rs[-1], t, now):
                     out.append(("!", t, f"{pend[0]} reviewer silent {fmt_dur(now - rs[-1].started)} — findings file missing"))
                 else:
-                    out.append(("?", t, f"{', '.join(pend)} gate pending"))
-            elif not t.gates:
-                out.append(("?", t, "report landed — dispatch the review"))
+                    out.append(("?", t, f"{', '.join(pend)} gate pending — when its findings land: board gate {t.id} --kind {pend[0]} "
+                                         f"--verdict ok|fail|warn"))
+            else:
+                need = review_required(st.run.dims.get("review") or "dual")
+                passed = [k for k, v in t.gates.items() if v.startswith(("ok", "warn"))]
+                todo = [("review" if k == "*" else k) for k in need if not any(k == "*" or g.startswith(k) for g in passed)]
+                rev = st.run.models.get("reviewer") or "<model>"
+                if todo:
+                    k = todo[0]
+                    out.append(("?", t, ("report landed" if not t.gates else f"{', '.join(passed)} passed") + f" — dispatch the {k} review: "
+                                f"board review {t.id} --kind {k} --agent {k}-{t.id} --model {rev}, then hand the agent its card"))
+                elif passed:
+                    out.append(("?", t, f"gates passed ({', '.join(passed)}) — board done {t.id}"))
         elif s == "in_progress" and t.last_status == "DONE_WITH_CONCERNS":
             out.append(("?", t, "returned with concerns — read the report first"))
         if s != "done" and t.attempt >= 3 and not t.escalations:
@@ -4721,6 +4826,16 @@ def _main(argv: list[str]) -> int:
         st0 = load(ws)
         agent = check_agent(clean(args.agent), st0, str(args.task), args.role or "") if args.agent else agent_name(st0, str(args.task), args.role or "")
         after = [x.strip() for x in (args.after or "").split(",") if x.strip()]
+        card = expects = None
+        if "## Communication contract" not in spec.read_text(encoding="utf-8", errors="replace"):
+            # a lane sees nothing of the session: its prompt is the card (the role's contract) followed by the spec
+            role_ = args.role or role_of_agent(agent) or "implementer"
+            card, expects = write_card(ws, st0, str(args.task), agent, role_)
+            if not args.dry_run:
+                (ws / "raw").mkdir(parents=True, exist_ok=True)
+                combined = ws / "raw" / f"spec-{agent}.md"
+                combined.write_text(card.read_text(encoding="utf-8") + "\n---\n\n# Your task\n\n" + spec.read_text(encoding="utf-8"), encoding="utf-8")
+                spec = combined.resolve()
         script, log, usage = render_wrapper(ws, str(args.task), agent, args.engine, args.model, args.effort or "", session, spec, cwd,
                                             extra, after)
         if args.dry_run:
@@ -4733,7 +4848,8 @@ def _main(argv: list[str]) -> int:
         if args.fg:
             append_event(ws, actor=args.by or "controller", task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
                          effort=args.effort, worktree=args.worktree, session=session, log=log, cmd_file=cmd_file, owns=args.owns,
-                         after=",".join(after), by=args.by, msg=args.msg, cwd=str(cwd))
+                         after=",".join(after), by=args.by, msg=args.msg, cwd=str(cwd),
+                         card=f"{CARD_DIR}/{card.name}" if card else None, expects=expects)
             rc = subprocess.run(["/bin/sh", str(ws / cmd_file)]).returncode
             print(f"board: lane {agent} finished rc={rc} — read .orchestrate/task-{args.task}-report.md, then board return")
             return rc
@@ -4741,7 +4857,8 @@ def _main(argv: list[str]) -> int:
                                 stderr=subprocess.DEVNULL, start_new_session=True)
         append_event(ws, actor=args.by or "controller", task=args.task, ev="dispatch", agent=agent, role=args.role, model=args.model, engine=args.engine,
                      effort=args.effort, worktree=args.worktree, session=session, log=log, cmd_file=cmd_file, owns=args.owns,
-                     pid=proc.pid, after=",".join(after), by=args.by, msg=args.msg, cwd=str(cwd))
+                     pid=proc.pid, after=",".join(after), by=args.by, msg=args.msg, cwd=str(cwd),
+                     card=f"{CARD_DIR}/{card.name}" if card else None, expects=expects)
         print(f"board: lane {agent} launched (pid {proc.pid}, {args.engine} {args.model} @ {args.effort or 'high'})" +
               (f" · queued after task {', '.join(after)} — the engine starts when their work is on disk" if after else "") +
               (f" · session {session}" if session else "") + f"\n       log .orchestrate/{log} · wrapper .orchestrate/{cmd_file} · exit and receipt are journaled when it ends")
@@ -5002,15 +5119,26 @@ def _main(argv: list[str]) -> int:
             sys.exit("board: dispatch needs --model — pin a model on every dispatch (SKILL.md rule 3)")
         st = load(ws)
         launch_gate(st)
+        if not args.role and args.agent and role_of_agent(clean(args.agent)):
+            args.role = role_of_agent(clean(args.agent))   # `dispatch 1 --agent spec-1` is a reviewer, not a new implementer attempt
         args.agent = check_agent(clean(args.agent), st, str(args.task), args.role or "") if args.agent else agent_name(st, str(args.task), args.role or "")
         print(f"board: task {args.task} → {args.agent} ({args.role or 'implementer'} · {args.model})")
+        card, expects = write_card(ws, st, str(args.task), args.agent, args.role or "implementer")
         append_event(ws, actor=args.by or "controller", task=args.task, ev="dispatch", agent=args.agent, role=args.role, model=args.model,
                      engine=args.engine, effort=args.effort, worktree=args.worktree, session=args.session, log=args.log,
-                     cmd_file=args.cmd_file, owns=args.owns, by=args.by, msg=args.msg)
+                     cmd_file=args.cmd_file, owns=args.owns, by=args.by, msg=args.msg, card=f"{CARD_DIR}/{card.name}", expects=expects)
+        print(card_line(card))
     elif cmd == "return":
         if not args.agent:
             sys.exit("board: return needs --agent")
         reported = ""
+        if not args.report:   # the card told the worker where to write it — read that, if it landed after the dispatch
+            disp = next((e for e in reversed(load(ws).events) if e.get("ev") == "dispatch" and e.get("agent") == args.agent
+                         and str(e.get("task")) == str(args.task)), {})
+            exp = ws / str(disp.get("expects") or f"task-{args.task}-report.md")
+            if exp.exists() and exp.stat().st_mtime >= parse_ts(disp.get("ts")) - 1:
+                args.report = str(exp.relative_to(ws))
+                print(f"board: report {args.report} read (the card's path) — pass --report to name another")
         if args.report:
             cands = [Path(args.report)] if Path(args.report).is_absolute() else [ws / args.report, ws.parent / args.report, Path.cwd() / args.report]
             rp = next((c for c in cands if c.exists()), cands[0])
@@ -5032,10 +5160,16 @@ def _main(argv: list[str]) -> int:
         if clean(args.agent or "") == "controller":
             sys.exit(f"board: a reviewer is a fresh agent, never the controller — dispatch one: board review {args.task} --kind {args.kind} "
                      f"--agent {args.kind}-{args.task} --model M (maker/checker: shared-review-gates.md)")
+        card = expects = None
         if args.agent:
-            check_agent(clean(args.agent), load(ws), str(args.task), f"{args.kind} reviewer")
+            st = load(ws)
+            check_agent(clean(args.agent), st, str(args.task), f"{args.kind} reviewer")
+            card, expects = write_card(ws, st, str(args.task), clean(args.agent), f"{args.kind} reviewer", args.kind, args.round)
         append_event(ws, task=args.task, ev="review", kind=args.kind, round=args.round, agent=args.agent,
-                     model=args.model, engine=args.engine, msg=args.msg)
+                     model=args.model, engine=args.engine, msg=args.msg,
+                     card=f"{CARD_DIR}/{card.name}" if card else None, expects=expects)
+        if card:
+            print(card_line(card))
     elif cmd == "gate":
         conf = parse_conf(args.confidence) if args.confidence else None
         if args.confidence and conf is None:
@@ -5052,6 +5186,11 @@ def _main(argv: list[str]) -> int:
                          f"--agent {args.kind}-{args.task} --model M), then record its verdict; passing it without one needs --msg \"why\" "
                          f"(journaled as unreviewed, reported by the retro)")
             unreviewed = True if not seen else None
+        if not args.findings:   # the reviewer's card named its findings file
+            rev = next((e for e in reversed(load(ws).events) if e.get("ev") == "review" and str(e.get("task")) == str(args.task)
+                        and e.get("kind") == args.kind and e.get("expects")), {})
+            if rev and (ws / str(rev["expects"])).exists():
+                args.findings = str(rev["expects"])
         if conf is None and args.findings:
             fp = Path(args.findings)
             conf = next((file_conf(c) for c in ([fp] if fp.is_absolute() else [ws / fp, ws.parent / fp, Path.cwd() / fp]) if c.exists()), None)
@@ -5955,6 +6094,40 @@ def selftest() -> int:
         idx = help_text()
         assert len(idx) < 1500 and "next" in idx and "hold" in idx and len(help_text("controller")) < 3500, idx
         assert help_text("lead").startswith("LEADS") and help_text("nope") == idx, "an unknown topic gets the index"
+        os.chdir(tmp)
+
+        # --- worker cards (v1.37): the role's contract handed over by the tool; paths the board reads back ---------------
+        cd_ = Path(tmp) / "cards"
+        cd_.mkdir()
+        os.chdir(cd_)
+        subprocess.run(["git", "init", "-q"], check=True)
+        (cd_ / "plan.md").write_text("# Plan\n\n## Task 1: A\n\n## Task 2: B\n")
+        run("init", "plan.md", "--strategy", "staged", "--review", "dual", "--models", "reviewer=opus", "--goal", "cards")
+        wsc = cd_ / ".orchestrate"
+        run("plan", "approved")
+        out = run("dispatch", "1", "--agent", "impl-1", "--model", "sonnet")
+        card = (wsc / "prompts" / "impl-1.md").read_text()
+        assert f"Read {(wsc / 'prompts' / 'impl-1.md').resolve()} first" in out, out
+        assert card.startswith("# impl-1 · implementer · task 1") and "## Communication contract" in card and "Confidence" in card \
+            and "--agent impl-1" in card and "Report back" in card and "STOP and escalate" in card and str((wsc / "task-1-report.md").resolve()) in card, card
+        (wsc / "task-1-report.md").write_text("Status: DONE\nConfidence: 0.7\n")
+        out = run("return", "1", "--agent", "impl-1", "--status", "DONE")                       # no --report: the card's path is read
+        e_ = [e for e in load(wsc).events if e.get("ev") == "return"][-1]
+        assert e_.get("report") == "task-1-report.md" and e_.get("confidence") == 0.7 and "read (the card's path)" in out, e_
+        nx = run("next")
+        assert nx.splitlines()[-1].startswith("→ board review 1 --kind spec --agent spec-1 --model opus"), nx   # the command, not a hint
+        out = run("review", "1", "--kind", "spec", "--agent", "spec-1", "--model", "opus")
+        rc_ = (wsc / "prompts" / "spec-1.md").read_text()
+        assert "spec reviewer" in rc_.splitlines()[0] and "review-task1-spec-r1.md" in rc_ and "vote" in rc_ and "Report (verdict first)" in rc_, rc_
+        (wsc / "review-task1-spec-r1.md").write_text("✅ Spec compliant\nConfidence: 0.9\n")
+        run("gate", "1", "--kind", "spec", "--verdict", "ok")                                    # no --findings: the card's path is read
+        g_ = [e for e in load(wsc).events if e.get("ev") == "gate"][-1]
+        assert g_.get("findings") == "review-task1-spec-r1.md" and g_.get("confidence") == 0.9 and not g_.get("unreviewed"), g_
+        assert "dispatch the quality review: board review 1 --kind quality --agent quality-1" in run("attention")
+        run("dispatch", "2", "--agent", "impl-2", "--model", "sonnet")
+        run("dispatch", "2", "--agent", "spec-2", "--model", "opus")                             # a reviewer by name, not a new attempt
+        st = load(wsc)
+        assert st.tasks["2"].attempt == 1 and next(x for x in st.stints if x.agent == "spec-2").role == "spec reviewer", vars(st.tasks["2"])
         os.chdir(tmp)
 
         # --- field loop (v1.34): a versioned score, calibration from Confidence: lines, the board's friction, the retro draft ---

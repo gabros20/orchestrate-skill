@@ -1,0 +1,29 @@
+{
+ "schema": 1,
+ "case": "panel-missing-lens",
+ "label": "replay-v1.36.0-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "v1.36.0",
+ "skill_hash": "8f97784bb4bc",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate 2>&1 | head -50; cat .orchestrate/run.md 2>&1 | head -60; board next 2>&1 | head -40",
+  "cat .orchestrate/journal.jsonl; ls -R .orchestrate | head; board help controller 2>&1 | head -60",
+  "git ls-files | grep -v '^.claude/skills' | head -30; board nudge 1 --agent arch-1 2>&1 | tail -3",
+  "cat plan.md; git status --short | head",
+  "Agent: general-purpose Architecture panel review task 1 :: You are arch-1, the architecture lens on a 3-reviewer panel (others: security, performance) for Task 1 \"Parser\" in /Users/tamas/.orchestrate-bench/20261031-233442-replay-panel-missing-lens. Spec (plan.md): parse `key=value` lines into a dict in `kv/parse.py`. Review read-only: module boundaries, API"
+ ],
+ "stream": {
+  "cost_usd": 0.15232069999999998,
+  "turns": 7,
+  "is_error": true,
+  "subtype": "error_max_turns",
+  "agents_spawned": 1
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233442-replay-panel-missing-lens",
+ "regraded": "2026-10-31"
+}

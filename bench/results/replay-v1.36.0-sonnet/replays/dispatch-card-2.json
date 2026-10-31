@@ -1,0 +1,36 @@
+{
+ "schema": 1,
+ "case": "dispatch-card",
+ "label": "replay-v1.36.0-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "v1.36.0",
+ "skill_hash": "8f97784bb4bc",
+ "model": "sonnet",
+ "pass": false,
+ "missing": [
+  "worker: prompts/impl-1\\.md",
+  "file .orchestrate/task-1-report*.md ~ (?im)^\\W*confidence\\W*[:=]\\s*\\**\\s*[0-9.]+"
+ ],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -40; scripts=.claude/skills/orchestrate/scripts; ls $scripts",
+  "cat plan.md .orchestrate/run.md; tail -5 .orchestrate/journal.jsonl; board next 2>&1 | head -30",
+  "B=.claude/skills/orchestrate/scripts; board help controller 2>&1 | head -50; cat .claude/skills/orchestrate/references/prompt-implementer.md | head -60",
+  "B=.claude/skills/orchestrate/scripts; $B/task-brief --help 2>&1 | head -25",
+  "B=.claude/skills/orchestrate/scripts; $B/task-brief plan.md 1 2>&1 | tail -20; ls .orchestrate; $B/brief-check .orchestrate/task-1-brief.md 2>&1 | tail -5",
+  "cat .orchestrate/task-1-brief.md; sed -n 1,200p .claude/skills/orchestrate/references/shared-contracts.md | grep -n -i -A12 \"brief\" | head -60",
+  "cat >> .orchestrate/task-1-brief.md <<'EOF'\n\n## Scope\nCreate `kv/parse.py` (and `kv/__init__.py` if absent) with `parse(text: str) -> dict[str, str]`: one `key=value` per line, split on the first `=`, skip blank lines. Do not touch `kv/fmt.py` or other files.\n\n## Verification\nAdd `tests/test_parse.py`; run `python3 -m pytest tests/test_parse.py` (or unittest if pytest is missing). Must pass.\n\n## Report\nWrite the report to /Users/tamas/.orchestrate-bench/20261031-233242-replay-dispatch-card/.orchestrate/task-1-report.md: files changed, test output, concerns.\n\n## Stop condition\nParser implemented, tests pass, report written. Commit nothing.\nEOF\nB=.claude/skills/orchestrate/scripts; $B/brief-check .orchestrate/task-1-brief.md 2>&1 | tail -5; board dispatch 1 --model sonnet 2>&1 | tail -5",
+  "Agent: general-purpose Implement task 1 parser :: You are implementing Task 1: Parser\n\n## Your brief\nRead /Users/tamas/.orchestrate-bench/20261031-233242-replay-dispatch-card/.orchestrate/task-1-brief.md \u2014 it contains the full task text.\nWrite your full report to /Users/tamas/.orchestrate-bench/20261031-233242-replay-dispatch-card/.orchestrate/task",
+  "B=.claude/skills/orchestrate/scripts; board return 1 --agent impl-1 --status DONE_WITH_CONCERNS --report .orchestrate/task-1-report.md --tokens 15k 2>&1 | tail -3; board next | tail -4; ls kv tests"
+ ],
+ "stream": {
+  "cost_usd": 0.1636983,
+  "turns": 11,
+  "is_error": true,
+  "subtype": "error_max_turns",
+  "agents_spawned": 1
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233242-replay-dispatch-card",
+ "regraded": "2026-10-31"
+}

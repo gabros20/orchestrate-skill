@@ -1,0 +1,29 @@
+{
+ "schema": 1,
+ "case": "dispatch-card",
+ "label": "replay-e501eb4-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "e501eb4",
+ "skill_hash": "f9895785008e",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -40; ls .claude/skills/orchestrate/scripts | head -30",
+  "cat plan.md .orchestrate/run.md; cat .orchestrate/journal.jsonl | tail -20; board next 2>&1 | head -30",
+  "board help controller 2>&1 | head -60; board dispatch 1 --model sonnet 2>&1 | head -60",
+  "Agent: general-purpose Implement task 1 parser :: Read /Users/tamas/.orchestrate-bench/20261031-233236-replay-dispatch-card/.orchestrate/prompts/impl-1.md first \u2014 it is how you work and report. Then give the task: Task 1 from /Users/tamas/.orchestrate-bench/20261031-233236-replay-dispatch-card/plan.md \u2014 Parse `key=value` lines into a dict (`kv/pars",
+  "board return 1 --agent impl-1 --status DONE --commits dff1686..95c4153 --report .orchestrate/task-1-report.md --tokens 18k --confidence 0.8 2>&1 | tail -5; board next 2>&1 | head"
+ ],
+ "stream": {
+  "cost_usd": 0.18010990000000007,
+  "turns": 2,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 1
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233236-replay-dispatch-card",
+ "regraded": "2026-10-31"
+}

@@ -1,0 +1,27 @@
+{
+ "schema": 1,
+ "case": "finish-retro",
+ "label": "replay-v1.36.0-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "v1.36.0",
+ "skill_hash": "8f97784bb4bc",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate 2>&1 | head; ls .claude/skills/orchestrate/scripts | head -30; board check --finish 2>&1 | tail -15",
+  "Read: /Users/tamas/.orchestrate-bench/20261031-233831-replay-finish-retro/.claude/skills/orchestrate/references/shared-retro.md",
+  "board retro 2>&1 | tail -40"
+ ],
+ "stream": {
+  "cost_usd": 0.08011839999999999,
+  "turns": 6,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233831-replay-finish-retro",
+ "regraded": "2026-10-31"
+}

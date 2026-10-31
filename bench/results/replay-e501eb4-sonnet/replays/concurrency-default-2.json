@@ -1,0 +1,38 @@
+{
+ "schema": 1,
+ "case": "concurrency-default",
+ "label": "replay-e501eb4-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "e501eb4",
+ "skill_hash": "f9895785008e",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate; S=.claude/skills/orchestrate/scripts; board version 2>&1 | head -20; board next 2>&1 | head -40",
+  "cat .orchestrate/run.md; cat .orchestrate/progress.md; ls .orchestrate/prompts; S=.claude/skills/orchestrate/scripts; board 2>&1 | head -40; board help controller | head -60",
+  "git ls-files | head -30; tail -5 .orchestrate/journal.jsonl | cut -c1-400; cat .orchestrate/prompts/impl-1.md | head -30",
+  "S=.claude/skills/orchestrate/scripts; for n in 2 3 4 5; do board dispatch $n --model sonnet --owns \"module-$n/\" 2>&1 | head -8; done; board 2>&1 | sed -n 1,30p",
+  "Agent:  Implement Module 2 :: Read /Users/tamas/.orchestrate-bench/20261031-233627-replay-concurrency-default/.orchestrate/prompts/impl-2.md first \u2014 it is how you work and report. Then your task: Task 2, \"Module 2\". No brief file exists; the repo at /Users/tamas/.orchestrate-bench/20261031-233627-replay-concurrency-default has T",
+  "Agent:  Implement Module 3 :: Read /Users/tamas/.orchestrate-bench/20261031-233627-replay-concurrency-default/.orchestrate/prompts/impl-3.md first \u2014 it is how you work and report. Then your task: Task 3, \"Module 3\". No brief file exists; the repo at /Users/tamas/.orchestrate-bench/20261031-233627-replay-concurrency-default has T",
+  "Agent:  Implement Module 4 :: Read /Users/tamas/.orchestrate-bench/20261031-233627-replay-concurrency-default/.orchestrate/prompts/impl-4.md first \u2014 it is how you work and report. Then your task: Task 4, \"Module 4\". No brief file exists; the repo at /Users/tamas/.orchestrate-bench/20261031-233627-replay-concurrency-default has T",
+  "Agent:  Implement Module 5 :: Read /Users/tamas/.orchestrate-bench/20261031-233627-replay-concurrency-default/.orchestrate/prompts/impl-5.md first \u2014 it is how you work and report. Then your task: Task 5, \"Module 5\". No brief file exists; the repo at /Users/tamas/.orchestrate-bench/20261031-233627-replay-concurrency-default has T",
+  "S=.claude/skills/orchestrate/scripts; board return 3 --agent impl-3 --status DONE_WITH_CONCERNS --commits 3186cd2 --report .orchestrate/task-3-report.md --confidence 0.8 2>&1 | tail -3; board done 3 2>&1 | tail -3; board next 2>&1 | tail -5",
+  "S=.claude/skills/orchestrate/scripts; board return 2 --agent impl-2 --status DONE_WITH_CONCERNS --commits 2a28596 --report .orchestrate/task-2-report.md --confidence 0.85 2>&1 | tail -2; board done 2 2>&1 | tail -2",
+  "S=.claude/skills/orchestrate/scripts; board return 4 --agent impl-4 --status DONE_WITH_CONCERNS --commits a9f457f --report .orchestrate/task-4-report.md --confidence 0.8 2>&1 | tail -1; board return 5 --agent impl-5 --status DONE_WITH_CONCERNS --commits df842be --report .orchestrate/task-5-report.md --confidence 0.8 2>&1 | tail -1; board done 4 | tail -1; board done 5 | tail -1; board dispatch 6 --model sonnet --owns \"RELEASE_NOTES.md\" 2>&1 | head -3; grep -n -A8 \"Task 6\" plan.md | head -20",
+  "Agent:  Write release notes :: Read /Users/tamas/.orchestrate-bench/20261031-233627-replay-concurrency-default/.orchestrate/prompts/impl-6.md first \u2014 it is how you work and report. Then your task: Task 6, \"Release notes\", per plan.md in the repo at /Users/tamas/.orchestrate-bench/20261031-233627-replay-concurrency-default: write ",
+  "S=.claude/skills/orchestrate/scripts; board return 6 --agent impl-6 --status DONE --commits 7ab14fa --report .orchestrate/task-6-report.md --confidence 0.9 2>&1 | tail -1; board done 6 | tail -1; board check --finish 2>&1 | tail -8",
+  "S=.claude/skills/orchestrate/scripts; git status --short | head; (python3 -m unittest app.test_m3 app.test_m5 tests.test_m2 2>&1; python3 -m unittest module-4/test_m4.py 2>&1) | tee .orchestrate/final-tests.log | tail -8; board finish --gate pass --evidence .orchestrate/final-tests.log 2>&1 | tail -3"
+ ],
+ "stream": {
+  "cost_usd": 0.45393690000000014,
+  "turns": 3,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 5
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233627-replay-concurrency-default",
+ "regraded": "2026-10-31"
+}

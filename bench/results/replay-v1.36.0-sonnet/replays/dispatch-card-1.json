@@ -1,0 +1,35 @@
+{
+ "schema": 1,
+ "case": "dispatch-card",
+ "label": "replay-v1.36.0-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "v1.36.0",
+ "skill_hash": "8f97784bb4bc",
+ "model": "sonnet",
+ "pass": false,
+ "missing": [
+  "worker: prompts/impl-1\\.md",
+  "file .orchestrate/task-1-report*.md ~ (?im)^\\W*confidence\\W*[:=]\\s*\\**\\s*[0-9.]+"
+ ],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a && ls .orchestrate 2>/dev/null && cat .orchestrate/run.md 2>/dev/null | head -50; ls .claude/skills/orchestrate/scripts",
+  "cat plan.md; cat .orchestrate/journal.jsonl; S=.claude/skills/orchestrate; board help controller | head -60; cat $S/references/prompt-implementer.md",
+  "S=.claude/skills/orchestrate/scripts; $S/task-brief --help 2>&1 | head -30; board help controller | grep -n -i \"safety\\|main\" | head",
+  "S=.claude/skills/orchestrate/scripts; $S/task-brief plan.md 1 | tee /tmp/b.out | head -40; ls .orchestrate; $S/brief-check .orchestrate/task-1-brief.md 2>&1 | tail -5",
+  "cat .orchestrate/task-1-brief.md; sed -n 1,60p .claude/skills/orchestrate/scripts/brief-check | grep -i -n \"section\\|##\" | head -20",
+  "cat > .orchestrate/task-1-brief.md <<'EOF'\n## Task 1: Parser\n\n### Objective\nParse `key=value` lines into a dict in `kv/parse.py`.\n\n### Scope\nCreate `kv/__init__.py` (if absent) and `kv/parse.py` with `parse(text: str) -> dict[str, str]`: one `key=value` per line, split on the first `=`, skip blank lines. Tests in `tests/test_parse.py`. Do not touch `kv/fmt.py` (Task 2).\n\n### Verification\n`python3 -m unittest discover -s tests` (or pytest if installed) passes; report actual output.\n\n### Report\nWrite the full report to /Users/tamas/.orchestrate-bench/20261031-233158-replay-dispatch-card/.orchestrate/task-1-report.md.\n\n### Stop condition\nStop once the verification passes and the work is committed; start no review rounds.\nEOF\nS=.claude/skills/orchestrate/scripts; $S/brief-check .orchestrate/task-1-brief.md && board dispatch 1 --model sonnet --role implementer 2>&1 | tail -5",
+  "Agent: general-purpose Implement task 1 parser :: You are implementing Task 1: Parser\n\n## Your brief\nRead /Users/tamas/.orchestrate-bench/20261031-233158-replay-dispatch-card/.orchestrate/task-1-brief.md \u2014 it contains the full task text.\nWrite your full report to /Users/tamas/.orchestrate-bench/20261031-233158-replay-dispatch-card/.orchestrate/task",
+  "board return 1 --agent impl-1 --status DONE --commits 68a22c4..a77e6db --report .orchestrate/task-1-report.md --confidence 0.85 2>&1 | tail -5; board next 2>&1 | tail -8"
+ ],
+ "stream": {
+  "cost_usd": 0.19100930000000002,
+  "turns": 11,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 1
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233158-replay-dispatch-card",
+ "regraded": "2026-10-31"
+}

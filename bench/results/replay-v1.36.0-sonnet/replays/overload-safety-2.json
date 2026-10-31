@@ -1,0 +1,31 @@
+{
+ "schema": 1,
+ "case": "overload-safety",
+ "label": "replay-v1.36.0-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "v1.36.0",
+ "skill_hash": "8f97784bb4bc",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ListAgents:",
+  "ls -a .orchestrate 2>&1 | head -30; grep -n -i -B1 -A12 overload .claude/skills/orchestrate/references/shared-safety-rails.md | head -60",
+  "cat .orchestrate/run.md; tail -n 15 .orchestrate/journal.jsonl; ls .claude/skills/orchestrate/scripts | head -30",
+  "board next 2>&1 | head -30; board help controller 2>&1 | grep -i -A3 -E \"nudge|escalate\"",
+  "board nudge 1 --agent impl-1 2>&1 | tail -5",
+  "ToolSearch:",
+  "SendMessage:"
+ ],
+ "stream": {
+  "cost_usd": 0.10894260000000001,
+  "turns": 7,
+  "is_error": true,
+  "subtype": "error_max_turns",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233648-replay-overload-safety",
+ "regraded": "2026-10-31"
+}

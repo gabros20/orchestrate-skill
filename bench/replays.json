@@ -262,5 +262,340 @@
    "> kv/parse\\.py"
   ],
   "note": "the bench installs the skill inside the repo, so exploring can find SKILL.md; in real use it lives in ~/.claude/skills — only the Skill tool counts"
+ },
+ {
+  "id": "dispatch-card",
+  "covers": "confidence-stated · durable-state",
+  "files": {
+   "plan.md": "# Plan\n\n## Task 1: Parser\n\nParse `key=value` lines into a dict (`kv/parse.py`).\n\n## Task 2: Formatter\n\nFormat a dict back to sorted `key=value` lines (`kv/fmt.py`).\n"
+  },
+  "setup": [
+   [
+    "init",
+    "plan.md",
+    "--strategy",
+    "staged",
+    "--review",
+    "dual",
+    "--confirm",
+    "off",
+    "--goal",
+    "Ship the parser and the formatter"
+   ],
+   [
+    "plan",
+    "skipped",
+    "--msg",
+    "confirm=off"
+   ]
+  ],
+  "prompt": "Use the orchestrate skill (this session already runs it): dispatch task 1 to an implementer subagent now, wait for it, journal its return, then stop (the review comes later).",
+  "max_turns": 10,
+  "expect": [
+   "board dispatch 1",
+   "board return 1"
+  ],
+  "expect_worker": [
+   "prompts/impl-1\\.md"
+  ],
+  "expect_files": {
+   ".orchestrate/task-1-report*.md": "(?im)^\\W*confidence\\W*[:=]\\s*\\**\\s*[0-9.]+"
+  },
+  "forbid": []
+ },
+ {
+  "id": "board-checkpoint",
+  "covers": "board-checkpoint",
+  "files": {
+   "plan.md": "# Plan\n\n## Task 1: Core\n\nCreate `app/core.py` with `VERSION = \"1.0\"`.\n\n## Task 2: Module 2\n\nNeeds only task 1. Create `app/m2.py` with `def f2(): return 2` and a unittest.\n\n## Task 3: Module 3\n\nNeeds only task 1. Create `app/m3.py` with `def f3(): return 3` and a unittest.\n\n## Task 4: Module 4\n\nNeeds only task 1. Create `app/m4.py` with `def f4(): return 4` and a unittest.\n\n## Task 5: Module 5\n\nNeeds only task 1. Create `app/m5.py` with `def f5(): return 5` and a unittest.\n\n## Task 6: Release notes\n\nNeeds tasks 2-5. Write `NOTES.md` listing the modules.\n"
+  },
+  "setup": [
+   [
+    "init",
+    "plan.md",
+    "--strategy",
+    "parallel",
+    "--review",
+    "off",
+    "--confirm",
+    "off",
+    "--goal",
+    "Ship the modules"
+   ],
+   [
+    "plan",
+    "skipped",
+    "--msg",
+    "confirm=off"
+   ],
+   [
+    "dispatch",
+    "2",
+    "--agent",
+    "impl-2",
+    "--model",
+    "sonnet"
+   ],
+   [
+    "dispatch",
+    "3",
+    "--agent",
+    "impl-3",
+    "--model",
+    "sonnet"
+   ],
+   [
+    "dispatch",
+    "4",
+    "--agent",
+    "impl-4",
+    "--model",
+    "sonnet"
+   ],
+   [
+    "send",
+    "f3 must return 3 — should it also accept an offset argument?",
+    "--from",
+    "impl-3",
+    "--to",
+    "controller",
+    "--ask"
+   ]
+  ],
+  "prompt": "Use the orchestrate skill (this session already runs it): continue the run. Workers impl-2, impl-3 and impl-4 are still at work in the background.",
+  "max_turns": 6,
+  "expect": [
+   "board (next|inbox|attention|mail)",
+   "board send [^\\n]*--re"
+  ],
+  "forbid": [
+   "board dispatch [234]\\b"
+  ]
+ },
+ {
+  "id": "panel-missing-lens",
+  "covers": "panel-missing-lens",
+  "files": {
+   "plan.md": "# Plan\n\n## Task 1: Parser\n\nParse `key=value` lines into a dict (`kv/parse.py`).\n\n## Task 2: Formatter\n\nFormat a dict back to sorted `key=value` lines (`kv/fmt.py`).\n"
+  },
+  "setup": [
+   [
+    "init",
+    "plan.md",
+    "--strategy",
+    "staged",
+    "--review",
+    "panel:3",
+    "--confirm",
+    "off",
+    "--goal",
+    "Ship the parser and the formatter"
+   ],
+   [
+    "plan",
+    "skipped",
+    "--msg",
+    "confirm=off"
+   ],
+   [
+    "dispatch",
+    "1",
+    "--agent",
+    "impl-1",
+    "--model",
+    "sonnet"
+   ],
+   [
+    "return",
+    "1",
+    "--agent",
+    "impl-1",
+    "--status",
+    "DONE"
+   ],
+   [
+    "review",
+    "1",
+    "--kind",
+    "panel",
+    "--agent",
+    "sec-1",
+    "--model",
+    "opus"
+   ],
+   [
+    "review",
+    "1",
+    "--kind",
+    "panel",
+    "--agent",
+    "perf-1",
+    "--model",
+    "opus"
+   ],
+   [
+    "review",
+    "1",
+    "--kind",
+    "panel",
+    "--agent",
+    "arch-1",
+    "--model",
+    "opus"
+   ],
+   [
+    "vote",
+    "1",
+    "--kind",
+    "panel",
+    "--agent",
+    "sec-1",
+    "--verdict",
+    "ok",
+    "--why",
+    "no secrets, input validated"
+   ],
+   [
+    "vote",
+    "1",
+    "--kind",
+    "panel",
+    "--agent",
+    "perf-1",
+    "--verdict",
+    "ok",
+    "--why",
+    "linear in input"
+   ]
+  ],
+  "prompt": "Use the orchestrate skill (this session already runs it): continue the run. The architecture lens (arch-1) never reported.",
+  "max_turns": 6,
+  "expect": [
+   "(?i)arch"
+  ],
+  "forbid": [
+   "board done 1",
+   "board gate 1 [^\\n]*--verdict ok(?![^\\n]*--msg)"
+  ]
+ },
+ {
+  "id": "concurrency-default",
+  "covers": "concurrency-default",
+  "files": {
+   "plan.md": "# Plan\n\n## Task 1: Core\n\nCreate `app/core.py` with `VERSION = \"1.0\"`.\n\n## Task 2: Module 2\n\nNeeds only task 1. Create `app/m2.py` with `def f2(): return 2` and a unittest.\n\n## Task 3: Module 3\n\nNeeds only task 1. Create `app/m3.py` with `def f3(): return 3` and a unittest.\n\n## Task 4: Module 4\n\nNeeds only task 1. Create `app/m4.py` with `def f4(): return 4` and a unittest.\n\n## Task 5: Module 5\n\nNeeds only task 1. Create `app/m5.py` with `def f5(): return 5` and a unittest.\n\n## Task 6: Release notes\n\nNeeds tasks 2-5. Write `NOTES.md` listing the modules.\n"
+  },
+  "setup": [
+   [
+    "init",
+    "plan.md",
+    "--strategy",
+    "parallel",
+    "--review",
+    "off",
+    "--confirm",
+    "off",
+    "--goal",
+    "Ship the modules"
+   ],
+   [
+    "plan",
+    "skipped",
+    "--msg",
+    "confirm=off"
+   ],
+   [
+    "dispatch",
+    "1",
+    "--agent",
+    "impl-1",
+    "--model",
+    "sonnet"
+   ],
+   {
+    "write": "app/__init__.py",
+    "body": ""
+   },
+   {
+    "write": "app/core.py",
+    "body": "VERSION = \"1.0\"\n"
+   },
+   {
+    "commit": "task 1: core"
+   },
+   [
+    "return",
+    "1",
+    "--agent",
+    "impl-1",
+    "--status",
+    "DONE"
+   ],
+   [
+    "done",
+    "1"
+   ]
+  ],
+  "prompt": "Use the orchestrate skill (this session already runs it): task 1 is done; continue the run. Record each dispatch on the board; you may stop once the next work is dispatched.",
+  "max_turns": 6,
+  "expect_count": [
+   [
+    "(?i)(board dispatch [2-5]\\b|^Agent: .*\\b(task|module) [2-5]\\b)",
+    3,
+    "board return"
+   ]
+  ],
+  "forbid": [],
+  "note": "tasks 2-5 each need only task 1: at least three of them go out before the first return comes back"
+ },
+ {
+  "id": "overload-safety",
+  "covers": "overload-safety",
+  "files": {
+   "plan.md": "# Plan\n\n## Task 1: Parser\n\nParse `key=value` lines into a dict (`kv/parse.py`).\n\n## Task 2: Formatter\n\nFormat a dict back to sorted `key=value` lines (`kv/fmt.py`).\n"
+  },
+  "setup": [
+   [
+    "init",
+    "plan.md",
+    "--strategy",
+    "staged",
+    "--review",
+    "dual",
+    "--confirm",
+    "off",
+    "--goal",
+    "Ship the parser and the formatter"
+   ],
+   [
+    "plan",
+    "skipped",
+    "--msg",
+    "confirm=off"
+   ],
+   [
+    "dispatch",
+    "1",
+    "--agent",
+    "impl-1",
+    "--model",
+    "sonnet"
+   ],
+   [
+    "note",
+    "1",
+    "API error 529 overloaded — pausing",
+    "--agent",
+    "impl-1"
+   ]
+  ],
+  "prompt": "Use the orchestrate skill (this session already runs it): worker impl-1 hit an API overload error (529) on task 1 and went quiet. Handle it.",
+  "max_turns": 8,
+  "expect": [
+   "board (nudge|note|wait|next|task)"
+  ],
+  "forbid": [
+   "board dispatch 1\\b",
+   "board escalate"
+  ]
  }
 ]

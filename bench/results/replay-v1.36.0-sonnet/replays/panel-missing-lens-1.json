@@ -1,0 +1,30 @@
+{
+ "schema": 1,
+ "case": "panel-missing-lens",
+ "label": "replay-v1.36.0-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "v1.36.0",
+ "skill_hash": "8f97784bb4bc",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls .orchestrate 2>&1 | head -50; cat .orchestrate/run.md 2>&1 | head -60; board next 2>&1 | head -40",
+  "cat .orchestrate/journal.jsonl | tail -20; ls -R .orchestrate | head -30; board help controller 2>&1 | head -60",
+  "git ls-files | head; git log --stat -1 | tail -8; board nudge 1 --agent arch-1 2>&1 | tail -3",
+  "ListAgents:",
+  "cat plan.md; git ls-files | grep -v '^.claude'; git status --short",
+  "ls kv .orchestrate/reports 2>&1; git branch -a; git worktree list; B=.claude/skills/orchestrate/scripts/board; board decide D1 \"Task 1 return DONE has no commits/report and kv/parse.py is absent; panel votes sec-1/perf-1 are unevidenced; arch-1 never voted. Re-dispatch impl-1 before any review.\" --task 1 2>&1 | tail -2"
+ ],
+ "stream": {
+  "cost_usd": 0.10644680000000001,
+  "turns": 7,
+  "is_error": true,
+  "subtype": "error_max_turns",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233423-replay-panel-missing-lens",
+ "regraded": "2026-10-31"
+}

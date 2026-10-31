@@ -60,6 +60,7 @@ primitive is missing.
 ## Optional
 
 - [docs/designs/v1.34.0-field-loop.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.34.0-field-loop.md): every run is data — board score, calibration from Confidence: lines, the board's friction log, board retro and field reports.
+- [docs/designs/v1.37.0-worker-cards.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.37.0-worker-cards.md): the role's contract handed over by the tool — board dispatch writes the agent's card; return and gate read its paths.
 - [bench/README.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/bench/README.md): the maintainer bench — tasks with hidden tests, decision replays, paired build comparisons against the previous release, field data by release, the evolve ledger.
 - [docs/research/2026-10-skill-rl/README.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/research/2026-10-skill-rl/README.md): research — SkillOpt and text-space RL, a benchmark and an evolve loop for the skill.
 - [docs/designs/v1.33.0-board-truth.md](https://raw.githubusercontent.com/gabros20/orchestrate-skill/main/docs/designs/v1.33.0-board-truth.md): a flight plan the user actually sees (dispatch gate, relay line, --ask), one derivation of what is still open, board next, help by role.

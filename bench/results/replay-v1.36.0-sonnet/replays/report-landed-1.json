@@ -1,0 +1,36 @@
+{
+ "schema": 1,
+ "case": "report-landed",
+ "label": "replay-v1.36.0-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "v1.36.0",
+ "skill_hash": "8f97784bb4bc",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -40; board next 2>&1 | head -40",
+  "cat plan.md .orchestrate/run.md .orchestrate/task-1-report.md; tail -5 .orchestrate/journal.jsonl; git log --stat -2 | head -20; ls kv tests",
+  "cat kv/parse.py tests/test_parse.py; board help controller 2>&1 | grep -iE \"gate|review|dispatch|done\" | head -20",
+  "board review 1 --kind spec --agent spec-1 --model haiku 2>&1 | tail -5",
+  "Read: /Users/tamas/.orchestrate-bench/20261031-233703-replay-report-landed/.claude/skills/orchestrate/references/prompt-spec-reviewer.md",
+  "Agent:  Spec review task 1 :: You are a read-only spec-compliance reviewer in /Users/tamas/.orchestrate-bench/20261031-233703-replay-report-landed. Spec (plan.md Task 1): \"Parse `key=value` lines into a dict (`kv/parse.py`).\" Implementation: kv/parse.py, test tests/test_parse.py (commit aec5007). Report claims DONE. Read the cod",
+  "B=.claude/skills/orchestrate/scripts/board; board gate 1 --kind spec --verdict ok --findings .orchestrate/review-task1-spec-r1.md --confidence 0.85 2>&1|tail -3; board review 1 --kind quality --agent qual-1 --model haiku 2>&1|tail -3",
+  "Agent:  Quality review task 1 :: Read-only code-quality reviewer in /Users/tamas/.orchestrate-bench/20261031-233703-replay-report-landed. Review kv/parse.py and tests/test_parse.py (commit aec5007) for correctness and maintainability (edge cases, test coverage). Spec: parse key=value lines into a dict. Only write findings to .orche",
+  "B=.claude/skills/orchestrate/scripts/board; board gate 1 --kind quality --verdict ok --findings .orchestrate/review-task1-quality-r1.md --confidence 0.8 2>&1|tail -3; board done 1 --msg \"parser reviewed spec+quality ok\" 2>&1|tail -3; board next 2>&1|tail -5",
+  "board dispatch 2 --model sonnet --agent impl-2 2>&1|tail -3",
+  "Agent:  Implement task 2 formatter :: In /Users/tamas/.orchestrate-bench/20261031-233703-replay-report-landed (git repo, branch main) implement plan.md Task 2: format a dict back to sorted `key=value` lines in `kv/fmt.py` (function `fmt(d)` returning lines joined by \"\\n\" with trailing newline, sorted by key; mirror kv/parse.py style). A",
+  "B=.claude/skills/orchestrate/scripts/board; git status --short; cat kv/fmt.py; python3 -m unittest tests.test_fmt tests.test_parse 2>&1|tail -3; board return 2 --agent impl-2 --status DONE 2>&1|tail -2"
+ ],
+ "stream": {
+  "cost_usd": 0.19220074500000003,
+  "turns": 11,
+  "is_error": true,
+  "subtype": "error_max_turns",
+  "agents_spawned": 3
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233703-replay-report-landed",
+ "regraded": "2026-10-31"
+}

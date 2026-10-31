@@ -1,0 +1,26 @@
+{
+ "schema": 1,
+ "case": "plan-pending",
+ "label": "replay-v1.36.0-sonnet",
+ "skill_version": "1.36.0",
+ "ref": "v1.36.0",
+ "skill_hash": "8f97784bb4bc",
+ "model": "sonnet",
+ "pass": true,
+ "missing": [],
+ "forbidden": [],
+ "commands": [
+  "skill: orchestrate",
+  "ls -a . .orchestrate 2>&1 | head -30; cat .orchestrate/run.md 2>&1 | head -40; board next 2>&1 | head -30",
+  "cat plan.md; board plan --why \"Parser then formatter: a chain, staged with dual review\" 2>&1"
+ ],
+ "stream": {
+  "cost_usd": 0.07760070000000001,
+  "turns": 5,
+  "is_error": false,
+  "subtype": "success",
+  "agents_spawned": 0
+ },
+ "workdir": "/Users/tamas/.orchestrate-bench/20261031-233818-replay-plan-pending",
+ "regraded": "2026-10-31"
+}

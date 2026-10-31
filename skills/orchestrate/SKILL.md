@@ -189,14 +189,14 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
    terminals, `--format md` in apps, or `board plan --ask` as the AskUserQuestion payload on Claude
    Code — then gate on approval ([flight plan](references/shared-flight-plan.md)); apply tweaks by
    re-resolving that dimension and re-showing; record the outcome (`board plan approved`).
-5. Dispatch ready work the moment it is ready (rule 12), always through the role's prompt template
-   (it carries the communication block a hand-written prompt drops), and journal every transition:
+5. Dispatch ready work the moment it is ready (rule 12): `board dispatch` (a reviewer: `board review
+   --agent`) writes the agent's card, the role's template filled in; the agent's prompt starts with
+   the line it prints, then the task (a hand-written prompt drops the contract). Journal every transition:
    dispatch and return, gate and vote, machine check (`board exec N --name tests -- <cmd>`), recovery (`board
    nudge` / `board escalate`); a subprocess lane is one command (`board launch … [--after M]`).
    Dispatch parallel workers with `--owns`. Agents talk through the journal, never mid-turn
-   (`board send` / `board inbox` / `board wait`; `board learn` is a worker's one-line discovery). At every
-   checkpoint run `board next` — run state, what needs you most urgently with its command, the next
-   step; block on a landing with `board wait --task N --timeout 0` in a background shell (exit 3 =
+   (`board send` / `board inbox` / `board wait`). At every checkpoint run `board next` (what needs you,
+   with its command); block on a landing with `board wait --task N --timeout 0` in a background shell (exit 3 =
    it cannot land). Syntax: `board help controller` (a lead: `board help lead`). Integrate through
    the selected strategy's owner.
 6. Package review evidence with [review-package](scripts/review-package), enforce configured gates,
@@ -204,8 +204,7 @@ Strategies compose through dimension overrides: `strategy=staged engine=codex`,
 7. Close each gated unit with `board done N` (it writes the ledger line; refused over a failed or
    missing gate, or a failed check); `board check --finish` must be clean (it refuses processes the run left:
    `board reap`) and `board finish --gate pass|fail --evidence` recorded before you finish or hand
-   off (`board resume` is the handoff's state layer, with a receipt; `board memory` renders the run
-   as one project-context record when the repo keeps project memory). Then the
+   off (`board resume` for a handoff; `board memory` when the repo keeps project memory). Then the
    [retro](references/shared-retro.md): `board retro` scores the run; a skill-level finding becomes
    a field report, filed on the user's yes.
 

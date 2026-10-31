@@ -1,0 +1,8 @@
+{
+ "id": "textkit-fanout",
+ "shape": "fan-out",
+ "split": "train",
+ "minutes": 20,
+ "prompt": "Execute plan.md: a small text library, four independent modules.",
+ "accept": "accept"
+}

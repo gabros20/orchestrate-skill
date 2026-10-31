@@ -1,0 +1,178 @@
+[
+ {
+  "id": "plan-pending",
+  "covers": "flight-plan-shown",
+  "files": {
+   "plan.md": "# Plan\n\n## Task 1: Parser\n\nParse `key=value` lines into a dict (`kv/parse.py`).\n\n## Task 2: Formatter\n\nFormat a dict back to sorted `key=value` lines (`kv/fmt.py`).\n"
+  },
+  "setup": [
+   [
+    "init",
+    "plan.md",
+    "--strategy",
+    "staged",
+    "--review",
+    "dual",
+    "--confirm",
+    "on",
+    "--goal",
+    "Ship the parser and the formatter"
+   ]
+  ],
+  "prompt": "Continue the orchestration run in this repo. The user is here and answers in the next message — end your turn when you need them.",
+  "max_turns": 8,
+  "expect": [
+   "board plan(?![ \\t]+(approved|changed|skipped))",
+   "strategy=staged"
+  ],
+  "forbid": [
+   "board plan[^\\n]*\\|\\s*(head|tail)",
+   "board dispatch",
+   "board plan (approved|skipped)"
+  ]
+ },
+ {
+  "id": "report-landed",
+  "covers": "review-order",
+  "files": {
+   "plan.md": "# Plan\n\n## Task 1: Parser\n\nParse `key=value` lines into a dict (`kv/parse.py`).\n\n## Task 2: Formatter\n\nFormat a dict back to sorted `key=value` lines (`kv/fmt.py`).\n"
+  },
+  "setup": [
+   [
+    "init",
+    "plan.md",
+    "--strategy",
+    "staged",
+    "--review",
+    "dual",
+    "--confirm",
+    "off",
+    "--goal",
+    "Ship the parser and the formatter"
+   ],
+   [
+    "plan",
+    "skipped",
+    "--msg",
+    "confirm=off"
+   ],
+   [
+    "dispatch",
+    "1",
+    "--agent",
+    "impl-1",
+    "--model",
+    "sonnet"
+   ],
+   {
+    "write": ".orchestrate/task-1-report.md",
+    "body": "Status: DONE\nConfidence: 0.8\nCommits: none (replay)\nTests: 4 passed\n"
+   },
+   [
+    "return",
+    "1",
+    "--agent",
+    "impl-1",
+    "--status",
+    "DONE",
+    "--report",
+    ".orchestrate/task-1-report.md"
+   ]
+  ],
+  "prompt": "Continue the orchestration run in this repo.",
+  "max_turns": 10,
+  "expect": [
+   "(?i)spec"
+  ],
+  "forbid": [
+   "board done 1",
+   "board gate 1 [^\\n]*--verdict ok"
+  ]
+ },
+ {
+  "id": "finish-retro",
+  "covers": "retro-field-report",
+  "files": {
+   "plan.md": "# Plan\n\n## Task 1: Parser\n\nParse `key=value` lines into a dict (`kv/parse.py`).\n\n## Task 2: Formatter\n\nFormat a dict back to sorted `key=value` lines (`kv/fmt.py`).\n"
+  },
+  "setup": [
+   [
+    "init",
+    "plan.md",
+    "--strategy",
+    "staged",
+    "--review",
+    "off",
+    "--confirm",
+    "off",
+    "--goal",
+    "Ship the parser and the formatter"
+   ],
+   [
+    "plan",
+    "skipped",
+    "--msg",
+    "confirm=off"
+   ],
+   [
+    "dispatch",
+    "1",
+    "--agent",
+    "impl-1",
+    "--model",
+    "sonnet"
+   ],
+   [
+    "return",
+    "1",
+    "--agent",
+    "impl-1",
+    "--status",
+    "DONE"
+   ],
+   [
+    "done",
+    "1"
+   ],
+   [
+    "dispatch",
+    "2",
+    "--agent",
+    "impl-2",
+    "--model",
+    "sonnet"
+   ],
+   [
+    "return",
+    "2",
+    "--agent",
+    "impl-2",
+    "--status",
+    "DONE"
+   ],
+   [
+    "done",
+    "2"
+   ],
+   {
+    "write": ".orchestrate/final-review.md",
+    "body": "✅ ship — both tasks verified\n"
+   },
+   [
+    "finish",
+    "--gate",
+    "pass",
+    "--evidence",
+    ".orchestrate/final-review.md"
+   ]
+  ],
+  "prompt": "The final gate passed and the finish is recorded. Wrap up the run.",
+  "max_turns": 8,
+  "expect": [
+   "board retro"
+  ],
+  "forbid": [
+   "gh issue create"
+  ]
+ }
+]

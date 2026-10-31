@@ -1,0 +1,427 @@
+#!/usr/bin/env python3
+"""bench — does a change to orchestrate make real runs better or worse? (maintainer-side; stdlib, one file)
+
+  validate                          every task: the seed alone must FAIL its hidden tests, seed + oracle must PASS
+  run --task T [--arm skill|prev|thin|solo] [--ref GIT_REF] [--model M] [--k N] [--budget USD] [--timeout S]
+      [--label L] [--agent null|oracle] [--keep] [--dry-run]
+                                    one headless build per repeat in a fresh repo (no remote, no history); the hidden
+                                    tests run in a clean clone of what was committed; result → bench/results/<label>/
+  compare A B                       paired, per task: pass rate, pass^k, cost, wall, calibration — improved /
+                                    regressed / unproven against the noise of the repeats
+  field [--json]                    every run this machine knows (board runs), its board score grouped by release
+  replay [--case ID] [--model M] [--ref REF] [--dry-run]
+                                    decision replays: a frozen .orchestrate/ state + one prompt; the first commands
+                                    are graded by pattern — the cheap tier between check-sync and a full build
+
+Arms: skill = the candidate (working tree, or --ref) · prev = the previous release tag · thin = no skill, a short
+"use subagents and review" prompt · solo = no skill, one agent. Isolation: --setting-sources project,local and
+--strict-mcp-config, so only the arm's project skill loads (your ~/.claude skills and MCP servers do not).
+Runs use --permission-mode bypassPermissions inside a temp repo: run the bench on a machine you accept that on.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import statistics
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent          # the orchestrate-skill repo
+BENCH = ROOT / "bench"
+TASKS = BENCH / "tasks"
+RESULTS = BENCH / "results"
+RUNS_HOME = Path(os.environ.get("BENCH_HOME") or (Path.home() / ".orchestrate-bench"))
+ISOLATE = ["--setting-sources", "project,local", "--strict-mcp-config"]
+TAIL = (" Work only in this repository; no network is needed. Commit your work to git as you go."
+        " The user is not available: never wait for an answer — decide, record why, continue.")
+PROMPTS = {
+    "skill": "Use the orchestrate skill to execute plan.md (confirm=off). {prompt} When the run is finished, run board retro"
+             " and stop — never file an issue.",
+    "prev": "Use the orchestrate skill to execute plan.md (confirm=off). {prompt} When the run is finished, stop.",
+    "thin": "Execute plan.md with subagents: one implementer subagent per task, then review each task's diff before the"
+            " next. {prompt}",
+    "solo": "Execute plan.md yourself, without subagents. {prompt}",
+}
+
+
+def sh(*cmd: str, cwd: Path | None = None, check: bool = True) -> str:
+    return subprocess.run(cmd, cwd=cwd, check=check, capture_output=True, text=True).stdout.strip()
+
+
+def git_init(d: Path) -> None:
+    g = ["git", "-c", "user.email=bench@local", "-c", "user.name=bench"]
+    sh("git", "init", "-q", "-b", "main", cwd=d)
+    sh("git", "add", "-A", cwd=d)
+    sh(*g, "commit", "-q", "-m", "seed", cwd=d)
+
+
+def overlay(src: Path, dst: Path) -> None:
+    for p in src.rglob("*"):
+        if p.is_file():
+            t = dst / p.relative_to(src)
+            t.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, t)
+
+
+def accept(repo: Path, tests: Path) -> dict:
+    """The hidden tests, run against `repo` from outside it (the tests never enter the repo the agent built)."""
+    code = ("import json,sys,unittest;sys.path.insert(0,sys.argv[1]);"
+            "s=unittest.defaultTestLoader.discover(sys.argv[2],pattern='test_*.py',top_level_dir=sys.argv[2]);"
+            "r=unittest.TextTestRunner(stream=open('/dev/null','w')).run(s);"
+            "print(json.dumps({'tests':r.testsRun,'failed':len(r.failures)+len(r.errors)}))")
+    try:
+        out = subprocess.run([sys.executable, "-c", code, str(repo), str(tests)], cwd=tempfile.gettempdir(),
+                             capture_output=True, text=True, timeout=300).stdout.strip().splitlines()
+        r = json.loads(out[-1])
+    except (subprocess.TimeoutExpired, ValueError, IndexError):
+        r = {"tests": 0, "failed": 0, "error": "accept run failed"}
+    r["passed"] = r["tests"] - r["failed"]
+    return r
+
+
+def load_task(tid: str) -> dict:
+    p = TASKS / tid / "task.json"
+    if not p.exists():
+        sys.exit(f"bench: no task {tid} (have: {', '.join(sorted(x.name for x in TASKS.iterdir() if x.is_dir()))})")
+    return json.loads(p.read_text())
+
+
+def install_skill(work: Path, arm: str, ref: str) -> str:
+    """The arm's skill as a PROJECT skill; returns the version it carries ('' for no skill)."""
+    if arm in ("thin", "solo"):
+        return ""
+    dst = work / ".claude" / "skills" / "orchestrate"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if arm == "prev" and not ref:
+        cur = (ROOT / "skills/orchestrate/VERSION").read_text().strip()
+        tags = [t for t in sh("git", "tag", "--sort=-v:refname", cwd=ROOT).splitlines() if t.startswith("v") and t != f"v{cur}"]
+        if not tags:
+            sys.exit("bench: no previous release tag")
+        ref = tags[0]
+    if ref:
+        arch = subprocess.run(["git", "archive", ref, "skills/orchestrate"], cwd=ROOT, check=True, capture_output=True).stdout
+        tmp = Path(tempfile.mkdtemp())
+        subprocess.run(["tar", "-x", "-C", str(tmp)], input=arch, check=True)
+        shutil.copytree(tmp / "skills/orchestrate", dst)
+        shutil.rmtree(tmp, ignore_errors=True)
+    else:
+        shutil.copytree(ROOT / "skills/orchestrate", dst, ignore=shutil.ignore_patterns("__pycache__"))
+    return (dst / "VERSION").read_text().strip()
+
+
+def summarize_stream(path: Path) -> dict:
+    """From Claude Code's stream-json: the final result event, and how many subagents were spawned."""
+    res, agents = {}, 0
+    try:
+        for ln in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                e = json.loads(ln)
+            except ValueError:
+                continue
+            if e.get("type") == "result":
+                res = e
+            for c in (e.get("message") or {}).get("content") or []:
+                if isinstance(c, dict) and c.get("type") == "tool_use" and c.get("name") in ("Agent", "Task"):
+                    agents += 1
+    except OSError:
+        pass
+    return {"cost_usd": res.get("total_cost_usd"), "turns": res.get("num_turns"), "is_error": res.get("is_error"),
+            "subtype": res.get("subtype"), "agents_spawned": agents}
+
+
+def commands_of(path: Path) -> tuple[list[str], str]:
+    """Every Bash command and all assistant text, in order — what a replay is graded on."""
+    cmds, text = [], []
+    try:
+        for ln in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                e = json.loads(ln)
+            except ValueError:
+                continue
+            for c in (e.get("message") or {}).get("content") or []:
+                if not isinstance(c, dict):
+                    continue
+                if c.get("type") == "tool_use":
+                    inp = c.get("input") or {}
+                    cmds.append(str(inp.get("command") or (f"skill: {inp['skill']}" if inp.get("skill") else "")
+                                    or f"{c.get('name')}: {inp.get('subagent_type', '')} {inp.get('description', '')}".strip()))
+                elif c.get("type") == "text" and e.get("type") == "assistant":
+                    text.append(str(c.get("text", "")))
+    except OSError:
+        pass
+    return cmds, "\n".join(text)
+
+
+def claude_cmd(prompt: str, model: str, budget: float, max_turns: int = 0) -> list[str]:
+    cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", *ISOLATE,
+           "--permission-mode", "bypassPermissions", "--model", model, "--max-budget-usd", str(budget)]
+    return cmd + (["--max-turns", str(max_turns)] if max_turns else [])
+
+
+def cmd_validate(_: argparse.Namespace) -> int:
+    bad = 0
+    for td in sorted(x for x in TASKS.iterdir() if (x / "task.json").exists()):
+        rows, bad0 = [], bad
+        for mode in ("null", "oracle"):
+            with tempfile.TemporaryDirectory() as d:
+                w = Path(d) / "w"
+                shutil.copytree(td / "seed", w)
+                if mode == "oracle":
+                    overlay(td / "oracle", w)
+                r = accept(w, td / "accept")
+            rows.append(f"{mode} {r['passed']}/{r['tests']}")
+            ok = r["tests"] > 0 and ((mode == "null" and r["passed"] == 0) or (mode == "oracle" and r["failed"] == 0))
+            bad += not ok
+        print(f"bench validate: {td.name:<16} {' · '.join(rows)}  {'ok' if bad == bad0 else 'INVALID'}")
+    if bad:
+        print("bench validate: FAIL — a task whose seed passes, or whose oracle fails, measures nothing")
+    return 1 if bad else 0
+
+
+def next_index(d: Path) -> int:
+    return 1 + max([int(p.stem) for p in d.glob("*.json") if p.stem.isdigit()] or [0])
+
+
+def cmd_run(a: argparse.Namespace) -> int:
+    task = load_task(a.task)
+    td = TASKS / a.task
+    if a.agent is None and shutil.which("claude") is None:
+        sys.exit("bench: claude is not on PATH")
+    cur = (ROOT / "skills/orchestrate/VERSION").read_text().strip()
+    label = a.label or (f"{a.agent}" if a.agent else f"{a.arm}-{a.ref or ('v' + cur + '-wt')}-{a.model}")
+    prompt = PROMPTS[a.arm].format(prompt=task["prompt"]) + TAIL
+    if a.dry_run:
+        print(f"label {label} · task {a.task} ({task['split']}) · arm {a.arm} · k {a.k}")
+        print(" ".join(json.dumps(x) if " " in x else x for x in claude_cmd(prompt, a.model, a.budget)))
+        return 0
+    out_dir = RESULTS / label / a.task
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for _ in range(a.k):
+        n = next_index(out_dir)
+        work = RUNS_HOME / f"{time.strftime('%Y%m%d-%H%M%S')}-{a.task}-{label}-{n}"
+        shutil.copytree(td / "seed", work)
+        version = install_skill(work, a.arm, a.ref) if a.agent is None else ""
+        if a.agent == "oracle":
+            overlay(td / "oracle", work)
+        git_init(work)
+        env = dict(os.environ)
+        skill_scripts = work / ".claude/skills/orchestrate/scripts"
+        if skill_scripts.exists():   # the arm's own board first on PATH — never the installed one
+            env["PATH"] = f"{skill_scripts}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("ORCHESTRATE_WS", None)
+        t0, rc, timed_out = time.time(), 0, False
+        stream = work.parent / f"{work.name}.stream.jsonl"
+        if a.agent is None:
+            print(f"→ bench run {a.task} #{n} · {label} · up to {a.timeout // 60} min, ${a.budget} cap: one headless build", flush=True)
+            with stream.open("w") as fh:
+                try:
+                    rc = subprocess.run(claude_cmd(prompt, a.model, a.budget), cwd=work, env=env, stdout=fh,
+                                        stderr=subprocess.STDOUT, timeout=a.timeout).returncode
+                except subprocess.TimeoutExpired:
+                    timed_out, rc = True, 124
+        elif a.agent == "oracle":
+            g = ["git", "-c", "user.email=bench@local", "-c", "user.name=bench"]
+            sh(*g, "commit", "-q", "--allow-empty", "-m", "oracle", cwd=work)
+        wall = round(time.time() - t0, 1)
+        dirty = bool(sh("git", "status", "--porcelain", cwd=work, check=False))
+        with tempfile.TemporaryDirectory() as d:   # what was COMMITTED is what is scored
+            clean = Path(d) / "clean"
+            sh("git", "clone", "-q", str(work), str(clean))
+            acc = accept(clean, td / "accept")
+        score = None
+        if (work / ".orchestrate" / "journal.jsonl").exists():
+            board = skill_scripts / "board" if skill_scripts.exists() else ROOT / "skills/orchestrate/scripts/board"
+            try:
+                score = json.loads(subprocess.run([sys.executable, str(board), "score", "--json"], cwd=work, env=env,
+                                                  capture_output=True, text=True, timeout=120).stdout)
+            except (ValueError, subprocess.TimeoutExpired):
+                score = None
+        res = {"schema": 1, "task": a.task, "split": task["split"], "arm": a.arm if a.agent is None else a.agent,
+               "label": label, "ref": a.ref or "", "skill_version": version, "model": a.model if a.agent is None else "",
+               "n": n, "started": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t0)), "wall_s": wall,
+               "exit": rc, "timed_out": timed_out, "dirty": dirty, "accept": acc,
+               "pass": acc["tests"] > 0 and acc["failed"] == 0, "stream": summarize_stream(stream) if stream.exists() else {},
+               "score": score, "workdir": str(work)}
+        (out_dir / f"{n}.json").write_text(json.dumps(res, indent=1) + "\n")
+        print(f"bench run: {a.task} #{n} {label} — hidden tests {acc['passed']}/{acc['tests']}"
+              + (f" · ${res['stream'].get('cost_usd')}" if res["stream"].get("cost_usd") else "")
+              + f" · {wall}s → {out_dir.relative_to(ROOT) / f'{n}.json'}")
+        if not a.keep and a.agent is not None:
+            shutil.rmtree(work, ignore_errors=True)
+    return 0
+
+
+def load_results(label: str) -> dict[str, list[dict]]:
+    d = RESULTS / label
+    if not d.exists():
+        sys.exit(f"bench: no results for {label} (have: {', '.join(sorted(p.name for p in RESULTS.iterdir() if p.is_dir())) if RESULTS.exists() else 'none'})")
+    return {t.name: [json.loads(p.read_text()) for p in sorted(t.glob("*.json"))] for t in sorted(d.iterdir()) if t.is_dir()}
+
+
+def metrics(rs: list[dict]) -> dict:
+    rate = [r["accept"]["passed"] / r["accept"]["tests"] if r["accept"]["tests"] else 0.0 for r in rs]
+    cost = [r["stream"].get("cost_usd") for r in rs if r.get("stream", {}).get("cost_usd") is not None]
+    cal = [r["score"]["calibration"]["returns"] for r in rs if r.get("score") and r["score"]["calibration"]["returns"].get("n")]
+    return {"n": len(rs), "rate": rate, "passk": all(r["pass"] for r in rs) if rs else False,
+            "cost": cost, "wall": [r["wall_s"] for r in rs],
+            "brier": [c["brier"] for c in cal]}
+
+
+def verdict(a: list[float], b: list[float], higher_better: bool, floor: float) -> str:
+    if len(a) < 2 or len(b) < 2:
+        return "unproven (n<2)"
+    noise = max(max(a) - min(a), max(b) - min(b), floor)
+    d = statistics.mean(b) - statistics.mean(a)
+    if abs(d) <= noise:
+        return "unproven"
+    return "improved" if (d > 0) == higher_better else "REGRESSED"
+
+
+def fmt(xs: list[float], p: str = "{:.2f}") -> str:
+    if not xs:
+        return "-"
+    return p.format(statistics.mean(xs)) + (f" ±{(max(xs) - min(xs)) / 2:.2f}" if len(xs) > 1 else "")
+
+
+def cmd_compare(a: argparse.Namespace) -> int:
+    A, B = load_results(a.a), load_results(a.b)
+    rows = [("task", "n", "pass rate", "pass^k", "cost $", "wall s", "brier", "verdict (rate · cost)")]
+    regress = False
+    for t in sorted(set(A) | set(B)):
+        ma, mb = metrics(A.get(t, [])), metrics(B.get(t, []))
+        vr = verdict(ma["rate"], mb["rate"], True, 0.05)
+        vc = verdict(ma["cost"], mb["cost"], False, 0.5) if ma["cost"] and mb["cost"] else "-"
+        regress |= vr == "REGRESSED" or (ma["passk"] and not mb["passk"])
+        rows.append((t, f"{ma['n']}→{mb['n']}", f"{fmt(ma['rate'])} → {fmt(mb['rate'])}", f"{'yes' if ma['passk'] else 'no'} → {'yes' if mb['passk'] else 'no'}",
+                     f"{fmt(ma['cost'])} → {fmt(mb['cost'])}", f"{fmt(ma['wall'], '{:.0f}')} → {fmt(mb['wall'], '{:.0f}')}",
+                     f"{fmt(ma['brier'])} → {fmt(mb['brier'])}", f"{vr} · {vc}"))
+    w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
+    for r in rows:
+        print("  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip())
+    print(f"\nbench compare {a.a} → {a.b}: " + ("REGRESSION — a task lost its pass rate or its pass^k; do not ship on this evidence"
+          if regress else "no regression — gains are real only where marked improved (beyond the repeats' own spread)"))
+    return 1 if regress else 0
+
+
+def cmd_field(a: argparse.Namespace) -> int:
+    """Field data, read-only: each registered run's `board score --json`, grouped by the release it started on."""
+    reg = Path(os.environ.get("ORCHESTRATE_HOME") or (Path.home() / ".orchestrate")) / "runs"
+    board = shutil.which("board") or str(ROOT / "skills/orchestrate/scripts/board")
+    scores = []
+    for f in sorted(reg.glob("*.json")) if reg.exists() else []:
+        try:
+            ws = Path(json.loads(f.read_text())["ws"])
+        except (ValueError, KeyError, OSError):
+            continue
+        if not (ws / "journal.jsonl").exists():
+            continue
+        try:
+            sc = json.loads(subprocess.run([sys.executable, board, "score", "--json"], cwd=ws.parent, capture_output=True,
+                                           text=True, timeout=120).stdout)
+        except (ValueError, subprocess.TimeoutExpired):
+            continue
+        sc["repo"] = ws.parent.name
+        scores.append(sc)
+    if a.json:
+        print(json.dumps(scores, indent=1))
+        return 0
+    groups: dict[str, list[dict]] = {}
+    for sc in scores:
+        groups.setdefault(sc.get("started_on") or "?", []).append(sc)
+    print(f"{'release':<9} {'runs':>4} {'tasks done':>11} {'finish stands':>14} {'attempts/accepted':>18} {'usd':>9} {'brier (n)':>11}  repos")
+    for v in sorted(groups, key=lambda s: [int(x) if x.isdigit() else 0 for x in s.split(".")]):
+        g = groups[v]
+        done, tasks = sum(x["outcome"]["done"] for x in g), sum(x["outcome"]["tasks"] for x in g)
+        stands = sum(1 for x in g if x["outcome"]["stands"])
+        per = [x["cost"]["per_accepted"] for x in g if x["cost"]["per_accepted"] is not None]
+        usd = sum(x["cost"]["usd"] or 0 for x in g)
+        cal = [x["calibration"]["returns"] for x in g if x["calibration"]["returns"].get("n")]
+        n = sum(c["n"] for c in cal)
+        br = f"{sum(c['brier'] * c['n'] for c in cal) / n:.3f} ({n})" if n else "-"
+        print(f"{v:<9} {len(g):>4} {f'{done}/{tasks}':>11} {f'{stands}/{len(g)}':>14} {(f'{statistics.mean(per):.2f}' if per else '-'):>18} "
+              f"{(f'${usd:.0f}' if usd else '-'):>9} {br:>11}  {', '.join(sorted({x['repo'] for x in g}))}")
+    print("(observational: different repos and goals per release — a trend to explain, never proof; the bench is the comparison)")
+    return 0
+
+
+def cmd_replay(a: argparse.Namespace) -> int:
+    cases = json.loads((BENCH / "replays.json").read_text())
+    if a.case:
+        cases = [c for c in cases if c["id"] == a.case] or sys.exit(f"bench: no replay {a.case}")
+    label = a.label or f"replay-{a.ref or 'wt'}-{a.model}"
+    out_dir = RESULTS / label / "replays"
+    failed = 0
+    for c in cases:
+        work = RUNS_HOME / f"{time.strftime('%Y%m%d-%H%M%S')}-replay-{c['id']}"
+        work.mkdir(parents=True)
+        for rel, body in (c.get("files") or {}).items():
+            (work / rel).parent.mkdir(parents=True, exist_ok=True)
+            (work / rel).write_text(body)
+        version = install_skill(work, "skill", a.ref)
+        git_init(work)
+        env = dict(os.environ)
+        env["PATH"] = f"{work / '.claude/skills/orchestrate/scripts'}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("ORCHESTRATE_WS", None)
+        for step in c["setup"]:   # the frozen state, built by the candidate's own board: [board args] or {write, body}
+            if isinstance(step, dict):
+                (work / step["write"]).parent.mkdir(parents=True, exist_ok=True)
+                (work / step["write"]).write_text(step["body"])
+                continue
+            p = subprocess.run(["board", *step], cwd=work, env=env, capture_output=True, text=True)
+            if p.returncode:
+                sys.exit(f"bench replay {c['id']}: setup `board {' '.join(step)}` failed: {(p.stderr or p.stdout).strip()}")
+        cmd = claude_cmd(c["prompt"], a.model, a.budget, c.get("max_turns", 8))
+        if a.dry_run:
+            print(f"{c['id']}: state built in {work}\n  " + " ".join(json.dumps(x) if " " in x else x for x in cmd))
+            continue
+        stream = work.parent / f"{work.name}.stream.jsonl"
+        print(f"→ bench replay {c['id']} · {a.model} · ≤{c.get('max_turns', 8)} turns, ${a.budget} cap", flush=True)
+        with stream.open("w") as fh:
+            try:
+                subprocess.run(cmd, cwd=work, env=env, stdout=fh, stderr=subprocess.STDOUT, timeout=a.timeout)
+            except subprocess.TimeoutExpired:
+                pass
+        cmds, text = commands_of(stream)
+        hay = "\n".join(cmds) + "\n" + text
+        miss = [p for p in c.get("expect", []) if not re.search(p, hay, re.M)]
+        bad = [p for p in c.get("forbid", []) if re.search(p, "\n".join(cmds), re.M)]
+        ok = not miss and not bad
+        failed += not ok
+        out_dir.mkdir(parents=True, exist_ok=True)
+        res = {"schema": 1, "case": c["id"], "label": label, "skill_version": version, "model": a.model, "pass": ok,
+               "missing": miss, "forbidden": bad, "commands": cmds[:40], "stream": summarize_stream(stream), "workdir": str(work)}
+        (out_dir / f"{c['id']}-{next_index(out_dir)}.json").write_text(json.dumps(res, indent=1) + "\n")
+        print(f"bench replay: {c['id']} {'ok' if ok else 'FAIL'}" + (f" — missing {miss}" if miss else "") + (f" — did {bad}" if bad else "")
+              + (f" · ${res['stream'].get('cost_usd')}" if res["stream"].get("cost_usd") else ""))
+    return 1 if failed else 0
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="bench", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("validate")
+    p = sub.add_parser("run")
+    p.add_argument("--task", required=True); p.add_argument("--arm", choices=sorted(PROMPTS), default="skill")
+    p.add_argument("--ref", default="", help="git ref of this repo for the skill (default: the working tree)")
+    p.add_argument("--model", default="opus"); p.add_argument("--k", type=int, default=1)
+    p.add_argument("--budget", type=float, default=15.0, help="USD cap per run (claude --max-budget-usd)")
+    p.add_argument("--timeout", type=int, default=5400); p.add_argument("--label")
+    p.add_argument("--agent", choices=["null", "oracle"], help="no model: score the seed (null) or the reference solution (oracle)")
+    p.add_argument("--keep", action="store_true"); p.add_argument("--dry-run", action="store_true")
+    p = sub.add_parser("compare"); p.add_argument("a"); p.add_argument("b")
+    p = sub.add_parser("field"); p.add_argument("--json", action="store_true")
+    p = sub.add_parser("replay"); p.add_argument("--case"); p.add_argument("--model", default="sonnet")
+    p.add_argument("--ref", default=""); p.add_argument("--budget", type=float, default=1.0)
+    p.add_argument("--timeout", type=int, default=600); p.add_argument("--label"); p.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args(argv)
+    return {"validate": cmd_validate, "run": cmd_run, "compare": cmd_compare, "field": cmd_field, "replay": cmd_replay}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

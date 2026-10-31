@@ -1,0 +1,8 @@
+{
+ "id": "notes-chain",
+ "shape": "chain",
+ "split": "train",
+ "minutes": 25,
+ "prompt": "Execute plan.md: a small notes CLI on SQLite, three tasks that build on each other.",
+ "accept": "accept"
+}

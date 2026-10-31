@@ -1,0 +1,30 @@
+{
+  "skill_name": "orchestrate-evolve",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Three field reports say board refused `board done` over a vote-pending gate and agents didn't know how to close it. Run the evolve loop, but stop before any paid bench build.",
+      "expected_output": "Reads the field reports, bench field and the ledger; clusters the three as one mechanism; writes a ledger line with cause, a board-first edit, metric and prediction before evaluating; adds a replay case that fails on the old skill; runs check-sync and the replays; stops before tier 3 and asks for a budget.",
+      "files": [],
+      "assertions": [
+        "one cluster, not three edits",
+        "ledger line written before evaluation, with metric and prediction",
+        "edit targets the board before prose",
+        "a replay case reproduces the wrong move",
+        "no paid build without a budget"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "The last release shipped E-2026-11-01-a predicting fewer board refusals per run. Did it work?",
+      "expected_output": "Finds the ledger entry, reads bench field for runs on that release and later, compares the friction metric against the prediction, reports confirmed / not confirmed / not enough runs yet, and reopens the cluster if the metric did not move \u2014 without proposing a new edit on a single run's evidence.",
+      "files": [],
+      "assertions": [
+        "reads the ledger entry",
+        "uses field/bench data for that release",
+        "verdict is confirmed, not confirmed, or not enough data",
+        "no new edit off one run"
+      ]
+    }
+  ]
+}

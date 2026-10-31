@@ -296,6 +296,7 @@ discovery or a second-hop index.
 AGENTS.md / CLAUDE.md      repository and client-specific maintainer guidance
 skills/orchestrate/        portable runtime skill and client metadata
 evals/                     activation, traversal, output, and compression fixtures
+bench/                     tasks with hidden tests, decision replays, run/compare/field — does a change help?
 docs/                      installation, usage, strategies, recipes, research, and designs
 site/                      optional visual guide
 remotion/                  visual-guide animation source
@@ -308,6 +309,11 @@ scripts/                   baseline and orchestration-specific release gates
 scripts/check-sync
 scripts/count-skill-tokens
 ```
+
+Before a release that changes behaviour, measure it: `bench/bench replay` (cents) and, for a release
+candidate, `bench/bench run --arm prev|skill … --k 3` then `bench/bench compare` — hidden tests, pass^k,
+cost and calibration, paired against the previous release ([bench](bench/README.md)). The maintainer
+skill `orchestrate-evolve` turns field reports and bench data into gated, ledgered edits.
 
 The baseline gate validates packaging, flat direct routing, reference headers and contents lists,
 plugin/client metadata, runtime scripts, evaluation fixtures, and version alignment. The specialized
